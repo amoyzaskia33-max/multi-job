@@ -108,12 +108,21 @@ Logs are stored in:
 - `GET /healthz` - Health check
 - `GET /readyz` - Readiness check
 - `GET /metrics` - Prometheus metrics
+- `POST /planner/plan` - Convert prompt into structured job plan
 - `POST /jobs` - Create new job
 - `GET /jobs/{job_id}` - Get job specification
 - `PUT /jobs/{job_id}/enable` - Enable job
 - `PUT /jobs/{job_id}/disable` - Disable job
 - `GET /jobs/{job_id}/runs` - Get recent runs for a job
 - `GET /jobs` - List all jobs
+
+Planner request example:
+```json
+{
+  "prompt": "Pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00",
+  "timezone": "Asia/Jakarta"
+}
+```
 
 ## Job Specification Example
 

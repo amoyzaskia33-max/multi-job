@@ -33,6 +33,7 @@ from app.core.queue import (
 )
 from app.core.scheduler import Scheduler
 from app.core.redis_client import close_redis, redis_client
+from app.services.api.planner import PlannerRequest, PlannerResponse, build_plan_from_prompt
 from app.services.worker.main import worker_main
 
 app = FastAPI(
@@ -190,6 +191,22 @@ async def readyz():
 @app.get("/metrics")
 async def metrics():
     return PlainTextResponse(expose_metrics(), media_type="text/plain; version=0.0.4")
+
+
+@app.post("/planner/plan", response_model=PlannerResponse)
+async def planner_plan(request: PlannerRequest):
+    plan = build_plan_from_prompt(request)
+
+    with suppress(Exception):
+        await append_event(
+            "planner.plan_generated",
+            {
+                "message": "Prompt converted into job plan",
+                "job_count": len(plan.jobs),
+            },
+        )
+
+    return plan
 
 
 @app.post("/jobs")
