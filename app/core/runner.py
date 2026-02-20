@@ -40,6 +40,17 @@ async def execute_job_handler(handler: Callable, ctx: JobContext, inputs: Dict) 
     try:
         result = await asyncio.wait_for(handler(ctx, inputs), timeout=ctx.timeout_ms / 1000.0)
         duration_ms = int((time.time() - start_time) * 1000)
+
+        # Convention: handlers may return {"success": false, "error": "..."} to signal logical failure.
+        # Treat this as a failed run so status, retries, and observability stay consistent.
+        if isinstance(result, dict) and result.get("success") is False:
+            error_msg = str(result.get("error") or "Handler returned success=false")
+            ctx.logger.warning(
+                "Handler returned logical failure",
+                extra={"job_id": ctx.job_id, "run_id": ctx.run_id, "error": error_msg},
+            )
+            return RunResult(success=False, output=result, error=error_msg, duration_ms=duration_ms)
+
         return RunResult(success=True, output=result, duration_ms=duration_ms)
 
     except asyncio.TimeoutError:
