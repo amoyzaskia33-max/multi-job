@@ -1,0 +1,8 @@
+{
+  "job_id": "monitor-telegram-a01",
+  "type": "monitor.channel",
+  "schedule": { "interval_sec": 30 },
+  "timeout_ms": 15000,
+  "retry_policy": { "max_retry": 5, "backoff_sec": [1,2,5,10,30] },
+  "inputs": { "channel": "telegram", "account_id": "bot_a01" }
+}

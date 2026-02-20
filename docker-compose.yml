@@ -1,0 +1,79 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: multi-job-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    volumes:
+      - ./:/app
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - api
+    volumes:
+      - ./:/app
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - api
+    volumes:
+      - ./:/app
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile.ui
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://host.docker.internal:8000
+    depends_on:
+      - api
+    volumes:
+      - ./ui:/app
+
+  ui-simple:
+    build:
+      context: ./ui-simple
+      dockerfile: Dockerfile.ui-simple
+    ports:
+      - "5174:5174"
+    environment:
+      - VITE_API_BASE=http://host.docker.internal:8000
+    depends_on:
+      - api
+    volumes:
+      - ./ui-simple:/app
+
+volumes:
+  redis-data:

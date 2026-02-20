@@ -1,0 +1,52 @@
+import './globals.css';
+import { Inter } from 'next/font/google';
+import SidebarNav from '@/components/sidebar-nav';
+
+import Providers from './providers';
+
+const inter = Inter({ subsets: ['latin'] });
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="id">
+      <body className={inter.className}>
+        <Providers>
+          <div className="min-h-screen">
+            <div className="mx-auto flex min-h-screen max-w-[1600px]">
+              <aside className="hidden w-72 shrink-0 border-r border-border/90 bg-white/85 backdrop-blur lg:flex lg:flex-col">
+                <div className="border-b border-border/80 px-6 py-6">
+                  <span className="inline-flex rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">
+                    Panel Kendali
+                  </span>
+                  <h1 className="mt-4 text-xl font-bold text-foreground">Spio Ai Assistant</h1>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Pantau agen, jalankan tugas, dan lihat hasil otomatis dalam satu tampilan.
+                  </p>
+                </div>
+
+                <SidebarNav />
+
+                <div className="mt-auto border-t border-border/80 px-6 py-4 text-xs text-muted-foreground">
+                  Versi 0.1.0
+                </div>
+              </aside>
+
+              <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
+                <div className="mb-6 rounded-2xl border border-border/80 bg-white/85 p-4 backdrop-blur lg:hidden">
+                  <h1 className="text-lg font-bold text-foreground">Spio Ai Assistant</h1>
+                  <p className="mt-1 text-sm text-muted-foreground">Panel agen dan tugas otomatis</p>
+                  <SidebarNav compact />
+                </div>
+                {children}
+              </main>
+            </div>
+          </div>
+        </Providers>
+      </body>
+    </html>
+  );
+}
