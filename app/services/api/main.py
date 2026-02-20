@@ -34,6 +34,7 @@ from app.core.queue import (
 from app.core.scheduler import Scheduler
 from app.core.redis_client import close_redis, redis_client
 from app.services.api.planner import PlannerRequest, PlannerResponse, build_plan_from_prompt
+from app.services.api.planner_ai import PlannerAiRequest, build_plan_with_ai
 from app.services.worker.main import worker_main
 
 app = FastAPI(
@@ -203,6 +204,23 @@ async def planner_plan(request: PlannerRequest):
             {
                 "message": "Prompt converted into job plan",
                 "job_count": len(plan.jobs),
+            },
+        )
+
+    return plan
+
+
+@app.post("/planner/plan-ai", response_model=PlannerResponse)
+async def planner_plan_ai(request: PlannerAiRequest):
+    plan = build_plan_with_ai(request)
+
+    with suppress(Exception):
+        await append_event(
+            "planner.ai_plan_generated",
+            {
+                "message": "Prompt processed with planner AI mode",
+                "job_count": len(plan.jobs),
+                "planner_source": plan.planner_source,
             },
         )
 

@@ -109,6 +109,7 @@ Logs are stored in:
 - `GET /readyz` - Readiness check
 - `GET /metrics` - Prometheus metrics
 - `POST /planner/plan` - Convert prompt into structured job plan
+- `POST /planner/plan-ai` - Prompt planner with smolagents (auto fallback to rule-based)
 - `POST /jobs` - Create new job
 - `GET /jobs/{job_id}` - Get job specification
 - `PUT /jobs/{job_id}/enable` - Enable job
@@ -122,6 +123,26 @@ Planner request example:
   "prompt": "Pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00",
   "timezone": "Asia/Jakarta"
 }
+```
+
+Planner AI request example:
+```json
+{
+  "prompt": "Pantau whatsapp akun ops_01 tiap 45 detik dan buat laporan harian jam 08:00",
+  "timezone": "Asia/Jakarta",
+  "model_id": "openai/gpt-4o-mini",
+  "force_rule_based": false
+}
+```
+
+Optional setup for planner AI (`/planner/plan-ai`):
+```bash
+pip install smolagents litellm
+```
+Set environment variables:
+```bash
+set OPENAI_API_KEY=your_key_here
+set PLANNER_AI_MODEL=openai/gpt-4o-mini
 ```
 
 ## Job Specification Example

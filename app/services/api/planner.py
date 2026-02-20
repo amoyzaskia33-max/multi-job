@@ -25,6 +25,7 @@ class PlannerResponse(BaseModel):
     prompt: str
     normalized_prompt: str
     summary: str
+    planner_source: str = "rule_based"
     assumptions: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     jobs: List[PlannerJob] = Field(default_factory=list)
@@ -314,6 +315,7 @@ def build_plan_from_prompt(request: PlannerRequest) -> PlannerResponse:
         prompt=request.prompt,
         normalized_prompt=text,
         summary=summary,
+        planner_source="rule_based",
         assumptions=assumptions,
         warnings=warnings,
         jobs=jobs,
