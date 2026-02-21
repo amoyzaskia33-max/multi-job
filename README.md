@@ -110,6 +110,7 @@ Logs are stored in:
 - `GET /metrics` - Prometheus metrics
 - `POST /planner/plan` - Convert prompt into structured job plan
 - `POST /planner/plan-ai` - Prompt planner with smolagents (auto fallback to rule-based)
+- `POST /planner/execute` - Prompt to plan + create/update jobs + enqueue runs in one call
 - `POST /jobs` - Create new job
 - `GET /jobs/{job_id}` - Get job specification
 - `PUT /jobs/{job_id}/enable` - Enable job
@@ -143,6 +144,17 @@ Set environment variables:
 ```bash
 set OPENAI_API_KEY=your_key_here
 set PLANNER_AI_MODEL=openai/gpt-4o-mini
+```
+
+One-call execute example:
+```json
+{
+  "prompt": "Pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00",
+  "use_ai": true,
+  "force_rule_based": true,
+  "run_immediately": true,
+  "wait_seconds": 2
+}
 ```
 
 ## Job Specification Example

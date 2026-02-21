@@ -35,6 +35,7 @@ from app.core.scheduler import Scheduler
 from app.core.redis_client import close_redis, redis_client
 from app.services.api.planner import PlannerRequest, PlannerResponse, build_plan_from_prompt
 from app.services.api.planner_ai import PlannerAiRequest, build_plan_with_ai
+from app.services.api.planner_execute import PlannerExecuteRequest, PlannerExecuteResponse, execute_prompt_plan
 from app.services.worker.main import worker_main
 
 app = FastAPI(
@@ -225,6 +226,23 @@ async def planner_plan_ai(request: PlannerAiRequest):
         )
 
     return plan
+
+
+@app.post("/planner/execute", response_model=PlannerExecuteResponse)
+async def planner_execute(request: PlannerExecuteRequest):
+    execution = await execute_prompt_plan(request)
+
+    with suppress(Exception):
+        await append_event(
+            "planner.execute_completed",
+            {
+                "message": "Prompt planned and executed",
+                "planner_source": execution.planner_source,
+                "result_count": len(execution.results),
+            },
+        )
+
+    return execution
 
 
 @app.post("/jobs")
