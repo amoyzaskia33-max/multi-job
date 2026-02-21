@@ -32,6 +32,7 @@ if (-not (Test-Path $LogDir)) {
 Stop-ByPidFile "api"
 Stop-ByPidFile "worker"
 Stop-ByPidFile "scheduler"
+Stop-ByPidFile "connector"
 Stop-ByPidFile "ui"
 
 Write-Host "[SPIO] Proses lokal sudah dihentikan."

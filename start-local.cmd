@@ -31,6 +31,7 @@ echo [SPIO] Opening service windows...
 start "SPIO API" cmd /k "cd /d %ROOT% && .\.venv\Scripts\python.exe -m uvicorn app.services.api.main:app --host 127.0.0.1 --port 8000"
 start "SPIO WORKER" cmd /k "cd /d %ROOT% && .\.venv\Scripts\python.exe -m app.services.worker.main"
 start "SPIO SCHEDULER" cmd /k "cd /d %ROOT% && .\.venv\Scripts\python.exe -m app.services.scheduler.main"
+start "SPIO CONNECTOR" cmd /k "cd /d %ROOT% && .\.venv\Scripts\python.exe -m app.services.connector.main"
 start "SPIO UI" cmd /k "cd /d %ROOT%ui && npm run build && npm run serve"
 
 echo.

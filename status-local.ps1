@@ -65,6 +65,7 @@ $rows = @(
   Get-ServiceState "api"
   Get-ServiceState "worker"
   Get-ServiceState "scheduler"
+  Get-ServiceState "connector"
   Get-ServiceState "ui"
 )
 
@@ -81,6 +82,7 @@ $errFiles = @(
   "api.err.log",
   "worker.err.log",
   "scheduler.err.log",
+  "connector.err.log",
   "ui.err.log"
 )
 

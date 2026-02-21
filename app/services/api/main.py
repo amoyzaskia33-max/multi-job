@@ -8,8 +8,15 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from redis.exceptions import RedisError, TimeoutError as RedisTimeoutError
 
+from app.core.connector_accounts import (
+    delete_telegram_account,
+    get_telegram_account,
+    list_telegram_accounts,
+    upsert_telegram_account,
+)
 from app.core.models import JobSpec, QueueEvent, Run, RunStatus
 from app.core.observability import expose_metrics, logger
 from app.core.queue import (
@@ -118,6 +125,36 @@ def _local_agents_snapshot() -> List[Dict[str, Any]]:
         )
 
     return rows
+
+
+class TelegramConnectorAccountUpsert(BaseModel):
+    bot_token: Optional[str] = None
+    allowed_chat_ids: List[str] = Field(default_factory=list)
+    enabled: bool = True
+    use_ai: bool = True
+    force_rule_based: bool = False
+    run_immediately: bool = True
+    wait_seconds: int = Field(default=2, ge=0, le=30)
+    timezone: str = "Asia/Jakarta"
+    default_channel: str = "telegram"
+    default_account_id: str = "default"
+
+
+class TelegramConnectorAccountView(BaseModel):
+    account_id: str
+    enabled: bool = True
+    has_bot_token: bool = False
+    bot_token_masked: Optional[str] = None
+    allowed_chat_ids: List[str] = Field(default_factory=list)
+    use_ai: bool = True
+    force_rule_based: bool = False
+    run_immediately: bool = True
+    wait_seconds: int = 2
+    timezone: str = "Asia/Jakarta"
+    default_channel: str = "telegram"
+    default_account_id: str = "default"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 async def _start_local_runtime():
@@ -365,6 +402,52 @@ async def queue_metrics():
         return await get_queue_metrics()
     except RedisError:
         return _fallback_payload("/queue", {"depth": 0, "delayed": 0})
+
+
+@app.get("/connector/telegram/accounts", response_model=List[TelegramConnectorAccountView])
+async def list_telegram_connector_accounts():
+    return await list_telegram_accounts(include_secret=False)
+
+
+@app.get("/connector/telegram/accounts/{account_id}", response_model=TelegramConnectorAccountView)
+async def get_telegram_connector_account(account_id: str):
+    row = await get_telegram_account(account_id, include_secret=False)
+    if not row:
+        raise HTTPException(status_code=404, detail="Telegram account not found")
+    return row
+
+
+@app.put("/connector/telegram/accounts/{account_id}", response_model=TelegramConnectorAccountView)
+async def upsert_telegram_connector_account(account_id: str, request: TelegramConnectorAccountUpsert):
+    try:
+        row = await upsert_telegram_account(account_id, request.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await append_event(
+        "connector.telegram.account_upserted",
+        {
+            "account_id": account_id,
+            "enabled": row.get("enabled", True),
+            "has_bot_token": row.get("has_bot_token", False),
+        },
+    )
+
+    return row
+
+
+@app.delete("/connector/telegram/accounts/{account_id}")
+async def delete_telegram_connector_account(account_id: str):
+    removed = await delete_telegram_account(account_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Telegram account not found")
+
+    await append_event(
+        "connector.telegram.account_deleted",
+        {"account_id": account_id},
+    )
+
+    return {"account_id": account_id, "status": "deleted"}
 
 
 @app.get("/connectors")

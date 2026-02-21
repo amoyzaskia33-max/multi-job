@@ -45,6 +45,36 @@ export interface Connector {
   last_error?: string;
 }
 
+export interface TelegramConnectorAccount {
+  account_id: string;
+  enabled: boolean;
+  has_bot_token: boolean;
+  bot_token_masked?: string;
+  allowed_chat_ids: string[];
+  use_ai: boolean;
+  force_rule_based: boolean;
+  run_immediately: boolean;
+  wait_seconds: number;
+  timezone: string;
+  default_channel: string;
+  default_account_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TelegramConnectorAccountUpsertRequest {
+  bot_token?: string;
+  allowed_chat_ids: string[];
+  enabled: boolean;
+  use_ai: boolean;
+  force_rule_based: boolean;
+  run_immediately: boolean;
+  wait_seconds: number;
+  timezone: string;
+  default_channel: string;
+  default_account_id: string;
+}
+
 export interface Agent {
   id: string;
   type?: string;
@@ -105,7 +135,7 @@ const getJson = async <T>(path: string): Promise<T> => {
   return (await response.json()) as T;
 };
 
-const send = async <T>(path: string, method: "POST" | "PUT", body?: unknown): Promise<T> => {
+const send = async <T>(path: string, method: "POST" | "PUT" | "DELETE", body?: unknown): Promise<T> => {
   const response = await fetch(`${API_BASE}${path}`, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
@@ -186,6 +216,34 @@ export const getConnectors = async (): Promise<Connector[]> => {
     return await getJson<Connector[]>("/connectors");
   } catch (error) {
     return handleApiError(error, "Gagal memuat data koneksi", []);
+  }
+};
+
+export const getTelegramConnectorAccounts = async (): Promise<TelegramConnectorAccount[]> => {
+  try {
+    return await getJson<TelegramConnectorAccount[]>("/connector/telegram/accounts");
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat akun Telegram", []);
+  }
+};
+
+export const upsertTelegramConnectorAccount = async (
+  accountId: string,
+  payload: TelegramConnectorAccountUpsertRequest,
+): Promise<TelegramConnectorAccount | undefined> => {
+  try {
+    return await send<TelegramConnectorAccount>(`/connector/telegram/accounts/${accountId}`, "PUT", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menyimpan akun Telegram", undefined);
+  }
+};
+
+export const deleteTelegramConnectorAccount = async (accountId: string): Promise<boolean> => {
+  try {
+    await send<{ account_id: string; status: string }>(`/connector/telegram/accounts/${accountId}`, "DELETE");
+    return true;
+  } catch (error) {
+    return handleApiError(error, "Gagal menghapus akun Telegram", false);
   }
 };
 

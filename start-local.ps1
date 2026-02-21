@@ -105,6 +105,7 @@ Write-Info "Membersihkan proses lama..."
 Stop-ByPidFile "api"
 Stop-ByPidFile "worker"
 Stop-ByPidFile "scheduler"
+Stop-ByPidFile "connector"
 Stop-ByPidFile "ui"
 
 if (-not (Test-Path (Join-Path $UiRoot "node_modules"))) {
@@ -136,6 +137,9 @@ $worker = Start-ServiceProcess -Name "worker" -FilePath $VenvPython -ArgumentLis
 Write-Info "Menjalankan scheduler..."
 $scheduler = Start-ServiceProcess -Name "scheduler" -FilePath $VenvPython -ArgumentList @("-m", "app.services.scheduler.main") -WorkingDirectory $Root
 
+Write-Info "Menjalankan connector..."
+$connector = Start-ServiceProcess -Name "connector" -FilePath $VenvPython -ArgumentList @("-m", "app.services.connector.main") -WorkingDirectory $Root
+
 Write-Info "Menjalankan UI..."
 $ui = Start-ServiceProcess -Name "ui" -FilePath "cmd.exe" -ArgumentList @("/c", "npm run serve") -WorkingDirectory $UiRoot
 
@@ -161,5 +165,6 @@ Write-Host ""
 Write-Host "[SPIO] PID API      : $($api.Id)"
 Write-Host "[SPIO] PID Worker   : $($worker.Id)"
 Write-Host "[SPIO] PID Scheduler: $($scheduler.Id)"
+Write-Host "[SPIO] PID Connector: $($connector.Id)"
 Write-Host "[SPIO] PID UI       : $($ui.Id)"
 Write-Host "[SPIO] Log folder   : $LogDir"

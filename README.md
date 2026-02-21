@@ -80,7 +80,7 @@ Quick Windows launcher:
 ```bat
 start-local.cmd
 ```
-This opens 4 windows (API, worker, scheduler, UI).  
+This opens 5 windows (API, worker, scheduler, connector, UI).  
 To stop:
 ```bat
 stop-local.cmd
@@ -117,6 +117,10 @@ Logs are stored in:
 - `PUT /jobs/{job_id}/disable` - Disable job
 - `GET /jobs/{job_id}/runs` - Get recent runs for a job
 - `GET /jobs` - List all jobs
+- `GET /connector/telegram/accounts` - List Telegram connector accounts
+- `GET /connector/telegram/accounts/{account_id}` - Get Telegram connector account detail
+- `PUT /connector/telegram/accounts/{account_id}` - Create/update Telegram connector account
+- `DELETE /connector/telegram/accounts/{account_id}` - Delete Telegram connector account
 
 Planner request example:
 ```json
@@ -165,6 +169,29 @@ powershell -ExecutionPolicy Bypass -File .\planner-execute.ps1 `
   -ForceRuleBased `
   -WaitSeconds 2
 ```
+
+Telegram connector account example:
+```json
+{
+  "bot_token": "123456789:AA...",
+  "allowed_chat_ids": ["123456789", "-1001122334455"],
+  "enabled": true,
+  "use_ai": true,
+  "force_rule_based": false,
+  "run_immediately": true,
+  "wait_seconds": 2,
+  "timezone": "Asia/Jakarta",
+  "default_channel": "telegram",
+  "default_account_id": "bot_a01"
+}
+```
+
+Telegram command bridge flow:
+1. Save Telegram account from Dashboard `Setelan`.
+2. Keep connector service running (`python -m app.services.connector.main`).
+3. Send command to bot chat, for example:
+   - `/ai pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00`
+4. Connector will execute planner 1-call and reply execution summary to the same chat.
 
 ## Job Specification Example
 
