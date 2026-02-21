@@ -131,6 +131,11 @@ Logs are stored in:
 - `DELETE /integrations/accounts/{provider}/{account_id}` - Delete integration account
 - `GET /integrations/catalog` - List connector templates (providers + MCP)
 - `POST /integrations/catalog/bootstrap` - Add connector templates to dashboard storage
+- `GET /automation/agent-workflows` - List recurring `agent.workflow` jobs
+- `POST /automation/agent-workflow` - Create/update recurring `agent.workflow` job
+- `GET /approvals` - List approval queue (`pending/approved/rejected`)
+- `POST /approvals/{approval_id}/approve` - Approve approval request
+- `POST /approvals/{approval_id}/reject` - Reject approval request
 
 Planner request example:
 ```json
@@ -255,6 +260,16 @@ Agent workflow notes:
 - Use `Template Konektor Cepat` in Dashboard `Setelan` to auto-create provider/MCP templates
   (OpenAI, GitHub, Notion, Linear, Shopee, Tokopedia, Lazada, etc.).
 
+Safe 100+ jobs load simulation:
+```bash
+python .\simulate_safe_load.py --jobs 100 --interval-sec 30 --work-ms 8000 --jitter-sec 25 --duration-sec 90 --cleanup
+```
+What this does:
+1. Creates 100 recurring synthetic jobs (`simulation.heavy`) without external API dependency.
+2. Monitors runs, queue depth, and overlap guard every few seconds.
+3. Prints recommended worker count and final safety summary.
+4. Disables simulation jobs at the end (`--cleanup`).
+
 ## Job Specification Example
 
 ```json
@@ -274,6 +289,7 @@ Agent workflow notes:
 - `report.daily` - Generate daily summary report
 - `backup.export` - Export job registry and run history
 - `agent.workflow` - Plan and execute provider/MCP HTTP steps from a natural-language prompt
+- `simulation.heavy` - Synthetic heavy-workload job for safe stress/load simulation
 
 ## Tool System
 

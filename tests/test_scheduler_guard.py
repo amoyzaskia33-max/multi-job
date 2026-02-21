@@ -114,3 +114,50 @@ def test_scheduler_cron_match_handles_common_daily_expression():
 
     assert sched._cron_match("0 7 * * *", jam_tujuh) is True
     assert sched._cron_match("0 7 * * *", jam_tujuh_lewat) is False
+
+
+def test_scheduler_initial_jitter_offsets_first_interval_dispatch(monkeypatch):
+    sched = scheduler_module.Scheduler()
+    spec = JobSpec(
+        job_id="job_jitter",
+        type="agent.workflow",
+        schedule=Schedule(interval_sec=10),
+        timeout_ms=30000,
+        retry_policy=RetryPolicy(max_retry=1, backoff_sec=[1]),
+        inputs={"prompt": "x", "dispatch_jitter_sec": 9},
+    )
+    sched.jobs = {"job_jitter": spec}
+
+    enqueued = []
+
+    async def fake_has_active_runs(job_id: str):
+        return False
+
+    async def fake_enqueue_job(event):
+        enqueued.append(event)
+        return "1-0"
+
+    async def fake_get_run(run_id: str):
+        return None
+
+    monkeypatch.setattr(scheduler_module, "has_active_runs", fake_has_active_runs)
+    monkeypatch.setattr(scheduler_module, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(scheduler_module, "append_event", _noop)
+    monkeypatch.setattr(scheduler_module, "save_run", _noop)
+    monkeypatch.setattr(scheduler_module, "add_run_to_job_history", _noop)
+    monkeypatch.setattr(scheduler_module, "get_run", fake_get_run)
+    monkeypatch.setattr(
+        scheduler_module.Scheduler,
+        "_hitung_offset_jitter_awal",
+        staticmethod(lambda job_id, interval_detik, spesifikasi: 5),
+    )
+
+    fake_now = {"value": 1000.0}
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: fake_now["value"])
+
+    asyncio.run(sched.process_interval_jobs())
+    assert len(enqueued) == 0
+
+    fake_now["value"] = 1006.0
+    asyncio.run(sched.process_interval_jobs())
+    assert len(enqueued) == 1

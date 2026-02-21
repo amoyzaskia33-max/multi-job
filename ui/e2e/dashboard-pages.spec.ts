@@ -26,3 +26,11 @@ test("halaman office menampilkan quick status board", async ({ page }) => {
   await expect(page.getByText("Quick Status Board")).toBeVisible();
   await expect(page.getByText("Astra Prime")).toBeVisible();
 });
+
+test("halaman otomasi menampilkan panel job dan approval", async ({ page }) => {
+  await page.goto("/automation");
+
+  await expect(page.getByRole("heading", { name: "Otomasi & Approval" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Buat / Update Job Otomatis" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Approval Queue" })).toBeVisible();
+});

@@ -29,6 +29,7 @@ policy_manager.set_allowlist("monitor.channel", ["metrics", "messaging"])
 policy_manager.set_allowlist("report.daily", ["metrics", "messaging"])
 policy_manager.set_allowlist("backup.export", ["files", "kv"])
 policy_manager.set_allowlist("agent.workflow", ["http", "kv", "messaging", "files", "metrics"])
+policy_manager.set_allowlist("simulation.heavy", ["metrics"])
 
 
 async def update_heartbeat(worker_id: str):

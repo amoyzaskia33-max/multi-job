@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import time
 import uuid
 from datetime import datetime, timezone
@@ -42,6 +43,14 @@ class Scheduler:
                 job_terbaru[job_id] = JobSpec(**spesifikasi)
         self.jobs = job_terbaru
 
+        # Cleanup stale state for removed/disabled jobs.
+        valid_job_ids = set(job_terbaru.keys())
+        self.last_dispatch = {job_id: value for job_id, value in self.last_dispatch.items() if job_id in valid_job_ids}
+        self.last_cron_slot = {job_id: value for job_id, value in self.last_cron_slot.items() if job_id in valid_job_ids}
+        self.last_overlap_notice = {
+            job_id: value for job_id, value in self.last_overlap_notice.items() if job_id in valid_job_ids
+        }
+
     async def heartbeat(self):
         if is_mode_fallback_redis():
             return
@@ -79,6 +88,21 @@ class Scheduler:
     def _job_izinkan_overlap(spesifikasi: JobSpec) -> bool:
         inputs = spesifikasi.inputs if isinstance(spesifikasi.inputs, dict) else {}
         return bool(inputs.get("allow_overlap", False))
+
+    @staticmethod
+    def _hitung_offset_jitter_awal(job_id: str, interval_detik: int, spesifikasi: JobSpec) -> int:
+        if interval_detik <= 1:
+            return 0
+        inputs = spesifikasi.inputs if isinstance(spesifikasi.inputs, dict) else {}
+        try:
+            jitter_detik = int(inputs.get("dispatch_jitter_sec", 0))
+        except Exception:
+            jitter_detik = 0
+        jitter_detik = max(0, min(jitter_detik, interval_detik - 1))
+        if jitter_detik <= 0:
+            return 0
+        digest = hashlib.sha1(job_id.encode("utf-8")).hexdigest()
+        return int(digest[:8], 16) % (jitter_detik + 1)
 
     async def _boleh_dispatch_job(self, job_id: str, spesifikasi: JobSpec) -> bool:
         if self._job_izinkan_overlap(spesifikasi):
@@ -228,6 +252,11 @@ class Scheduler:
                 continue
 
             interval_detik = max(1, int(spesifikasi.schedule.interval_sec))
+            if job_id not in self.last_dispatch:
+                offset_awal = self._hitung_offset_jitter_awal(job_id, interval_detik, spesifikasi)
+                if offset_awal > 0:
+                    self.last_dispatch[job_id] = waktu_sekarang_ts - interval_detik + offset_awal
+
             waktu_dispatch_terakhir = self.last_dispatch.get(job_id, 0)
             if waktu_sekarang_ts - waktu_dispatch_terakhir < interval_detik:
                 continue

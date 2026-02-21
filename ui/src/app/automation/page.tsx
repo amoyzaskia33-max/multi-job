@@ -82,6 +82,7 @@ export default function AutomationPage() {
   const [aktif, setAktif] = useState(true);
   const [wajibApproval, setWajibApproval] = useState(true);
   const [izinkanOverlap, setIzinkanOverlap] = useState(false);
+  const [jitterDetik, setJitterDetik] = useState(0);
   const [zonaWaktu, setZonaWaktu] = useState("Asia/Jakarta");
   const [defaultChannel, setDefaultChannel] = useState("telegram");
   const [defaultAccountId, setDefaultAccountId] = useState("default");
@@ -148,6 +149,7 @@ export default function AutomationPage() {
       default_account_id: defaultAccountId.trim() || "default",
       require_approval_for_missing: wajibApproval,
       allow_overlap: izinkanOverlap,
+      dispatch_jitter_sec: Math.max(0, Number(jitterDetik) || 0),
       timeout_ms: 90000,
       max_retry: 1,
       backoff_sec: [2, 5],
@@ -253,7 +255,7 @@ export default function AutomationPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
               <div>
                 <Label htmlFor="default-channel">Default Channel</Label>
                 <Input
@@ -281,6 +283,17 @@ export default function AutomationPage() {
                   <Label>Izinkan Overlap Run</Label>
                   <Switch checked={izinkanOverlap} onCheckedChange={setIzinkanOverlap} />
                 </div>
+              </div>
+              <div>
+                <Label htmlFor="dispatch-jitter-sec">Jitter Dispatch (detik)</Label>
+                <Input
+                  id="dispatch-jitter-sec"
+                  type="number"
+                  min={0}
+                  max={3600}
+                  value={jitterDetik}
+                  onChange={(event) => setJitterDetik(Number(event.target.value))}
+                />
               </div>
             </div>
 
