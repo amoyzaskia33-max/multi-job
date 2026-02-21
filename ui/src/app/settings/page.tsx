@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -122,6 +122,64 @@ export default function SettingsPage() {
     queryFn: getIntegrationsCatalog,
     refetchInterval: false,
   });
+
+  const catalogProviders = integrationsCatalog?.providers || [];
+  const catalogMcpTemplates = integrationsCatalog?.mcp_servers || [];
+
+  const providerTemplateMap = useMemo(
+    () => new Map(catalogProviders.map((row) => [row.provider, row])),
+    [catalogProviders],
+  );
+  const mcpTemplateByServerId = useMemo(
+    () => new Map(catalogMcpTemplates.map((row) => [row.server_id, row])),
+    [catalogMcpTemplates],
+  );
+
+  const missingProviderTemplateIds = useMemo(
+    () =>
+      catalogProviders
+        .filter((row) => !integrationAccounts.some((account) => account.provider === row.provider))
+        .map((row) => row.provider),
+    [catalogProviders, integrationAccounts],
+  );
+
+  const missingMcpTemplateIds = useMemo(
+    () =>
+      catalogMcpTemplates
+        .filter((row) => !mcpServers.some((server) => server.server_id === row.server_id))
+        .map((row) => row.template_id),
+    [catalogMcpTemplates, mcpServers],
+  );
+
+  const setupStats = useMemo(() => {
+    const providerAccountsInCatalog = integrationAccounts.filter((row) => providerTemplateMap.has(row.provider));
+    const providerReady = providerAccountsInCatalog.filter((row) => row.has_secret).length;
+    const providerEnabled = providerAccountsInCatalog.filter((row) => row.enabled).length;
+
+    const mcpInCatalog = mcpServers.filter((row) => mcpTemplateByServerId.has(row.server_id));
+    const mcpEnabled = mcpInCatalog.filter((row) => row.enabled).length;
+
+    const telegramReady = telegramAccounts.some((row) => row.enabled && row.has_bot_token);
+
+    return {
+      providerTotal: catalogProviders.length,
+      providerConfigured: providerAccountsInCatalog.length,
+      providerEnabled,
+      providerReady,
+      mcpTotal: catalogMcpTemplates.length,
+      mcpConfigured: mcpInCatalog.length,
+      mcpEnabled,
+      telegramReady,
+    };
+  }, [
+    catalogMcpTemplates.length,
+    catalogProviders.length,
+    integrationAccounts,
+    mcpServers,
+    mcpTemplateByServerId,
+    providerTemplateMap,
+    telegramAccounts,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -332,6 +390,26 @@ export default function SettingsPage() {
     await Promise.all([refetchIntegrationAccounts(), refetchMcpServers()]);
   };
 
+  const handleBootstrapMissingTemplates = async () => {
+    if (missingProviderTemplateIds.length === 0 && missingMcpTemplateIds.length === 0) {
+      toast.message("Semua template sudah masuk di dashboard.");
+      return;
+    }
+
+    const response = await bootstrapIntegrationsCatalog({
+      provider_ids: missingProviderTemplateIds,
+      mcp_template_ids: missingMcpTemplateIds,
+      account_id: "default",
+      overwrite: false,
+    });
+    if (!response) return;
+
+    toast.success(
+      `Template yang kurang sudah ditambahkan. Provider +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
+    );
+    await Promise.all([refetchIntegrationAccounts(), refetchMcpServers()]);
+  };
+
   const handleBootstrapSingleProviderTemplate = async (provider: string) => {
     const response = await bootstrapIntegrationsCatalog({
       provider_ids: [provider],
@@ -366,6 +444,34 @@ export default function SettingsPage() {
     await refetchMcpServers();
   };
 
+  const handleApplyProviderTemplateToForm = (provider: string) => {
+    const template = providerTemplateMap.get(provider);
+    if (!template) return;
+
+    setIntegrationProvider(template.provider);
+    setIntegrationAccountId(template.default_account_id || "default");
+    setIntegrationEnabled(template.default_enabled);
+    setIntegrationSecret("");
+    setIntegrationConfigText(JSON.stringify(template.default_config || {}, null, 2));
+  };
+
+  const handleApplyMcpTemplateToForm = (templateId: string) => {
+    const template = catalogMcpTemplates.find((row) => row.template_id === templateId);
+    if (!template) return;
+
+    setMcpServerId(template.server_id);
+    setMcpEnabled(template.default_enabled);
+    setMcpTransport(template.transport);
+    setMcpDescription(template.description || "");
+    setMcpCommand(template.command || "");
+    setMcpArgsText((template.args || []).join(" "));
+    setMcpUrl(template.url || "");
+    setMcpHeadersText(JSON.stringify(template.headers || {}, null, 2));
+    setMcpEnvText(JSON.stringify(template.env || {}, null, 2));
+    setMcpTimeoutSec(template.timeout_sec || 20);
+    setMcpAuthToken("");
+  };
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-border bg-card p-6">
@@ -386,6 +492,13 @@ export default function SettingsPage() {
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={handleBootstrapAllTemplates}>Tambah Semua Template</Button>
+            <Button
+              variant="outline"
+              onClick={handleBootstrapMissingTemplates}
+              disabled={missingProviderTemplateIds.length === 0 && missingMcpTemplateIds.length === 0}
+            >
+              Tambah Yang Belum Ada
+            </Button>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -409,14 +522,23 @@ export default function SettingsPage() {
                             Auth: {row.auth_hint} | Account: {row.default_account_id}
                           </p>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={exists}
-                          onClick={() => handleBootstrapSingleProviderTemplate(row.provider)}
-                        >
-                          {exists ? "Sudah Ada" : "Tambah"}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleApplyProviderTemplateToForm(row.provider)}
+                          >
+                            Isi Form
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={exists}
+                            onClick={() => handleBootstrapSingleProviderTemplate(row.provider)}
+                          >
+                            {exists ? "Sudah Ada" : "Tambah"}
+                          </Button>
+                        </div>
                       </div>
                     );
                   })}
@@ -444,20 +566,72 @@ export default function SettingsPage() {
                             {row.transport.toUpperCase()} | Server ID: {row.server_id}
                           </p>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={exists}
-                          onClick={() => handleBootstrapSingleMcpTemplate(row.template_id, row.label)}
-                        >
-                          {exists ? "Sudah Ada" : "Tambah"}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleApplyMcpTemplateToForm(row.template_id)}
+                          >
+                            Isi Form
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={exists}
+                            onClick={() => handleBootstrapSingleMcpTemplate(row.template_id, row.label)}
+                          >
+                            {exists ? "Sudah Ada" : "Tambah"}
+                          </Button>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               )}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle>Status Kesiapan Dashboard</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <p className="text-xs text-muted-foreground">Telegram Bridge</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {setupStats.telegramReady ? "Siap" : "Belum Siap"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <p className="text-xs text-muted-foreground">Provider Tersimpan</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {setupStats.providerConfigured}/{setupStats.providerTotal}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Enabled {setupStats.providerEnabled}, token siap {setupStats.providerReady}
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <p className="text-xs text-muted-foreground">MCP Tersimpan</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {setupStats.mcpConfigured}/{setupStats.mcpTotal}
+              </p>
+              <p className="text-xs text-muted-foreground">Enabled {setupStats.mcpEnabled}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <p className="text-xs text-muted-foreground">Template Belum Masuk</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                Provider {missingProviderTemplateIds.length}, MCP {missingMcpTemplateIds.length}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted p-4 text-sm text-muted-foreground">
+            Untuk operasional penuh: 1) Telegram siap, 2) provider utama (minimal openai) sudah ada token, 3) MCP yang dipakai
+            sudah ditambahkan.
           </div>
         </CardContent>
       </Card>
@@ -875,35 +1049,40 @@ export default function SettingsPage() {
             ) : integrationAccounts.length === 0 ? (
               <div className="text-sm text-muted-foreground">Belum ada akun integrasi tersimpan.</div>
             ) : (
-              integrationAccounts.map((row) => (
-                <div
-                  key={`${row.provider}-${row.account_id}`}
-                  className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">
-                      {row.provider} / {row.account_id}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Status: {row.enabled ? "aktif" : "nonaktif"} | Secret:{" "}
-                      {row.has_secret ? row.secret_masked || "tersimpan" : "tidak ada"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Config keys: {Object.keys(row.config || {}).join(", ") || "-"}</p>
+              integrationAccounts.map((row) => {
+                const template = providerTemplateMap.get(row.provider);
+                return (
+                  <div
+                    key={`${row.provider}-${row.account_id}`}
+                    className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        {template?.label || row.provider} / {row.account_id}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Status: {row.enabled ? "aktif" : "nonaktif"} | Secret:{" "}
+                        {row.has_secret ? row.secret_masked || "tersimpan" : "belum diisi"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Auth hint: {template?.auth_hint || "-"} | Config keys: {Object.keys(row.config || {}).join(", ") || "-"}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleUseIntegrationAccount(row.provider, row.account_id)}>
+                        Pakai
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteIntegrationAccount(row.provider, row.account_id)}
+                      >
+                        Hapus
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleUseIntegrationAccount(row.provider, row.account_id)}>
-                      Pakai
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteIntegrationAccount(row.provider, row.account_id)}
-                    >
-                      Hapus
-                    </Button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </CardContent>
