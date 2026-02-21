@@ -121,6 +121,14 @@ Logs are stored in:
 - `GET /connector/telegram/accounts/{account_id}` - Get Telegram connector account detail
 - `PUT /connector/telegram/accounts/{account_id}` - Create/update Telegram connector account
 - `DELETE /connector/telegram/accounts/{account_id}` - Delete Telegram connector account
+- `GET /integrations/mcp/servers` - List MCP server configs
+- `GET /integrations/mcp/servers/{server_id}` - Get MCP server config detail
+- `PUT /integrations/mcp/servers/{server_id}` - Create/update MCP server config
+- `DELETE /integrations/mcp/servers/{server_id}` - Delete MCP server config
+- `GET /integrations/accounts` - List generic integration accounts (optional `?provider=...`)
+- `GET /integrations/accounts/{provider}/{account_id}` - Get integration account detail
+- `PUT /integrations/accounts/{provider}/{account_id}` - Create/update integration account
+- `DELETE /integrations/accounts/{provider}/{account_id}` - Delete integration account
 
 Planner request example:
 ```json
@@ -186,12 +194,43 @@ Telegram connector account example:
 }
 ```
 
+MCP server config example:
+```json
+{
+  "enabled": true,
+  "transport": "stdio",
+  "description": "MCP GitHub server",
+  "command": "npx @modelcontextprotocol/server-github",
+  "args": [],
+  "url": "",
+  "headers": {},
+  "env": {
+    "GITHUB_TOKEN": "ghp_xxx"
+  },
+  "auth_token": "",
+  "timeout_sec": 20
+}
+```
+
+Generic integration account example:
+```json
+{
+  "enabled": true,
+  "secret": "sk-xxx",
+  "config": {
+    "base_url": "https://api.openai.com/v1",
+    "workspace": "ops-main"
+  }
+}
+```
+
 Telegram command bridge flow:
 1. Save Telegram account from Dashboard `Setelan`.
-2. Keep connector service running (`python -m app.services.connector.main`).
-3. Send command to bot chat, for example:
+2. (Optional) Save MCP server and integration accounts from the same `Setelan` page.
+3. Keep connector service running (`python -m app.services.connector.main`).
+4. Send command to bot chat, for example:
    - `/ai pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00`
-4. Connector will execute planner 1-call and reply execution summary to the same chat.
+5. Connector will execute planner 1-call and reply execution summary to the same chat.
 
 ## Job Specification Example
 
