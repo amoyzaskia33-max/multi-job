@@ -6,134 +6,134 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgents } from "@/lib/api";
 
-type TeamLevel = "CEO" | "Manager" | "Supervisor" | "Worker";
+type TingkatTim = "CEO" | "Manager" | "Supervisor" | "Worker";
 
-type TeamRole = {
+type PeranTim = {
   id: string;
-  level: TeamLevel;
-  name: string;
-  summary: string;
-  rules: string[];
-  responsibilities: string[];
-  spinsUp: string[];
+  tingkat: TingkatTim;
+  nama: string;
+  ringkasan: string;
+  aturan: string[];
+  tanggungJawab: string[];
+  subAgenRutin: string[];
 };
 
-const levelOrder: TeamLevel[] = ["CEO", "Manager", "Supervisor", "Worker"];
+const urutanTingkat: TingkatTim[] = ["CEO", "Manager", "Supervisor", "Worker"];
 
-const levelClassName: Record<TeamLevel, string> = {
+const kelasChipTingkat: Record<TingkatTim, string> = {
   CEO: "status-baik",
   Manager: "status-netral",
   Supervisor: "status-waspada",
   Worker: "status-buruk",
 };
 
-const teamRoles: TeamRole[] = [
+const daftarPeranTim: PeranTim[] = [
   {
     id: "ceo-orchestrator",
-    level: "CEO",
-    name: "CEO Agent (You + Orchestrator)",
-    summary: "Menentukan arah, target, prioritas, dan guardrail sistem.",
-    rules: [
+    tingkat: "CEO",
+    nama: "CEO Agent (You + Orchestrator)",
+    ringkasan: "Menentukan arah, target, prioritas, dan guardrail sistem.",
+    aturan: [
       "Fokus di outcome bisnis, bukan cuma output teknis.",
       "Aksi berisiko tinggi wajib approval dulu.",
       "Semua workflow harus bisa diaudit lewat log.",
     ],
-    responsibilities: ["Tetapkan objective mingguan", "Pilih prioritas workflow", "Approve auto-publish/auto-action"],
-    spinsUp: ["Ops Manager", "Growth Manager", "Risk Manager"],
+    tanggungJawab: ["Tetapkan objective mingguan", "Pilih prioritas workflow", "Approve auto-publish/auto-action"],
+    subAgenRutin: ["Ops Manager", "Growth Manager", "Risk Manager"],
   },
   {
     id: "ops-manager",
-    level: "Manager",
-    name: "Ops Manager",
-    summary: "Mengatur job operasional harian dan stabilitas delivery.",
-    rules: ["Wajib ada fallback jika API utama down.", "Timeout dan retry harus jelas per job."],
-    responsibilities: ["Atur jadwal job", "Pantau backlog queue", "Validasi SLA run success"],
-    spinsUp: ["Scheduling Supervisor", "Recovery Supervisor"],
+    tingkat: "Manager",
+    nama: "Ops Manager",
+    ringkasan: "Mengatur job operasional harian dan stabilitas delivery.",
+    aturan: ["Wajib ada fallback jika API utama down.", "Timeout dan retry harus jelas per job."],
+    tanggungJawab: ["Atur jadwal job", "Pantau backlog queue", "Validasi SLA run success"],
+    subAgenRutin: ["Scheduling Supervisor", "Recovery Supervisor"],
   },
   {
     id: "growth-manager",
-    level: "Manager",
-    name: "Growth Manager",
-    summary: "Mengelola riset tren, ide konten, dan eksperimen channel.",
-    rules: ["Pakai data trend terbaru sebelum generate konten.", "Eksperimen harus punya metrik evaluasi."],
-    responsibilities: ["Pilih niche/topik", "Tentukan format konten", "Review performa eksperimen"],
-    spinsUp: ["Trend Supervisor", "Content Supervisor"],
+    tingkat: "Manager",
+    nama: "Growth Manager",
+    ringkasan: "Mengelola riset tren, ide konten, dan eksperimen channel.",
+    aturan: ["Pakai data trend terbaru sebelum generate konten.", "Eksperimen harus punya metrik evaluasi."],
+    tanggungJawab: ["Pilih niche/topik", "Tentukan format konten", "Review performa eksperimen"],
+    subAgenRutin: ["Trend Supervisor", "Content Supervisor"],
   },
   {
     id: "integration-manager",
-    level: "Manager",
-    name: "Integration Manager",
-    summary: "Menjaga semua konektor, token, dan skema data tetap sehat.",
-    rules: ["Token tidak ditulis di plain text output.", "Config connector harus versioned."],
-    responsibilities: ["Kelola provider account", "Kelola MCP server", "Kontrol perubahan schema API"],
-    spinsUp: ["Connector Supervisor", "Schema Supervisor"],
+    tingkat: "Manager",
+    nama: "Integration Manager",
+    ringkasan: "Menjaga semua konektor, token, dan skema data tetap sehat.",
+    aturan: ["Token tidak ditulis di plain text output.", "Config connector harus versioned."],
+    tanggungJawab: ["Kelola provider account", "Kelola MCP server", "Kontrol perubahan schema API"],
+    subAgenRutin: ["Connector Supervisor", "Schema Supervisor"],
   },
   {
     id: "trend-supervisor",
-    level: "Supervisor",
-    name: "Trend Supervisor",
-    summary: "Mengarahkan worker riset tren lintas platform.",
-    rules: ["Sumber data harus legal dan dapat ditelusuri.", "Noise dan duplikasi wajib dibersihkan."],
-    responsibilities: ["Pecah task riset", "Validasi ranking trend", "Kirim shortlist ke manager"],
-    spinsUp: ["Trend Scout Worker", "Data Cleaner Worker"],
+    tingkat: "Supervisor",
+    nama: "Trend Supervisor",
+    ringkasan: "Mengarahkan worker riset tren lintas platform.",
+    aturan: ["Sumber data harus legal dan dapat ditelusuri.", "Noise dan duplikasi wajib dibersihkan."],
+    tanggungJawab: ["Pecah task riset", "Validasi ranking trend", "Kirim shortlist ke manager"],
+    subAgenRutin: ["Trend Scout Worker", "Data Cleaner Worker"],
   },
   {
     id: "content-supervisor",
-    level: "Supervisor",
-    name: "Content Supervisor",
-    summary: "Mengarahkan pembuatan script, visual, caption, dan variasi konten.",
-    rules: ["Brand voice harus konsisten.", "Konten sensitif wajib ditandai manual review."],
-    responsibilities: ["Assign script task", "Review draft", "Approve versi final sebelum publish"],
-    spinsUp: ["Script Writer Worker", "Video Builder Worker", "Caption Worker"],
+    tingkat: "Supervisor",
+    nama: "Content Supervisor",
+    ringkasan: "Mengarahkan pembuatan script, visual, caption, dan variasi konten.",
+    aturan: ["Brand voice harus konsisten.", "Konten sensitif wajib ditandai manual review."],
+    tanggungJawab: ["Assign script task", "Review draft", "Approve versi final sebelum publish"],
+    subAgenRutin: ["Script Writer Worker", "Video Builder Worker", "Caption Worker"],
   },
   {
     id: "connector-supervisor",
-    level: "Supervisor",
-    name: "Connector Supervisor",
-    summary: "Menjaga alur request ke provider/MCP tetap stabil.",
-    rules: ["Semua request penting dicatat trace_id.", "Error rate tinggi harus trigger alert."],
-    responsibilities: ["Routing endpoint", "Kontrol rate limit", "Quality check response"],
-    spinsUp: ["API Caller Worker", "Retry Worker", "Healthcheck Worker"],
+    tingkat: "Supervisor",
+    nama: "Connector Supervisor",
+    ringkasan: "Menjaga alur request ke provider/MCP tetap stabil.",
+    aturan: ["Semua request penting dicatat trace_id.", "Error rate tinggi harus trigger alert."],
+    tanggungJawab: ["Routing endpoint", "Kontrol rate limit", "Quality check response"],
+    subAgenRutin: ["API Caller Worker", "Retry Worker", "Healthcheck Worker"],
   },
   {
     id: "trend-scout-worker",
-    level: "Worker",
-    name: "Trend Scout Worker",
-    summary: "Ambil data trend mentah dari API/provider yang sudah diset.",
-    rules: ["Ambil sesuai filter yang diminta supervisor."],
-    responsibilities: ["Fetch trend data", "Kirim data mentah ke cleaner"],
-    spinsUp: [],
+    tingkat: "Worker",
+    nama: "Trend Scout Worker",
+    ringkasan: "Ambil data trend mentah dari API/provider yang sudah diset.",
+    aturan: ["Ambil sesuai filter yang diminta supervisor."],
+    tanggungJawab: ["Fetch trend data", "Kirim data mentah ke cleaner"],
+    subAgenRutin: [],
   },
   {
     id: "video-builder-worker",
-    level: "Worker",
-    name: "Video Builder Worker",
-    summary: "Merakit video draft dari script + aset.",
-    rules: ["Render harus sesuai format target platform."],
-    responsibilities: ["Generate draft", "Simpan artifact output"],
-    spinsUp: [],
+    tingkat: "Worker",
+    nama: "Video Builder Worker",
+    ringkasan: "Merakit video draft dari script + aset.",
+    aturan: ["Render harus sesuai format target platform."],
+    tanggungJawab: ["Generate draft", "Simpan artifact output"],
+    subAgenRutin: [],
   },
   {
     id: "publisher-worker",
-    level: "Worker",
-    name: "Publisher Worker",
-    summary: "Upload/publish konten sesuai kebijakan approval.",
-    rules: ["Auto-publish hanya untuk channel yang diizinkan.", "Semua publish action masuk audit log."],
-    responsibilities: ["Upload draft/final", "Simpan URL hasil publish"],
-    spinsUp: [],
+    tingkat: "Worker",
+    nama: "Publisher Worker",
+    ringkasan: "Upload/publish konten sesuai kebijakan approval.",
+    aturan: ["Auto-publish hanya untuk channel yang diizinkan.", "Semua publish action masuk audit log."],
+    tanggungJawab: ["Upload draft/final", "Simpan URL hasil publish"],
+    subAgenRutin: [],
   },
   {
     id: "recovery-worker",
-    level: "Worker",
-    name: "Recovery Worker",
-    summary: "Menangani retry, fallback, dan recovery saat run gagal.",
-    rules: ["Jangan retry tanpa batas.", "Kalau gagal berulang, eskalasi ke supervisor."],
-    responsibilities: ["Retry sesuai policy", "Switch ke fallback endpoint", "Laporkan failure pattern"],
-    spinsUp: [],
+    tingkat: "Worker",
+    nama: "Recovery Worker",
+    ringkasan: "Menangani retry, fallback, dan recovery saat run gagal.",
+    aturan: ["Jangan retry tanpa batas.", "Kalau gagal berulang, eskalasi ke supervisor."],
+    tanggungJawab: ["Retry sesuai policy", "Switch ke fallback endpoint", "Laporkan failure pattern"],
+    subAgenRutin: [],
   },
 ];
 
-const getTypeLabel = (type?: string) => {
+const labelTipeRuntime = (type?: string) => {
   if (type === "scheduler") return "Scheduler";
   if (type === "worker") return "Worker";
   if (type === "connector") return "Connector";
@@ -141,23 +141,23 @@ const getTypeLabel = (type?: string) => {
 };
 
 export default function TeamPage() {
-  const { data: runtimeAgents = [], isLoading } = useQuery({
+  const { data: agenRuntime = [], isLoading: sedangMemuat } = useQuery({
     queryKey: ["agents"],
     queryFn: getAgents,
     refetchInterval: 5000,
   });
 
-  const groupedByLevel = useMemo(() => {
-    const grouped: Record<TeamLevel, TeamRole[]> = {
+  const peranPerTingkat = useMemo(() => {
+    const grup: Record<TingkatTim, PeranTim[]> = {
       CEO: [],
       Manager: [],
       Supervisor: [],
       Worker: [],
     };
-    for (const role of teamRoles) {
-      grouped[role.level].push(role);
+    for (const peran of daftarPeranTim) {
+      grup[peran.tingkat].push(peran);
     }
-    return grouped;
+    return grup;
   }, []);
 
   return (
@@ -174,16 +174,16 @@ export default function TeamPage() {
           <CardTitle>Live Runtime Agents</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {sedangMemuat ? (
             <div className="text-sm text-muted-foreground">Lagi ambil status runtime agent...</div>
-          ) : runtimeAgents.length === 0 ? (
+          ) : agenRuntime.length === 0 ? (
             <div className="text-sm text-muted-foreground">Belum ada runtime agent terdeteksi.</div>
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {runtimeAgents.map((row) => (
+              {agenRuntime.map((row) => (
                 <div key={row.id} className="rounded-xl border border-border bg-muted p-4">
                   <p className="text-sm font-semibold text-foreground">{row.id}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{getTypeLabel(row.type)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{labelTipeRuntime(row.type)}</p>
                   <div className="mt-2">
                     <span className={row.status === "online" ? "status-baik" : "status-buruk"}>
                       {row.status === "online" ? "Online" : "Offline"}
@@ -196,24 +196,24 @@ export default function TeamPage() {
         </CardContent>
       </Card>
 
-      {levelOrder.map((level) => (
-        <Card key={level} className="bg-card">
+      {urutanTingkat.map((tingkat) => (
+        <Card key={tingkat} className="bg-card">
           <CardHeader>
             <CardTitle>
-              <span className={levelClassName[level]}>{level}</span>
+              <span className={kelasChipTingkat[tingkat]}>{tingkat}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {groupedByLevel[level].map((role) => (
-                <div key={role.id} className="rounded-xl border border-border bg-muted p-4">
-                  <h3 className="text-base font-semibold text-foreground">{role.name}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{role.summary}</p>
+              {peranPerTingkat[tingkat].map((peran) => (
+                <div key={peran.id} className="rounded-xl border border-border bg-muted p-4">
+                  <h3 className="text-base font-semibold text-foreground">{peran.nama}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{peran.ringkasan}</p>
 
                   <div className="mt-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rules</p>
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                      {role.rules.map((item) => (
+                      {peran.aturan.map((item) => (
                         <li key={item}>{item}</li>
                       ))}
                     </ul>
@@ -222,16 +222,16 @@ export default function TeamPage() {
                   <div className="mt-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Responsibility</p>
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                      {role.responsibilities.map((item) => (
+                      {peran.tanggungJawab.map((item) => (
                         <li key={item}>{item}</li>
                       ))}
                     </ul>
                   </div>
 
-                  {role.spinsUp.length > 0 ? (
+                  {peran.subAgenRutin.length > 0 ? (
                     <div className="mt-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Regular Sub-Agents</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{role.spinsUp.join(", ")}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{peran.subAgenRutin.join(", ")}</p>
                     </div>
                   ) : null}
                 </div>
