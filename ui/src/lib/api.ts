@@ -223,6 +223,45 @@ export interface PlannerExecuteRequest {
   timezone?: string;
 }
 
+export interface AgentWorkflowAutomationRequest {
+  job_id: string;
+  prompt: string;
+  interval_sec?: number;
+  cron?: string;
+  enabled?: boolean;
+  timezone?: string;
+  default_channel?: string;
+  default_account_id?: string;
+  require_approval_for_missing?: boolean;
+  timeout_ms?: number;
+  max_retry?: number;
+  backoff_sec?: number[];
+}
+
+export interface AgentWorkflowAutomationJob extends JobSpec {
+  status?: "created" | "updated";
+}
+
+export interface ApprovalRequest {
+  approval_id: string;
+  status: "pending" | "approved" | "rejected";
+  source: string;
+  run_id: string;
+  job_id: string;
+  job_type: string;
+  prompt: string;
+  summary: string;
+  request_count: number;
+  approval_requests: Record<string, unknown>[];
+  available_providers: Record<string, unknown>;
+  available_mcp_servers: unknown[];
+  created_at: string;
+  updated_at: string;
+  decided_at?: string;
+  decision_by?: string;
+  decision_note?: string;
+}
+
 const handleApiError = <T>(error: unknown, message: string, fallback: T): T => {
   console.error(`${message}:`, error);
   toast.error(message);
@@ -254,6 +293,24 @@ export const getJobs = async (): Promise<JobSpec[]> => {
     return await getJson<JobSpec[]>("/jobs");
   } catch (error) {
     return handleApiError(error, "Gagal memuat daftar tugas", []);
+  }
+};
+
+export const getAgentWorkflowAutomations = async (): Promise<AgentWorkflowAutomationJob[]> => {
+  try {
+    return await getJson<AgentWorkflowAutomationJob[]>("/automation/agent-workflows");
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat job otomatis", []);
+  }
+};
+
+export const upsertAgentWorkflowAutomation = async (
+  payload: AgentWorkflowAutomationRequest,
+): Promise<AgentWorkflowAutomationJob | undefined> => {
+  try {
+    return await send<AgentWorkflowAutomationJob>("/automation/agent-workflow", "POST", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menyimpan job otomatis", undefined);
   }
 };
 
@@ -484,6 +541,43 @@ export const getEvents = async (params?: { since?: string; limit?: number }): Pr
     return await getJson<SystemEvent[]>(path);
   } catch (error) {
     return handleApiError(error, "Gagal memuat update skill", []);
+  }
+};
+
+export const getApprovalRequests = async (params?: {
+  status?: "pending" | "approved" | "rejected";
+  limit?: number;
+}): Promise<ApprovalRequest[]> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append("status", params.status);
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    const path = `/approvals${queryParams.size ? `?${queryParams.toString()}` : ""}`;
+    return await getJson<ApprovalRequest[]>(path);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat approval queue", []);
+  }
+};
+
+export const approveApprovalRequest = async (
+  approvalId: string,
+  payload?: { decision_by?: string; decision_note?: string },
+): Promise<ApprovalRequest | undefined> => {
+  try {
+    return await send<ApprovalRequest>(`/approvals/${approvalId}/approve`, "POST", payload || {});
+  } catch (error) {
+    return handleApiError(error, "Gagal approve request", undefined);
+  }
+};
+
+export const rejectApprovalRequest = async (
+  approvalId: string,
+  payload?: { decision_by?: string; decision_note?: string },
+): Promise<ApprovalRequest | undefined> => {
+  try {
+    return await send<ApprovalRequest>(`/approvals/${approvalId}/reject`, "POST", payload || {});
+  } catch (error) {
+    return handleApiError(error, "Gagal menolak request", undefined);
   }
 };
 

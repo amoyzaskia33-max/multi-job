@@ -13,7 +13,9 @@ def test_provider_catalog_contains_expected_entries():
     assert "openai" in provider_ids
     assert "github" in provider_ids
     assert "shopee" in provider_ids
-    assert len(providers) >= 10
+    assert "facebook_graph" in provider_ids
+    assert "tiktok_open" in provider_ids
+    assert len(providers) >= 20
 
 
 def test_mcp_catalog_contains_expected_entries():
@@ -22,7 +24,9 @@ def test_mcp_catalog_contains_expected_entries():
 
     assert "mcp_github" in template_ids
     assert "mcp_filesystem" in template_ids
-    assert len(templates) >= 4
+    assert "mcp_tiktok_proxy" in template_ids
+    assert "mcp_firecrawl" in template_ids
+    assert len(templates) >= 8
 
 
 def test_template_lookup_is_case_insensitive():

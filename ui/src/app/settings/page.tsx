@@ -72,6 +72,10 @@ const JENIS_EVENT_UPDATE_SKILL = new Set([
   "integration.catalog_bootstrap",
   "connector.telegram.account_upserted",
   "agent.approval_requested",
+  "approval.request_created",
+  "approval.request_approved",
+  "approval.request_rejected",
+  "automation.agent_workflow_saved",
 ]);
 
 const formatWaktuEvent = (value?: string) => {
@@ -108,6 +112,22 @@ const formatRingkasanEvent = (event: SystemEvent) => {
     return count > 0
       ? `Agen minta izin untuk ${count} puzzle/skill baru.`
       : "Agen minta izin menambah puzzle/skill.";
+  }
+  if (event.type === "approval.request_created") {
+    const count = Number(data.request_count || 0);
+    return `Approval queue bertambah: ${count} request baru siap direview.`;
+  }
+  if (event.type === "approval.request_approved") {
+    const id = String(data.approval_id || "-");
+    return `Approval ${id} sudah disetujui.`;
+  }
+  if (event.type === "approval.request_rejected") {
+    const id = String(data.approval_id || "-");
+    return `Approval ${id} ditolak.`;
+  }
+  if (event.type === "automation.agent_workflow_saved") {
+    const jobId = String(data.job_id || "-");
+    return `Job otomatis '${jobId}' disimpan/diupdate.`;
   }
 
   return "Update sistem terbaru.";

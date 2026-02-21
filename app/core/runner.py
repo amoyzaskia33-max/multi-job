@@ -4,6 +4,7 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict
 
+from .approval_queue import create_approval_request
 from .models import RunStatus, Run, RunResult
 from .queue import add_run_to_job_history, append_event, get_run, save_run
 from .redis_client import redis_client
@@ -62,6 +63,62 @@ async def execute_job_handler(handler: Callable, ctx: JobContext, inputs: Dict) 
         pesan_error = f"Job failed with exception: {str(e)}\n{traceback.format_exc()}"
         ctx.logger.error(pesan_error, extra={"job_id": ctx.job_id, "run_id": ctx.run_id})
         return RunResult(success=False, error=pesan_error, duration_ms=int((time.time() - waktu_mulai) * 1000))
+
+
+async def _coba_simpan_approval_dari_output(
+    *,
+    run_id: str,
+    job_id: str,
+    job_type: str,
+    inputs: Dict[str, Any],
+    hasil_run: RunResult,
+    logger,
+) -> None:
+    output = hasil_run.output
+    if not isinstance(output, dict):
+        return
+    if not bool(output.get("requires_approval")):
+        return
+
+    daftar_request = output.get("approval_requests", [])
+    if not isinstance(daftar_request, list) or len(daftar_request) == 0:
+        return
+
+    prompt = str(output.get("prompt") or inputs.get("prompt") or "").strip()
+    summary = str(output.get("summary") or output.get("error") or "Agen meminta approval tambahan.").strip()
+
+    try:
+        approval, baru_dibuat = await create_approval_request(
+            run_id=run_id,
+            job_id=job_id,
+            job_type=job_type,
+            prompt=prompt,
+            summary=summary,
+            approval_requests=daftar_request,
+            available_providers=output.get("available_providers"),
+            available_mcp_servers=output.get("available_mcp_servers"),
+            source=str(output.get("source") or "agent.workflow"),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Gagal menyimpan approval request",
+            extra={"job_id": job_id, "run_id": run_id, "error": str(exc)},
+        )
+        return
+
+    if not baru_dibuat:
+        return
+
+    await append_event(
+        "approval.request_created",
+        {
+            "approval_id": approval.get("approval_id"),
+            "run_id": run_id,
+            "job_id": job_id,
+            "job_type": job_type,
+            "request_count": len(daftar_request),
+        },
+    )
 
 
 async def process_job_event(
@@ -144,6 +201,14 @@ async def process_job_event(
 
         await save_run(data_run)
         await add_run_to_job_history(job_id, run_id)
+        await _coba_simpan_approval_dari_output(
+            run_id=run_id,
+            job_id=job_id,
+            job_type=job_type,
+            inputs=inputs,
+            hasil_run=hasil_run,
+            logger=logger,
+        )
 
         await append_event(
             "run.completed" if hasil_run.success else "run.failed",

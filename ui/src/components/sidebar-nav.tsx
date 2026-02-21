@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Building2, Cable, Gauge, History, Sparkles, Settings2, Users2, Workflow } from "lucide-react";
+import { Bot, Building2, Cable, Gauge, History, Sparkles, Settings2, ShieldCheck, Users2, Workflow } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: Gauge },
   { href: "/prompt", label: "Prompt", icon: Sparkles },
   { href: "/jobs", label: "Tugas", icon: Workflow },
+  { href: "/automation", label: "Otomasi", icon: ShieldCheck },
   { href: "/runs", label: "Riwayat", icon: History },
   { href: "/agents", label: "Agen", icon: Bot },
   { href: "/team", label: "Team", icon: Users2 },

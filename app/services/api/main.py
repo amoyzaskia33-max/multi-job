@@ -17,6 +17,11 @@ from app.core.connector_accounts import (
     list_telegram_accounts,
     upsert_telegram_account,
 )
+from app.core.approval_queue import (
+    decide_approval_request,
+    get_approval_request,
+    list_approval_requests,
+)
 from app.core.integration_configs import (
     delete_integration_account,
     delete_mcp_server,
@@ -33,7 +38,7 @@ from app.core.integration_catalog import (
     list_mcp_server_templates,
     list_provider_templates,
 )
-from app.core.models import JobSpec, QueueEvent, Run, RunStatus
+from app.core.models import JobSpec, QueueEvent, RetryPolicy, Run, RunStatus, Schedule
 from app.core.observability import expose_metrics, logger
 from app.core.queue import (
     add_run_to_job_history,
@@ -279,6 +284,46 @@ class IntegrationsBootstrapResponse(BaseModel):
     mcp_skipped: List[str] = Field(default_factory=list)
 
 
+class AgentWorkflowAutomationRequest(BaseModel):
+    job_id: str
+    prompt: str
+    interval_sec: Optional[int] = Field(default=None, ge=10, le=86400)
+    cron: Optional[str] = None
+    enabled: bool = True
+    timezone: str = "Asia/Jakarta"
+    default_channel: str = "telegram"
+    default_account_id: str = "default"
+    require_approval_for_missing: bool = True
+    timeout_ms: int = Field(default=90000, ge=5000, le=300000)
+    max_retry: int = Field(default=1, ge=0, le=10)
+    backoff_sec: List[int] = Field(default_factory=lambda: [2, 5])
+
+
+class ApprovalRequestView(BaseModel):
+    approval_id: str
+    status: str
+    source: str
+    run_id: str
+    job_id: str
+    job_type: str
+    prompt: str
+    summary: str
+    request_count: int
+    approval_requests: List[Dict[str, Any]] = Field(default_factory=list)
+    available_providers: Dict[str, Any] = Field(default_factory=dict)
+    available_mcp_servers: List[Any] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+    decided_at: Optional[str] = None
+    decision_by: Optional[str] = None
+    decision_note: Optional[str] = None
+
+
+class ApprovalDecisionRequest(BaseModel):
+    decision_by: Optional[str] = None
+    decision_note: Optional[str] = None
+
+
 async def _start_local_runtime():
     if getattr(app.state, "local_mode", False):
         return
@@ -519,6 +564,157 @@ async def list_jobs():
         return jobs
     except RedisError:
         return _fallback_payload("/jobs", [])
+
+
+@app.get("/automation/agent-workflows")
+async def list_agent_workflow_jobs():
+    try:
+        specs = await list_job_specs()
+        enabled_ids = set(await list_enabled_job_ids())
+    except RedisError:
+        return _fallback_payload("/automation/agent-workflows", [])
+
+    rows: List[Dict[str, Any]] = []
+    for spec in specs:
+        if str(spec.get("type") or "") != "agent.workflow":
+            continue
+        row = dict(spec)
+        row["enabled"] = spec.get("job_id") in enabled_ids
+        rows.append(row)
+    rows.sort(key=lambda row: row.get("job_id", ""))
+    return rows
+
+
+@app.post("/automation/agent-workflow")
+async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
+    job_id = request.job_id.strip()
+    prompt = request.prompt.strip()
+
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id wajib diisi.")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt wajib diisi.")
+
+    cron = (request.cron or "").strip() or None
+    interval_sec = request.interval_sec
+
+    if cron and interval_sec:
+        raise HTTPException(status_code=400, detail="Pilih salah satu jadwal: interval_sec atau cron.")
+    if not cron and not interval_sec:
+        interval_sec = 900
+
+    jadwal = Schedule(cron=cron, interval_sec=interval_sec)
+    retry_policy = RetryPolicy(max_retry=request.max_retry, backoff_sec=list(request.backoff_sec))
+    spesifikasi = JobSpec(
+        job_id=job_id,
+        type="agent.workflow",
+        schedule=jadwal,
+        timeout_ms=request.timeout_ms,
+        retry_policy=retry_policy,
+        inputs={
+            "prompt": prompt,
+            "timezone": request.timezone.strip() or "Asia/Jakarta",
+            "default_channel": request.default_channel.strip() or "telegram",
+            "default_account_id": request.default_account_id.strip() or "default",
+            "require_approval_for_missing": request.require_approval_for_missing,
+        },
+    )
+
+    payload_spesifikasi = _serialisasi_model(spesifikasi)
+    sudah_ada = await get_job_spec(job_id) is not None
+    await save_job_spec(job_id, payload_spesifikasi)
+    if request.enabled:
+        await enable_job(job_id)
+    else:
+        await disable_job(job_id)
+
+    await append_event(
+        "automation.agent_workflow_saved",
+        {
+            "job_id": job_id,
+            "enabled": request.enabled,
+            "schedule": _serialisasi_model(jadwal),
+            "status": "updated" if sudah_ada else "created",
+        },
+    )
+
+    result = dict(payload_spesifikasi)
+    result["enabled"] = request.enabled
+    result["status"] = "updated" if sudah_ada else "created"
+    return result
+
+
+@app.get("/approvals", response_model=List[ApprovalRequestView])
+async def list_approvals(
+    status: Optional[str] = Query(default=None, pattern="^(pending|approved|rejected)$"),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    try:
+        return await list_approval_requests(status=status, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/approvals/{approval_id}", response_model=ApprovalRequestView)
+async def get_approval(approval_id: str):
+    row = await get_approval_request(approval_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    return row
+
+
+@app.post("/approvals/{approval_id}/approve", response_model=ApprovalRequestView)
+async def approve_approval(approval_id: str, request: ApprovalDecisionRequest):
+    try:
+        row = await decide_approval_request(
+            approval_id,
+            status="approved",
+            decision_by=request.decision_by,
+            decision_note=request.decision_note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+
+    await append_event(
+        "approval.request_approved",
+        {
+            "approval_id": row.get("approval_id"),
+            "run_id": row.get("run_id"),
+            "job_id": row.get("job_id"),
+            "decision_by": row.get("decision_by"),
+        },
+    )
+    return row
+
+
+@app.post("/approvals/{approval_id}/reject", response_model=ApprovalRequestView)
+async def reject_approval(approval_id: str, request: ApprovalDecisionRequest):
+    try:
+        row = await decide_approval_request(
+            approval_id,
+            status="rejected",
+            decision_by=request.decision_by,
+            decision_note=request.decision_note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+
+    await append_event(
+        "approval.request_rejected",
+        {
+            "approval_id": row.get("approval_id"),
+            "run_id": row.get("run_id"),
+            "job_id": row.get("job_id"),
+            "decision_by": row.get("decision_by"),
+        },
+    )
+    return row
 
 
 @app.get("/queue")
