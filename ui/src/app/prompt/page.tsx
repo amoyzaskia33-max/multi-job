@@ -54,22 +54,22 @@ const getRunStatusClass = (status?: "queued" | "running" | "success" | "failed")
 };
 
 export default function PromptPage() {
-  const queryClient = useQueryClient();
+  const klienQuery = useQueryClient();
 
-  const [prompt, setPrompt] = useState(contohPrompt[0].value);
-  const [useAi, setUseAi] = useState(false);
-  const [forceRuleBased, setForceRuleBased] = useState(true);
-  const [runImmediately, setRunImmediately] = useState(true);
-  const [waitSeconds, setWaitSeconds] = useState(2);
-  const [timezone, setTimezone] = useState("Asia/Jakarta");
-  const [result, setResult] = useState<PlannerExecuteResponse | null>(null);
+  const [isiPrompt, setIsiPrompt] = useState(contohPrompt[0].value);
+  const [pakaiAi, setPakaiAi] = useState(false);
+  const [paksaRuleBased, setPaksaRuleBased] = useState(true);
+  const [jalankanLangsung, setJalankanLangsung] = useState(true);
+  const [tungguDetik, setTungguDetik] = useState(2);
+  const [zonaWaktu, setZonaWaktu] = useState("Asia/Jakarta");
+  const [hasilEksekusi, setHasilEksekusi] = useState<PlannerExecuteResponse | null>(null);
 
-  const executeMutation = useMutation({
+  const mutasiEksekusi = useMutation({
     mutationFn: executePlannerPrompt,
     onSuccess: (data) => {
-      setResult(data);
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["runs"] });
+      setHasilEksekusi(data);
+      klienQuery.invalidateQueries({ queryKey: ["jobs"] });
+      klienQuery.invalidateQueries({ queryKey: ["runs"] });
       toast.success("Prompt berhasil dieksekusi.");
     },
     onError: () => {
@@ -77,37 +77,37 @@ export default function PromptPage() {
     },
   });
 
-  const resultStats = useMemo(() => {
-    if (!result) return null;
-    const total = result.results.length;
-    const created = result.results.filter((item) => item.create_status === "created").length;
-    const updated = result.results.filter((item) => item.create_status === "updated").length;
-    const errors = result.results.filter((item) => item.create_status === "error").length;
-    const runSuccess = result.results.filter((item) => item.run_status === "success").length;
-    const runFailed = result.results.filter((item) => item.run_status === "failed").length;
-    return { total, created, updated, errors, runSuccess, runFailed };
-  }, [result]);
+  const statistikHasil = useMemo(() => {
+    if (!hasilEksekusi) return null;
+    const total = hasilEksekusi.results.length;
+    const dibuat = hasilEksekusi.results.filter((item) => item.create_status === "created").length;
+    const diperbarui = hasilEksekusi.results.filter((item) => item.create_status === "updated").length;
+    const error = hasilEksekusi.results.filter((item) => item.create_status === "error").length;
+    const runBerhasil = hasilEksekusi.results.filter((item) => item.run_status === "success").length;
+    const runGagal = hasilEksekusi.results.filter((item) => item.run_status === "failed").length;
+    return { total, dibuat, diperbarui, error, runBerhasil, runGagal };
+  }, [hasilEksekusi]);
 
-  const onSubmit = (event: React.FormEvent) => {
+  const saatSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    const cleanedPrompt = prompt.trim();
-    if (!cleanedPrompt) {
+    const promptBersih = isiPrompt.trim();
+    if (!promptBersih) {
       toast.error("Prompt tidak boleh kosong.");
       return;
     }
 
-    executeMutation.mutate({
-      prompt: cleanedPrompt,
-      use_ai: useAi,
-      force_rule_based: useAi ? forceRuleBased : false,
-      run_immediately: runImmediately,
-      wait_seconds: runImmediately ? clampWaitSeconds(waitSeconds) : 0,
-      timezone,
+    mutasiEksekusi.mutate({
+      prompt: promptBersih,
+      use_ai: pakaiAi,
+      force_rule_based: pakaiAi ? paksaRuleBased : false,
+      run_immediately: jalankanLangsung,
+      wait_seconds: jalankanLangsung ? clampWaitSeconds(tungguDetik) : 0,
+      timezone: zonaWaktu,
     });
   };
 
-  const plannerLabel = result?.planner_source === "smolagents" ? "AI Smolagents" : "Rule-Based";
-  const plannerLabelClass = result?.planner_source === "smolagents" ? "status-waspada" : "status-netral";
+  const labelPlanner = hasilEksekusi?.planner_source === "smolagents" ? "AI Smolagents" : "Rule-Based";
+  const kelasLabelPlanner = hasilEksekusi?.planner_source === "smolagents" ? "status-waspada" : "status-netral";
 
   return (
     <div className="space-y-6">
@@ -131,19 +131,19 @@ export default function PromptPage() {
           <CardTitle>Tulis Prompt</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="space-y-4" onSubmit={onSubmit}>
+          <form className="space-y-4" onSubmit={saatSubmit}>
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted p-3">
               <span className="text-sm font-medium text-foreground">Contoh cepat:</span>
-              {contohPrompt.map((item) => (
+              {contohPrompt.map((contoh) => (
                 <Button
-                  key={item.label}
+                  key={contoh.label}
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={executeMutation.isPending}
-                  onClick={() => setPrompt(item.value)}
+                  disabled={mutasiEksekusi.isPending}
+                  onClick={() => setIsiPrompt(contoh.value)}
                 >
-                  {item.label}
+                  {contoh.label}
                 </Button>
               ))}
             </div>
@@ -152,11 +152,11 @@ export default function PromptPage() {
               <Label htmlFor="prompt">Prompt</Label>
               <Textarea
                 id="prompt"
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
+                value={isiPrompt}
+                onChange={(event) => setIsiPrompt(event.target.value)}
                 placeholder="Contoh: Pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00."
                 className="min-h-[120px]"
-                disabled={executeMutation.isPending}
+                disabled={mutasiEksekusi.isPending}
               />
               <p className="text-xs text-muted-foreground">
                 Tip: bisa gabung beberapa kebutuhan sekaligus, termasuk workflow integrasi provider/MCP.
@@ -170,7 +170,7 @@ export default function PromptPage() {
                     <Label>Gunakan AI</Label>
                     <p className="text-sm text-muted-foreground">Nyalakan kalau mau planner dibantu AI.</p>
                   </div>
-                  <Switch checked={useAi} disabled={executeMutation.isPending} onCheckedChange={setUseAi} />
+                  <Switch checked={pakaiAi} disabled={mutasiEksekusi.isPending} onCheckedChange={setPakaiAi} />
                 </div>
               </div>
               <div className="rounded-xl border border-border bg-muted p-4">
@@ -180,9 +180,9 @@ export default function PromptPage() {
                     <p className="text-sm text-muted-foreground">Kalau aktif, AI dilewati dan pakai rule biasa.</p>
                   </div>
                   <Switch
-                    checked={forceRuleBased}
-                    onCheckedChange={setForceRuleBased}
-                    disabled={!useAi || executeMutation.isPending}
+                    checked={paksaRuleBased}
+                    onCheckedChange={setPaksaRuleBased}
+                    disabled={!pakaiAi || mutasiEksekusi.isPending}
                   />
                 </div>
               </div>
@@ -193,16 +193,16 @@ export default function PromptPage() {
                     <p className="text-sm text-muted-foreground">Langsung masuk antrean begitu tugas berhasil disimpan.</p>
                   </div>
                   <Switch
-                    checked={runImmediately}
+                    checked={jalankanLangsung}
                     onCheckedChange={(checked) => {
-                      setRunImmediately(checked);
+                      setJalankanLangsung(checked);
                       if (!checked) {
-                        setWaitSeconds(0);
-                      } else if (waitSeconds === 0) {
-                        setWaitSeconds(2);
+                        setTungguDetik(0);
+                      } else if (tungguDetik === 0) {
+                        setTungguDetik(2);
                       }
                     }}
-                    disabled={executeMutation.isPending}
+                    disabled={mutasiEksekusi.isPending}
                   />
                 </div>
               </div>
@@ -213,9 +213,9 @@ export default function PromptPage() {
                   type="number"
                   min={0}
                   max={30}
-                  value={waitSeconds}
-                  onChange={(event) => setWaitSeconds(clampWaitSeconds(Number(event.target.value)))}
-                  disabled={!runImmediately || executeMutation.isPending}
+                  value={tungguDetik}
+                  onChange={(event) => setTungguDetik(clampWaitSeconds(Number(event.target.value)))}
+                  disabled={!jalankanLangsung || mutasiEksekusi.isPending}
                 />
                 <p className="mt-1 text-xs text-muted-foreground">Maksimal 30 detik.</p>
               </div>
@@ -225,14 +225,14 @@ export default function PromptPage() {
               <Label htmlFor="timezone">Timezone</Label>
               <Input
                 id="timezone"
-                value={timezone}
-                onChange={(event) => setTimezone(event.target.value)}
-                disabled={executeMutation.isPending}
+                value={zonaWaktu}
+                onChange={(event) => setZonaWaktu(event.target.value)}
+                disabled={mutasiEksekusi.isPending}
               />
             </div>
 
-            <Button type="submit" disabled={executeMutation.isPending}>
-              {executeMutation.isPending ? (
+            <Button type="submit" disabled={mutasiEksekusi.isPending}>
+              {mutasiEksekusi.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Memproses...
@@ -248,7 +248,7 @@ export default function PromptPage() {
         </CardContent>
       </Card>
 
-      {result ? (
+      {hasilEksekusi ? (
         <Card className="bg-card">
           <CardHeader>
             <CardTitle>Hasil Prompt</CardTitle>
@@ -258,46 +258,46 @@ export default function PromptPage() {
               <div className="rounded-xl border border-border bg-muted p-4">
                 <p className="text-sm text-muted-foreground">Sumber Planner</p>
                 <div className="mt-2 inline-flex">
-                  <span className={plannerLabelClass}>{plannerLabel}</span>
+                  <span className={kelasLabelPlanner}>{labelPlanner}</span>
                 </div>
-                <p className="mt-2 text-sm text-foreground">{result.summary}</p>
+                <p className="mt-2 text-sm text-foreground">{hasilEksekusi.summary}</p>
               </div>
               <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-4">
                 <p className="text-sm text-emerald-400/90">Jumlah Tugas</p>
-                <p className="mt-2 text-2xl font-semibold text-emerald-400">{resultStats?.total || 0}</p>
+                <p className="mt-2 text-2xl font-semibold text-emerald-400">{statistikHasil?.total || 0}</p>
                 <p className="mt-1 text-xs text-emerald-400">
-                  Created: {resultStats?.created || 0}, Updated: {resultStats?.updated || 0}, Error: {resultStats?.errors || 0}
+                  Created: {statistikHasil?.dibuat || 0}, Updated: {statistikHasil?.diperbarui || 0}, Error: {statistikHasil?.error || 0}
                 </p>
               </div>
               <div className="rounded-xl border border-sky-800/40 bg-sky-950/20 p-4">
                 <p className="text-sm text-sky-400/90">Hasil Run</p>
-                <p className="mt-2 text-2xl font-semibold text-sky-400">{resultStats?.runSuccess || 0}</p>
-                <p className="mt-1 text-xs text-sky-400">Berhasil, {resultStats?.runFailed || 0} gagal</p>
+                <p className="mt-2 text-2xl font-semibold text-sky-400">{statistikHasil?.runBerhasil || 0}</p>
+                <p className="mt-1 text-xs text-sky-400">Berhasil, {statistikHasil?.runGagal || 0} gagal</p>
               </div>
             </div>
 
-            {result.assumptions.length > 0 ? (
+            {hasilEksekusi.assumptions.length > 0 ? (
               <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold text-slate-400">
                   <Wand2 className="h-4 w-4" />
                   Asumsi Yang Dipakai
                 </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-400">
-                  {result.assumptions.map((item) => (
+                  {hasilEksekusi.assumptions.map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>
               </div>
             ) : null}
 
-            {result.warnings.length > 0 ? (
+            {hasilEksekusi.warnings.length > 0 ? (
               <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold text-amber-400">
                   <AlertTriangle className="h-4 w-4" />
                   Catatan
                 </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-400">
-                  {result.warnings.map((warning) => (
+                  {hasilEksekusi.warnings.map((warning) => (
                     <li key={warning}>{warning}</li>
                   ))}
                 </ul>
@@ -317,7 +317,7 @@ export default function PromptPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.results.map((item) => (
+                {hasilEksekusi.results.map((item) => (
                   <TableRow key={`${item.job_id}-${item.run_id || "none"}`}>
                     <TableCell className="font-medium">{item.job_id}</TableCell>
                     <TableCell>{item.type}</TableCell>

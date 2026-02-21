@@ -11,50 +11,50 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { disableJob, enableJob, getJobs, triggerJob } from "@/lib/api";
 
 export default function JobsPage() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [isLoadingAction, setIsLoadingAction] = useState(false);
+  const [kataCari, setKataCari] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sedangMemprosesAksi, setSedangMemprosesAksi] = useState(false);
 
-  const { data: jobsData, isLoading: jobsLoading, refetch } = useQuery({
+  const { data: dataTugas, isLoading: sedangMemuatTugas, refetch } = useQuery({
     queryKey: ["jobs"],
     queryFn: getJobs,
     refetchInterval: 10000,
   });
 
-  const jobs = jobsData ?? [];
+  const daftarTugas = dataTugas ?? [];
 
-  const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
-      const matchesSearch =
-        job.job_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.type.toLowerCase().includes(searchTerm.toLowerCase());
+  const tugasTersaring = useMemo(() => {
+    return daftarTugas.filter((tugas) => {
+      const cocokKataCari =
+        tugas.job_id.toLowerCase().includes(kataCari.toLowerCase()) ||
+        tugas.type.toLowerCase().includes(kataCari.toLowerCase());
 
-      const matchesStatus =
-        filterStatus === "all" ||
-        (filterStatus === "enabled" && job.enabled !== undefined && job.enabled) ||
-        (filterStatus === "disabled" && job.enabled !== undefined && !job.enabled);
+      const cocokStatus =
+        statusFilter === "all" ||
+        (statusFilter === "enabled" && tugas.enabled !== undefined && tugas.enabled) ||
+        (statusFilter === "disabled" && tugas.enabled !== undefined && !tugas.enabled);
 
-      return matchesSearch && matchesStatus;
+      return cocokKataCari && cocokStatus;
     });
-  }, [jobs, searchTerm, filterStatus]);
+  }, [daftarTugas, kataCari, statusFilter]);
 
-  const totalJobs = jobs.length;
-  const activeJobs = jobs.filter((job) => job.enabled).length;
-  const inactiveJobs = totalJobs - activeJobs;
+  const totalTugas = daftarTugas.length;
+  const tugasAktif = daftarTugas.filter((tugas) => tugas.enabled).length;
+  const tugasNonaktif = totalTugas - tugasAktif;
 
-  const formatSchedule = (intervalSec?: number, cron?: string) => {
-    if (intervalSec) return `Setiap ${intervalSec} detik`;
+  const formatJadwal = (intervalDetik?: number, cron?: string) => {
+    if (intervalDetik) return `Setiap ${intervalDetik} detik`;
     if (cron) return `Jadwal Cron: ${cron}`;
     return "Tanpa Jadwal";
   };
 
-  const runAction = async (action: () => Promise<boolean>) => {
-    setIsLoadingAction(true);
+  const jalankanAksi = async (aksi: () => Promise<boolean>) => {
+    setSedangMemprosesAksi(true);
     try {
-      await action();
+      await aksi();
       await refetch();
     } finally {
-      setIsLoadingAction(false);
+      setSedangMemprosesAksi(false);
     }
   };
 
@@ -74,15 +74,15 @@ export default function JobsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Cari tugas (ID atau tipe)..."
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                value={kataCari}
+                onChange={(event) => setKataCari(event.target.value)}
                 className="w-full pl-10 sm:w-72"
               />
             </div>
 
             <select
-              value={filterStatus}
-              onChange={(event) => setFilterStatus(event.target.value)}
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
               className="rounded-md border border-input bg-card px-3 py-2 text-sm"
             >
               <option value="all">Semua Status</option>
@@ -104,7 +104,7 @@ export default function JobsPage() {
             <CardTitle className="text-sm font-medium">Total Tugas</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{totalJobs}</p>
+            <p className="text-3xl font-bold">{totalTugas}</p>
           </CardContent>
         </Card>
         <Card className="border-emerald-800/40 bg-emerald-950/20">
@@ -112,7 +112,7 @@ export default function JobsPage() {
             <CardTitle className="text-sm font-medium">Tugas Aktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-emerald-400">{activeJobs}</p>
+            <p className="text-3xl font-bold text-emerald-400">{tugasAktif}</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/60 bg-slate-800/40">
@@ -120,7 +120,7 @@ export default function JobsPage() {
             <CardTitle className="text-sm font-medium">Tugas Nonaktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-400">{inactiveJobs}</p>
+            <p className="text-3xl font-bold text-slate-400">{tugasNonaktif}</p>
           </CardContent>
         </Card>
       </div>
@@ -130,9 +130,9 @@ export default function JobsPage() {
           <CardTitle>List Tugas</CardTitle>
         </CardHeader>
         <CardContent>
-          {jobsLoading ? (
+          {sedangMemuatTugas ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil daftar tugas...</div>
-          ) : filteredJobs.length === 0 ? (
+          ) : tugasTersaring.length === 0 ? (
             <div className="py-12 text-center">
               <div className="mb-2 text-muted-foreground">Belum ada tugas yang cocok.</div>
               <p className="text-sm text-muted-foreground">Coba ubah kata kunci atau bikin tugas baru.</p>
@@ -150,27 +150,27 @@ export default function JobsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredJobs.map((job) => (
-                  <TableRow key={job.job_id}>
-                    <TableCell className="font-medium">{job.job_id}</TableCell>
-                    <TableCell>{job.type}</TableCell>
-                    <TableCell>{formatSchedule(job.schedule?.interval_sec, job.schedule?.cron)}</TableCell>
+                {tugasTersaring.map((tugas) => (
+                  <TableRow key={tugas.job_id}>
+                    <TableCell className="font-medium">{tugas.job_id}</TableCell>
+                    <TableCell>{tugas.type}</TableCell>
+                    <TableCell>{formatJadwal(tugas.schedule?.interval_sec, tugas.schedule?.cron)}</TableCell>
                     <TableCell>
-                      <span className={job.enabled ? "status-baik" : "status-netral"}>{job.enabled ? "Aktif" : "Nonaktif"}</span>
+                      <span className={tugas.enabled ? "status-baik" : "status-netral"}>{tugas.enabled ? "Aktif" : "Nonaktif"}</span>
                     </TableCell>
-                    <TableCell>{job.last_run_time ? new Date(job.last_run_time).toLocaleString("id-ID") : "-"}</TableCell>
+                    <TableCell>{tugas.last_run_time ? new Date(tugas.last_run_time).toLocaleString("id-ID") : "-"}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={() => runAction(() => triggerJob(job.job_id))}>
+                        <Button variant="outline" size="sm" onClick={() => jalankanAksi(() => triggerJob(tugas.job_id))}>
                           <Play className="mr-1 h-4 w-4" />
                           Jalankan
                         </Button>
-                        {job.enabled ? (
+                        {tugas.enabled ? (
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={isLoadingAction}
-                            onClick={() => runAction(() => disableJob(job.job_id))}
+                            disabled={sedangMemprosesAksi}
+                            onClick={() => jalankanAksi(() => disableJob(tugas.job_id))}
                           >
                             <Pause className="mr-1 h-4 w-4" />
                             Nonaktifkan
@@ -179,8 +179,8 @@ export default function JobsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={isLoadingAction}
-                            onClick={() => runAction(() => enableJob(job.job_id))}
+                            disabled={sedangMemprosesAksi}
+                            onClick={() => jalankanAksi(() => enableJob(tugas.job_id))}
                           >
                             <RotateCcw className="mr-1 h-4 w-4" />
                             Aktifkan

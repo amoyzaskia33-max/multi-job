@@ -12,14 +12,14 @@ import { getRuns } from "@/lib/api";
 
 type RunStatus = "queued" | "running" | "success" | "failed";
 
-const statusLabel: Record<RunStatus, string> = {
+const labelStatusRun: Record<RunStatus, string> = {
   queued: "Antre",
   running: "Berjalan",
   success: "Berhasil",
   failed: "Gagal",
 };
 
-const statusClass: Record<RunStatus, string> = {
+const kelasStatusRun: Record<RunStatus, string> = {
   queued: "status-netral",
   running: "rounded-full bg-sky-900/45 px-2 py-1 text-xs font-medium text-sky-300",
   success: "status-baik",
@@ -27,38 +27,38 @@ const statusClass: Record<RunStatus, string> = {
 };
 
 export default function RunsPage() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [jobId, setJobId] = useState("");
+  const [kataCari, setKataCari] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [idTugas, setIdTugas] = useState("");
 
-  const { data: runsData, isLoading } = useQuery({
-    queryKey: ["runs", jobId, filterStatus],
-    queryFn: () => getRuns({ job_id: jobId || undefined, status: filterStatus !== "all" ? filterStatus : undefined }),
+  const { data: dataRun, isLoading: sedangMemuat } = useQuery({
+    queryKey: ["runs", idTugas, statusFilter],
+    queryFn: () => getRuns({ job_id: idTugas || undefined, status: statusFilter !== "all" ? statusFilter : undefined }),
     refetchInterval: 10000,
   });
 
-  const filteredRuns = useMemo(() => {
-    const runs = runsData ?? [];
+  const runTersaring = useMemo(() => {
+    const daftarRun = dataRun ?? [];
 
-    return runs.filter((run) => {
-      const matchesSearch =
-        run.run_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        run.job_id.toLowerCase().includes(searchTerm.toLowerCase());
+    return daftarRun.filter((run) => {
+      const cocokKataCari =
+        run.run_id.toLowerCase().includes(kataCari.toLowerCase()) ||
+        run.job_id.toLowerCase().includes(kataCari.toLowerCase());
 
-      const matchesStatus = filterStatus === "all" || run.status === filterStatus;
+      const cocokStatus = statusFilter === "all" || run.status === statusFilter;
 
-      return matchesSearch && matchesStatus;
+      return cocokKataCari && cocokStatus;
     });
-  }, [runsData, searchTerm, filterStatus]);
+  }, [dataRun, kataCari, statusFilter]);
 
-  const formatDuration = (durationMs?: number) => {
-    if (!durationMs) return "-";
-    if (durationMs < 1000) return `${durationMs} ms`;
-    return `${(durationMs / 1000).toFixed(2)} detik`;
+  const formatDurasi = (durasiMs?: number) => {
+    if (!durasiMs) return "-";
+    if (durasiMs < 1000) return `${durasiMs} ms`;
+    return `${(durasiMs / 1000).toFixed(2)} detik`;
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const salinKeClipboard = (teks: string) => {
+    navigator.clipboard.writeText(teks);
   };
 
   return (
@@ -77,15 +77,15 @@ export default function RunsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Cari run (ID run / ID tugas)..."
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                value={kataCari}
+                onChange={(event) => setKataCari(event.target.value)}
                 className="w-full pl-10 sm:w-72"
               />
             </div>
 
             <select
-              value={filterStatus}
-              onChange={(event) => setFilterStatus(event.target.value)}
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
               className="rounded-md border border-input bg-card px-3 py-2 text-sm"
             >
               <option value="all">Semua Status</option>
@@ -97,8 +97,8 @@ export default function RunsPage() {
 
             <Input
               placeholder="Filter per ID tugas"
-              value={jobId}
-              onChange={(event) => setJobId(event.target.value)}
+              value={idTugas}
+              onChange={(event) => setIdTugas(event.target.value)}
               className="w-full sm:w-48"
             />
           </div>
@@ -110,9 +110,9 @@ export default function RunsPage() {
           <CardTitle>List Run</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {sedangMemuat ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil data run...</div>
-          ) : filteredRuns.length === 0 ? (
+          ) : runTersaring.length === 0 ? (
             <div className="py-12 text-center">
               <div className="mb-2 text-muted-foreground">Belum ada run yang tampil.</div>
               <p className="text-sm text-muted-foreground">Coba jalankan tugas dulu, nanti hasilnya muncul di sini.</p>
@@ -132,18 +132,18 @@ export default function RunsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRuns.map((run) => (
+                {runTersaring.map((run) => (
                   <TableRow key={run.run_id}>
                     <TableCell className="font-medium">{run.run_id}</TableCell>
                     <TableCell>{run.job_id}</TableCell>
                     <TableCell>
-                      <span className={statusClass[run.status as RunStatus] || "status-netral"}>
-                        {statusLabel[run.status as RunStatus] || run.status}
+                      <span className={kelasStatusRun[run.status as RunStatus] || "status-netral"}>
+                        {labelStatusRun[run.status as RunStatus] || run.status}
                       </span>
                     </TableCell>
                     <TableCell>{run.started_at ? new Date(run.started_at).toLocaleString("id-ID") : "-"}</TableCell>
                     <TableCell>{run.finished_at ? new Date(run.finished_at).toLocaleString("id-ID") : "-"}</TableCell>
-                    <TableCell>{formatDuration(run.result?.duration_ms)}</TableCell>
+                    <TableCell>{formatDurasi(run.result?.duration_ms)}</TableCell>
                     <TableCell>{run.attempt}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
@@ -151,7 +151,7 @@ export default function RunsPage() {
                           Lihat Detail
                         </Button>
                         {run.trace_id ? (
-                          <Button variant="outline" size="sm" onClick={() => copyToClipboard(run.trace_id!)}>
+                          <Button variant="outline" size="sm" onClick={() => salinKeClipboard(run.trace_id!)}>
                             <Copy className="mr-1 h-4 w-4" />
                             Salin Trace
                           </Button>

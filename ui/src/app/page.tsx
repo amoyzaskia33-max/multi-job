@@ -8,46 +8,46 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { checkHealth, getConnectors, getSystemMetrics } from "@/lib/api";
 
 export default function OverviewPage() {
-  const [refreshInterval, setRefreshInterval] = useState(5000);
+  const [jedaPembaruan, setJedaPembaruan] = useState(5000);
 
-  const { data: healthData } = useQuery({
+  const { data: dataKesehatan } = useQuery({
     queryKey: ["health"],
     queryFn: checkHealth,
-    refetchInterval: refreshInterval,
+    refetchInterval: jedaPembaruan,
   });
 
-  const { data: metricsData } = useQuery({
+  const { data: dataMetrik } = useQuery({
     queryKey: ["metrics"],
     queryFn: getSystemMetrics,
-    refetchInterval: refreshInterval,
+    refetchInterval: jedaPembaruan,
   });
 
-  const { data: connectorsData, isLoading: connectorsLoading } = useQuery({
+  const { data: dataKoneksi, isLoading: sedangMemuatKoneksi } = useQuery({
     queryKey: ["connectors"],
     queryFn: getConnectors,
-    refetchInterval: refreshInterval,
+    refetchInterval: jedaPembaruan,
   });
 
-  const connectorStats = useMemo(() => {
-    const list = connectorsData ?? [];
-    const aktif = list.filter((connector) => connector.status === "online").length;
-    const tidakStabil = list.filter((connector) => connector.status === "degraded").length;
-    const terputus = list.filter((connector) => connector.status === "offline").length;
+  const statistikKoneksi = useMemo(() => {
+    const daftarKoneksi = dataKoneksi ?? [];
+    const aktif = daftarKoneksi.filter((koneksi) => koneksi.status === "online").length;
+    const tidakStabil = daftarKoneksi.filter((koneksi) => koneksi.status === "degraded").length;
+    const terputus = daftarKoneksi.filter((koneksi) => koneksi.status === "offline").length;
 
     return [
       { name: "Aktif", value: aktif, color: "#16a34a" },
       { name: "Tidak Stabil", value: tidakStabil, color: "#d97706" },
       { name: "Terputus", value: terputus, color: "#dc2626" },
     ].filter((item) => item.value > 0);
-  }, [connectorsData]);
+  }, [dataKoneksi]);
 
-  const getStatusLabel = (status: "online" | "offline" | "degraded") => {
+  const ambilLabelStatus = (status: "online" | "offline" | "degraded") => {
     if (status === "online") return "Aktif";
     if (status === "degraded") return "Tidak Stabil";
     return "Terputus";
   };
 
-  const getStatusClass = (status: "online" | "offline" | "degraded") => {
+  const ambilKelasStatus = (status: "online" | "offline" | "degraded") => {
     if (status === "online") return "status-baik";
     if (status === "degraded") return "status-waspada";
     return "status-buruk";
@@ -69,8 +69,8 @@ export default function OverviewPage() {
             </label>
             <select
               id="interval"
-              value={refreshInterval}
-              onChange={(event) => setRefreshInterval(Number(event.target.value))}
+              value={jedaPembaruan}
+              onChange={(event) => setJedaPembaruan(Number(event.target.value))}
               className="rounded-lg border border-input bg-card px-2 py-1 text-sm text-foreground"
             >
               <option value={2000}>2 detik</option>
@@ -86,12 +86,12 @@ export default function OverviewPage() {
         <Card className="border-emerald-800/40 bg-emerald-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Status API</CardTitle>
-            <div className={`h-3 w-3 rounded-full ${healthData?.apiHealthy ? "bg-emerald-400" : "bg-rose-400"}`} />
+            <div className={`h-3 w-3 rounded-full ${dataKesehatan?.apiHealthy ? "bg-emerald-400" : "bg-rose-400"}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{healthData?.apiHealthy ? "Aman" : "Ada kendala"}</div>
+            <div className="text-2xl font-bold">{dataKesehatan?.apiHealthy ? "Aman" : "Ada kendala"}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {healthData?.apiHealthy ? "API merespons normal" : "Cek log API backend"}
+              {dataKesehatan?.apiHealthy ? "API merespons normal" : "Cek log API backend"}
             </p>
           </CardContent>
         </Card>
@@ -99,12 +99,12 @@ export default function OverviewPage() {
         <Card className="border-sky-800/40 bg-sky-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Status Redis</CardTitle>
-            <div className={`h-3 w-3 rounded-full ${metricsData?.redis_online ? "bg-emerald-400" : "bg-rose-400"}`} />
+            <div className={`h-3 w-3 rounded-full ${dataMetrik?.redis_online ? "bg-emerald-400" : "bg-rose-400"}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{metricsData?.redis_online ? "Online" : "Offline"}</div>
+            <div className="text-2xl font-bold">{dataMetrik?.redis_online ? "Online" : "Offline"}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {metricsData?.redis_online ? "Antrean bisa diproses normal" : "Koneksi Redis sedang putus"}
+              {dataMetrik?.redis_online ? "Antrean bisa diproses normal" : "Koneksi Redis sedang putus"}
             </p>
           </CardContent>
         </Card>
@@ -112,10 +112,10 @@ export default function OverviewPage() {
         <Card className="border-violet-800/40 bg-violet-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Jumlah Pekerja</CardTitle>
-            <div className="text-2xl font-bold">{metricsData?.worker_count || 0}</div>
+            <div className="text-2xl font-bold">{dataMetrik?.worker_count || 0}</div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{metricsData?.worker_count || 0} aktif</div>
+            <div className="text-2xl font-bold">{dataMetrik?.worker_count || 0} aktif</div>
             <p className="mt-1 text-xs text-muted-foreground">Worker yang siap ngerjain tugas</p>
           </CardContent>
         </Card>
@@ -123,10 +123,10 @@ export default function OverviewPage() {
         <Card className="border-amber-800/40 bg-amber-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Penjadwal</CardTitle>
-            <div className={`h-3 w-3 rounded-full ${metricsData?.scheduler_online ? "bg-emerald-400" : "bg-amber-400"}`} />
+            <div className={`h-3 w-3 rounded-full ${dataMetrik?.scheduler_online ? "bg-emerald-400" : "bg-amber-400"}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{metricsData?.scheduler_online ? "Nyala" : "Mati"}</div>
+            <div className="text-2xl font-bold">{dataMetrik?.scheduler_online ? "Nyala" : "Mati"}</div>
             <p className="mt-1 text-xs text-muted-foreground">Mesin yang ngatur jadwal jalan tugas</p>
           </CardContent>
         </Card>
@@ -140,11 +140,11 @@ export default function OverviewPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-lg border border-sky-800/40 bg-sky-950/20 p-4 text-center">
-                <div className="text-2xl font-bold text-sky-400">{metricsData?.queue_depth || 0}</div>
+                <div className="text-2xl font-bold text-sky-400">{dataMetrik?.queue_depth || 0}</div>
                 <div className="text-sm text-sky-400/80">Lagi nunggu diproses</div>
               </div>
               <div className="rounded-lg border border-amber-800/40 bg-amber-950/20 p-4 text-center">
-                <div className="text-2xl font-bold text-amber-400">{metricsData?.delayed_count || 0}</div>
+                <div className="text-2xl font-bold text-amber-400">{dataMetrik?.delayed_count || 0}</div>
                 <div className="text-sm text-amber-400/80">Dijadwalkan nanti</div>
               </div>
             </div>
@@ -153,17 +153,17 @@ export default function OverviewPage() {
 
         <Card className="bg-card">
           <CardHeader>
-            <CardTitle>Ringkasan Koneksi</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {connectorStats.length === 0 ? (
-              <div className="py-16 text-center text-sm text-muted-foreground">Belum ada data koneksi. Nanti muncul otomatis.</div>
-            ) : (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={connectorStats}
+          <CardTitle>Ringkasan Koneksi</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {statistikKoneksi.length === 0 ? (
+            <div className="py-16 text-center text-sm text-muted-foreground">Belum ada data koneksi. Nanti muncul otomatis.</div>
+          ) : (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                      data={statistikKoneksi}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
@@ -171,8 +171,8 @@ export default function OverviewPage() {
                       dataKey="value"
                       label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
                     >
-                      {connectorStats.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
+                      {statistikKoneksi.map((entri) => (
+                        <Cell key={entri.name} fill={entri.color} />
                       ))}
                     </Pie>
                     <Tooltip formatter={(value) => [`${value}`, "Jumlah Koneksi"]} />
@@ -189,25 +189,25 @@ export default function OverviewPage() {
           <CardTitle>Daftar Koneksi</CardTitle>
         </CardHeader>
         <CardContent>
-          {connectorsLoading ? (
+          {sedangMemuatKoneksi ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil data koneksi...</div>
-          ) : connectorsData && connectorsData.length > 0 ? (
+          ) : dataKoneksi && dataKoneksi.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {connectorsData.map((connector) => (
-                <div key={`${connector.channel}-${connector.account_id}`} className="rounded-xl border border-border bg-muted p-4">
+              {dataKoneksi.map((koneksi) => (
+                <div key={`${koneksi.channel}-${koneksi.account_id}`} className="rounded-xl border border-border bg-muted p-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <h3 className="font-medium capitalize">{connector.channel}</h3>
-                      <p className="text-sm text-muted-foreground">{connector.account_id}</p>
+                      <h3 className="font-medium capitalize">{koneksi.channel}</h3>
+                      <p className="text-sm text-muted-foreground">{koneksi.account_id}</p>
                     </div>
-                    <span className={getStatusClass(connector.status)}>{getStatusLabel(connector.status)}</span>
+                    <span className={ambilKelasStatus(koneksi.status)}>{ambilLabelStatus(koneksi.status)}</span>
                   </div>
                   <div className="mt-3 space-y-1 text-sm text-muted-foreground">
-                    {connector.last_heartbeat_at ? (
-                      <div>Terakhir update: {new Date(connector.last_heartbeat_at).toLocaleString("id-ID")}</div>
+                    {koneksi.last_heartbeat_at ? (
+                      <div>Terakhir update: {new Date(koneksi.last_heartbeat_at).toLocaleString("id-ID")}</div>
                     ) : null}
-                    {connector.reconnect_count !== undefined ? (
-                      <div>Sudah reconnect: {connector.reconnect_count}x</div>
+                    {koneksi.reconnect_count !== undefined ? (
+                      <div>Sudah reconnect: {koneksi.reconnect_count}x</div>
                     ) : null}
                   </div>
                 </div>

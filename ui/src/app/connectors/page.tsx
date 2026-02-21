@@ -8,33 +8,33 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getConnectors } from "@/lib/api";
 
-const getConnectorStatusLabel = (status: string) => {
+const ambilLabelStatusKoneksi = (status: string) => {
   if (status === "online") return "Aktif";
   if (status === "degraded") return "Tidak Stabil";
   return "Terputus";
 };
 
-const getConnectorStatusClass = (status: string) => {
+const ambilKelasStatusKoneksi = (status: string) => {
   if (status === "online") return "status-baik";
   if (status === "degraded") return "status-waspada";
   return "status-buruk";
 };
 
 export default function ConnectorsPage() {
-  const [searchTerm, setSearchTerm] = useState("");
+  const [kataCari, setKataCari] = useState("");
 
-  const { data: connectors = [], isLoading } = useQuery({
+  const { data: daftarKoneksi = [], isLoading: sedangMemuat } = useQuery({
     queryKey: ["connectors"],
     queryFn: getConnectors,
     refetchInterval: 5000,
   });
 
-  const filteredConnectors = useMemo(() => {
-    return connectors.filter((connector) => {
-      const key = `${connector.channel} ${connector.account_id} ${connector.status}`.toLowerCase();
-      return key.includes(searchTerm.toLowerCase());
+  const koneksiTersaring = useMemo(() => {
+    return daftarKoneksi.filter((koneksi) => {
+      const kunci = `${koneksi.channel} ${koneksi.account_id} ${koneksi.status}`.toLowerCase();
+      return kunci.includes(kataCari.toLowerCase());
     });
-  }, [connectors, searchTerm]);
+  }, [daftarKoneksi, kataCari]);
 
   return (
     <div className="space-y-6">
@@ -49,8 +49,8 @@ export default function ConnectorsPage() {
 
           <Input
             placeholder="Cari koneksi (kanal / akun / status)..."
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
+            value={kataCari}
+            onChange={(event) => setKataCari(event.target.value)}
             className="w-full sm:max-w-sm"
           />
         </div>
@@ -61,9 +61,9 @@ export default function ConnectorsPage() {
           <CardTitle>List Koneksi</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {sedangMemuat ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil data koneksi...</div>
-          ) : filteredConnectors.length === 0 ? (
+          ) : koneksiTersaring.length === 0 ? (
             <div className="py-12 text-center">
               <div className="mb-2 text-muted-foreground">Belum ada koneksi yang terdaftar.</div>
               <p className="text-sm text-muted-foreground">Nanti muncul saat agen berhasil registrasi kanal.</p>
@@ -81,18 +81,18 @@ export default function ConnectorsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredConnectors.map((connector) => (
-                  <TableRow key={`${connector.channel}-${connector.account_id}`}>
-                    <TableCell className="font-medium capitalize">{connector.channel}</TableCell>
-                    <TableCell>{connector.account_id}</TableCell>
+                {koneksiTersaring.map((koneksi) => (
+                  <TableRow key={`${koneksi.channel}-${koneksi.account_id}`}>
+                    <TableCell className="font-medium capitalize">{koneksi.channel}</TableCell>
+                    <TableCell>{koneksi.account_id}</TableCell>
                     <TableCell>
-                      <span className={getConnectorStatusClass(connector.status)}>{getConnectorStatusLabel(connector.status)}</span>
+                      <span className={ambilKelasStatusKoneksi(koneksi.status)}>{ambilLabelStatusKoneksi(koneksi.status)}</span>
                     </TableCell>
                     <TableCell>
-                      {connector.last_heartbeat_at ? new Date(connector.last_heartbeat_at).toLocaleString("id-ID") : "-"}
+                      {koneksi.last_heartbeat_at ? new Date(koneksi.last_heartbeat_at).toLocaleString("id-ID") : "-"}
                     </TableCell>
-                    <TableCell>{connector.reconnect_count ?? 0}</TableCell>
-                    <TableCell>{connector.last_error ? <div className="max-w-72 truncate">{connector.last_error}</div> : "-"}</TableCell>
+                    <TableCell>{koneksi.reconnect_count ?? 0}</TableCell>
+                    <TableCell>{koneksi.last_error ? <div className="max-w-72 truncate">{koneksi.last_error}</div> : "-"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

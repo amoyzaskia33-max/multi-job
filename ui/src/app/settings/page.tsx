@@ -24,20 +24,20 @@ import {
   type McpIntegrationServerUpsertRequest,
 } from "@/lib/api";
 
-const SETTINGS_KEY = "spio_ui_pengaturan";
+const KUNCI_PENGATURAN = "spio_ui_pengaturan";
 
-type UiSettings = {
+type PengaturanUi = {
   apiBaseUrl: string;
   refreshInterval: number;
   autoRefresh: boolean;
 };
 
-const clampWaitSeconds = (value: number) => {
+const batasiDetikTunggu = (value: number) => {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(30, Math.floor(value)));
 };
 
-const parseObjectInput = (raw: string, fieldName: string): Record<string, unknown> | null => {
+const parseMasukanObjek = (raw: string, fieldName: string): Record<string, unknown> | null => {
   const trimmed = raw.trim();
   if (!trimmed) return {};
 
@@ -54,7 +54,7 @@ const parseObjectInput = (raw: string, fieldName: string): Record<string, unknow
   }
 };
 
-const toStringMap = (source: Record<string, unknown>): Record<string, string> => {
+const ubahKePetaString = (source: Record<string, unknown>): Record<string, string> => {
   const output: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
     const cleanKey = key.trim();
@@ -65,9 +65,9 @@ const toStringMap = (source: Record<string, unknown>): Record<string, string> =>
 };
 
 export default function SettingsPage() {
-  const [apiBaseUrl, setApiBaseUrl] = useState(process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000");
-  const [refreshInterval, setRefreshInterval] = useState(5);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [urlDasarApi, setUrlDasarApi] = useState(process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000");
+  const [jedaPembaruan, setJedaPembaruan] = useState(5);
+  const [refreshOtomatis, setRefreshOtomatis] = useState(true);
 
   const [accountId, setAccountId] = useState("bot_a01");
   const [botToken, setBotToken] = useState("");
@@ -99,112 +99,116 @@ export default function SettingsPage() {
   const [integrationSecret, setIntegrationSecret] = useState("");
   const [integrationConfigText, setIntegrationConfigText] = useState("{}");
 
-  const { data: telegramAccounts = [], isLoading: isTelegramLoading, refetch: refetchTelegramAccounts } = useQuery({
+  const { data: akunTelegram = [], isLoading: sedangMemuatTelegram, refetch: muatUlangAkunTelegram } = useQuery({
     queryKey: ["telegram-accounts"],
     queryFn: getTelegramConnectorAccounts,
     refetchInterval: 10000,
   });
 
-  const { data: mcpServers = [], isLoading: isMcpLoading, refetch: refetchMcpServers } = useQuery({
+  const { data: serverMcp = [], isLoading: sedangMemuatMcp, refetch: muatUlangServerMcp } = useQuery({
     queryKey: ["mcp-servers"],
     queryFn: getMcpIntegrationServers,
     refetchInterval: 10000,
   });
 
-  const { data: integrationAccounts = [], isLoading: isIntegrationLoading, refetch: refetchIntegrationAccounts } = useQuery({
+  const { data: akunIntegrasi = [], isLoading: sedangMemuatIntegrasi, refetch: muatUlangAkunIntegrasi } = useQuery({
     queryKey: ["integration-accounts"],
     queryFn: () => getIntegrationAccounts(),
     refetchInterval: 10000,
   });
 
-  const { data: integrationsCatalog, isLoading: isCatalogLoading } = useQuery({
+  const { data: katalogIntegrasi, isLoading: sedangMemuatKatalog } = useQuery({
     queryKey: ["integration-catalog"],
     queryFn: getIntegrationsCatalog,
     refetchInterval: false,
   });
 
-  const catalogProviders = integrationsCatalog?.providers || [];
-  const catalogMcpTemplates = integrationsCatalog?.mcp_servers || [];
+  const daftarProviderKatalog = katalogIntegrasi?.providers || [];
+  const daftarTemplateMcpKatalog = katalogIntegrasi?.mcp_servers || [];
 
-  const providerTemplateMap = useMemo(
-    () => new Map(catalogProviders.map((row) => [row.provider, row])),
-    [catalogProviders],
+  const petaTemplateProvider = useMemo(
+    () => new Map(daftarProviderKatalog.map((row) => [row.provider, row])),
+    [daftarProviderKatalog],
   );
-  const mcpTemplateByServerId = useMemo(
-    () => new Map(catalogMcpTemplates.map((row) => [row.server_id, row])),
-    [catalogMcpTemplates],
+  const petaTemplateMcpPerServer = useMemo(
+    () => new Map(daftarTemplateMcpKatalog.map((row) => [row.server_id, row])),
+    [daftarTemplateMcpKatalog],
   );
 
-  const missingProviderTemplateIds = useMemo(
+  const idTemplateProviderKurang = useMemo(
     () =>
-      catalogProviders
-        .filter((row) => !integrationAccounts.some((account) => account.provider === row.provider))
+      daftarProviderKatalog
+        .filter((row) => !akunIntegrasi.some((account) => account.provider === row.provider))
         .map((row) => row.provider),
-    [catalogProviders, integrationAccounts],
+    [daftarProviderKatalog, akunIntegrasi],
   );
 
-  const missingMcpTemplateIds = useMemo(
+  const idTemplateMcpKurang = useMemo(
     () =>
-      catalogMcpTemplates
-        .filter((row) => !mcpServers.some((server) => server.server_id === row.server_id))
+      daftarTemplateMcpKatalog
+        .filter((row) => !serverMcp.some((server) => server.server_id === row.server_id))
         .map((row) => row.template_id),
-    [catalogMcpTemplates, mcpServers],
+    [daftarTemplateMcpKatalog, serverMcp],
   );
 
-  const setupStats = useMemo(() => {
-    const providerAccountsInCatalog = integrationAccounts.filter((row) => providerTemplateMap.has(row.provider));
+  const statistikKesiapan = useMemo(() => {
+    const providerAccountsInCatalog = akunIntegrasi.filter((row) => petaTemplateProvider.has(row.provider));
     const providerReady = providerAccountsInCatalog.filter((row) => row.has_secret).length;
     const providerEnabled = providerAccountsInCatalog.filter((row) => row.enabled).length;
 
-    const mcpInCatalog = mcpServers.filter((row) => mcpTemplateByServerId.has(row.server_id));
+    const mcpInCatalog = serverMcp.filter((row) => petaTemplateMcpPerServer.has(row.server_id));
     const mcpEnabled = mcpInCatalog.filter((row) => row.enabled).length;
 
-    const telegramReady = telegramAccounts.some((row) => row.enabled && row.has_bot_token);
+    const telegramReady = akunTelegram.some((row) => row.enabled && row.has_bot_token);
 
     return {
-      providerTotal: catalogProviders.length,
+      providerTotal: daftarProviderKatalog.length,
       providerConfigured: providerAccountsInCatalog.length,
       providerEnabled,
       providerReady,
-      mcpTotal: catalogMcpTemplates.length,
+      mcpTotal: daftarTemplateMcpKatalog.length,
       mcpConfigured: mcpInCatalog.length,
       mcpEnabled,
       telegramReady,
     };
   }, [
-    catalogMcpTemplates.length,
-    catalogProviders.length,
-    integrationAccounts,
-    mcpServers,
-    mcpTemplateByServerId,
-    providerTemplateMap,
-    telegramAccounts,
+    daftarTemplateMcpKatalog.length,
+    daftarProviderKatalog.length,
+    akunIntegrasi,
+    serverMcp,
+    petaTemplateMcpPerServer,
+    petaTemplateProvider,
+    akunTelegram,
   ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const raw = window.localStorage.getItem(SETTINGS_KEY);
+    const raw = window.localStorage.getItem(KUNCI_PENGATURAN);
     if (!raw) return;
 
     try {
-      const saved = JSON.parse(raw) as UiSettings;
-      setApiBaseUrl(saved.apiBaseUrl);
-      setRefreshInterval(saved.refreshInterval);
-      setAutoRefresh(saved.autoRefresh);
+      const saved = JSON.parse(raw) as PengaturanUi;
+      setUrlDasarApi(saved.apiBaseUrl);
+      setJedaPembaruan(saved.refreshInterval);
+      setRefreshOtomatis(saved.autoRefresh);
     } catch {
-      window.localStorage.removeItem(SETTINGS_KEY);
+      window.localStorage.removeItem(KUNCI_PENGATURAN);
     }
   }, []);
 
-  const handleSaveUiSettings = () => {
-    const payload: UiSettings = { apiBaseUrl, refreshInterval, autoRefresh };
-    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
+  const simpanPengaturanUi = () => {
+    const payload: PengaturanUi = {
+      apiBaseUrl: urlDasarApi,
+      refreshInterval: jedaPembaruan,
+      autoRefresh: refreshOtomatis,
+    };
+    window.localStorage.setItem(KUNCI_PENGATURAN, JSON.stringify(payload));
     toast.success("Setelan dashboard tersimpan.");
   };
 
-  const handleUseTelegramAccount = (targetAccountId: string) => {
-    const selected = telegramAccounts.find((row) => row.account_id === targetAccountId);
+  const pakaiAkunTelegram = (targetAccountId: string) => {
+    const selected = akunTelegram.find((row) => row.account_id === targetAccountId);
     if (!selected) return;
 
     setAccountId(selected.account_id);
@@ -213,14 +217,14 @@ export default function SettingsPage() {
     setUseAi(selected.use_ai);
     setForceRuleBased(selected.force_rule_based);
     setRunImmediately(selected.run_immediately);
-    setWaitSeconds(clampWaitSeconds(selected.wait_seconds ?? 2));
+    setWaitSeconds(batasiDetikTunggu(selected.wait_seconds ?? 2));
     setTimezone(selected.timezone || "Asia/Jakarta");
     setDefaultChannel(selected.default_channel || "telegram");
     setDefaultAccountId(selected.default_account_id || "default");
     setBotToken("");
   };
 
-  const handleSaveTelegramAccount = async () => {
+  const simpanAkunTelegram = async () => {
     const normalizedAccountId = accountId.trim();
     if (!normalizedAccountId) {
       toast.error("ID akun Telegram wajib diisi.");
@@ -239,7 +243,7 @@ export default function SettingsPage() {
       use_ai: useAi,
       force_rule_based: useAi ? forceRuleBased : false,
       run_immediately: runImmediately,
-      wait_seconds: runImmediately ? clampWaitSeconds(waitSeconds) : 0,
+      wait_seconds: runImmediately ? batasiDetikTunggu(waitSeconds) : 0,
       timezone: timezone.trim() || "Asia/Jakarta",
       default_channel: defaultChannel.trim() || "telegram",
       default_account_id: defaultAccountId.trim() || "default",
@@ -249,10 +253,10 @@ export default function SettingsPage() {
 
     setBotToken("");
     toast.success(`Akun Telegram '${saved.account_id}' tersimpan.`);
-    await refetchTelegramAccounts();
+    await muatUlangAkunTelegram();
   };
 
-  const handleDeleteTelegramAccount = async (targetAccountId: string) => {
+  const hapusAkunTelegram = async (targetAccountId: string) => {
     const confirmed = window.confirm(`Hapus akun Telegram '${targetAccountId}'?`);
     if (!confirmed) return;
 
@@ -260,11 +264,11 @@ export default function SettingsPage() {
     if (!deleted) return;
 
     toast.success(`Akun Telegram '${targetAccountId}' dihapus.`);
-    await refetchTelegramAccounts();
+    await muatUlangAkunTelegram();
   };
 
-  const handleUseMcpServer = (serverId: string) => {
-    const selected = mcpServers.find((row) => row.server_id === serverId);
+  const pakaiServerMcp = (serverId: string) => {
+    const selected = serverMcp.find((row) => row.server_id === serverId);
     if (!selected) return;
 
     setMcpServerId(selected.server_id);
@@ -280,17 +284,17 @@ export default function SettingsPage() {
     setMcpAuthToken("");
   };
 
-  const handleSaveMcpServer = async () => {
+  const simpanServerMcp = async () => {
     const normalizedServerId = mcpServerId.trim();
     if (!normalizedServerId) {
       toast.error("Server ID MCP wajib diisi.");
       return;
     }
 
-    const parsedHeaders = parseObjectInput(mcpHeadersText, "Headers MCP");
+    const parsedHeaders = parseMasukanObjek(mcpHeadersText, "Headers MCP");
     if (!parsedHeaders) return;
 
-    const parsedEnv = parseObjectInput(mcpEnvText, "Environment MCP");
+    const parsedEnv = parseMasukanObjek(mcpEnvText, "Environment MCP");
     if (!parsedEnv) return;
 
     const payload: McpIntegrationServerUpsertRequest = {
@@ -303,8 +307,8 @@ export default function SettingsPage() {
         .map((value) => value.trim())
         .filter((value) => value.length > 0),
       url: mcpUrl.trim(),
-      headers: toStringMap(parsedHeaders),
-      env: toStringMap(parsedEnv),
+      headers: ubahKePetaString(parsedHeaders),
+      env: ubahKePetaString(parsedEnv),
       auth_token: mcpAuthToken.trim() || undefined,
       timeout_sec: Math.max(1, Math.min(120, Math.floor(mcpTimeoutSec || 20))),
     };
@@ -314,10 +318,10 @@ export default function SettingsPage() {
 
     setMcpAuthToken("");
     toast.success(`MCP server '${saved.server_id}' tersimpan.`);
-    await refetchMcpServers();
+    await muatUlangServerMcp();
   };
 
-  const handleDeleteMcpServer = async (serverId: string) => {
+  const hapusServerMcp = async (serverId: string) => {
     const confirmed = window.confirm(`Hapus MCP server '${serverId}'?`);
     if (!confirmed) return;
 
@@ -325,11 +329,11 @@ export default function SettingsPage() {
     if (!deleted) return;
 
     toast.success(`MCP server '${serverId}' dihapus.`);
-    await refetchMcpServers();
+    await muatUlangServerMcp();
   };
 
-  const handleUseIntegrationAccount = (provider: string, accountIdValue: string) => {
-    const selected = integrationAccounts.find(
+  const pakaiAkunIntegrasi = (provider: string, accountIdValue: string) => {
+    const selected = akunIntegrasi.find(
       (row) => row.provider === provider && row.account_id === accountIdValue,
     );
     if (!selected) return;
@@ -341,7 +345,7 @@ export default function SettingsPage() {
     setIntegrationConfigText(JSON.stringify(selected.config || {}, null, 2));
   };
 
-  const handleSaveIntegrationAccount = async () => {
+  const simpanAkunIntegrasi = async () => {
     const provider = integrationProvider.trim().toLowerCase();
     const accountIdValue = integrationAccountId.trim();
 
@@ -354,7 +358,7 @@ export default function SettingsPage() {
       return;
     }
 
-    const parsedConfig = parseObjectInput(integrationConfigText, "Config akun integrasi");
+    const parsedConfig = parseMasukanObjek(integrationConfigText, "Config akun integrasi");
     if (!parsedConfig) return;
 
     const saved = await upsertIntegrationAccount(provider, accountIdValue, {
@@ -366,10 +370,10 @@ export default function SettingsPage() {
 
     setIntegrationSecret("");
     toast.success(`Akun integrasi '${saved.provider}/${saved.account_id}' tersimpan.`);
-    await refetchIntegrationAccounts();
+    await muatUlangAkunIntegrasi();
   };
 
-  const handleDeleteIntegrationAccount = async (provider: string, accountIdValue: string) => {
+  const hapusAkunIntegrasi = async (provider: string, accountIdValue: string) => {
     const confirmed = window.confirm(`Hapus akun integrasi '${provider}/${accountIdValue}'?`);
     if (!confirmed) return;
 
@@ -377,28 +381,28 @@ export default function SettingsPage() {
     if (!deleted) return;
 
     toast.success(`Akun integrasi '${provider}/${accountIdValue}' dihapus.`);
-    await refetchIntegrationAccounts();
+    await muatUlangAkunIntegrasi();
   };
 
-  const handleBootstrapAllTemplates = async () => {
+  const bootstrapSemuaTemplate = async () => {
     const response = await bootstrapIntegrationsCatalog({ account_id: "default", overwrite: false });
     if (!response) return;
 
     toast.success(
       `Template masuk: provider +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
     );
-    await Promise.all([refetchIntegrationAccounts(), refetchMcpServers()]);
+    await Promise.all([muatUlangAkunIntegrasi(), muatUlangServerMcp()]);
   };
 
-  const handleBootstrapMissingTemplates = async () => {
-    if (missingProviderTemplateIds.length === 0 && missingMcpTemplateIds.length === 0) {
+  const bootstrapTemplateKurang = async () => {
+    if (idTemplateProviderKurang.length === 0 && idTemplateMcpKurang.length === 0) {
       toast.message("Semua template sudah masuk di dashboard.");
       return;
     }
 
     const response = await bootstrapIntegrationsCatalog({
-      provider_ids: missingProviderTemplateIds,
-      mcp_template_ids: missingMcpTemplateIds,
+      provider_ids: idTemplateProviderKurang,
+      mcp_template_ids: idTemplateMcpKurang,
       account_id: "default",
       overwrite: false,
     });
@@ -407,10 +411,10 @@ export default function SettingsPage() {
     toast.success(
       `Template yang kurang sudah ditambahkan. Provider +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
     );
-    await Promise.all([refetchIntegrationAccounts(), refetchMcpServers()]);
+    await Promise.all([muatUlangAkunIntegrasi(), muatUlangServerMcp()]);
   };
 
-  const handleBootstrapSingleProviderTemplate = async (provider: string) => {
+  const bootstrapSatuTemplateProvider = async (provider: string) => {
     const response = await bootstrapIntegrationsCatalog({
       provider_ids: [provider],
       mcp_template_ids: [],
@@ -424,10 +428,10 @@ export default function SettingsPage() {
     } else {
       toast.message(`Template provider '${provider}' sudah ada.`);
     }
-    await refetchIntegrationAccounts();
+    await muatUlangAkunIntegrasi();
   };
 
-  const handleBootstrapSingleMcpTemplate = async (templateId: string, label: string) => {
+  const bootstrapSatuTemplateMcp = async (templateId: string, label: string) => {
     const response = await bootstrapIntegrationsCatalog({
       provider_ids: [],
       mcp_template_ids: [templateId],
@@ -441,11 +445,11 @@ export default function SettingsPage() {
     } else {
       toast.message(`Template MCP '${label}' sudah ada.`);
     }
-    await refetchMcpServers();
+    await muatUlangServerMcp();
   };
 
-  const handleApplyProviderTemplateToForm = (provider: string) => {
-    const template = providerTemplateMap.get(provider);
+  const terapkanTemplateProviderKeForm = (provider: string) => {
+    const template = petaTemplateProvider.get(provider);
     if (!template) return;
 
     setIntegrationProvider(template.provider);
@@ -455,8 +459,8 @@ export default function SettingsPage() {
     setIntegrationConfigText(JSON.stringify(template.default_config || {}, null, 2));
   };
 
-  const handleApplyMcpTemplateToForm = (templateId: string) => {
-    const template = catalogMcpTemplates.find((row) => row.template_id === templateId);
+  const terapkanTemplateMcpKeForm = (templateId: string) => {
+    const template = daftarTemplateMcpKatalog.find((row) => row.template_id === templateId);
     if (!template) return;
 
     setMcpServerId(template.server_id);
@@ -491,11 +495,11 @@ export default function SettingsPage() {
           </p>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={handleBootstrapAllTemplates}>Tambah Semua Template</Button>
+            <Button onClick={bootstrapSemuaTemplate}>Tambah Semua Template</Button>
             <Button
               variant="outline"
-              onClick={handleBootstrapMissingTemplates}
-              disabled={missingProviderTemplateIds.length === 0 && missingMcpTemplateIds.length === 0}
+              onClick={bootstrapTemplateKurang}
+              disabled={idTemplateProviderKurang.length === 0 && idTemplateMcpKurang.length === 0}
             >
               Tambah Yang Belum Ada
             </Button>
@@ -504,12 +508,12 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="space-y-2">
               <Label>Provider Integrasi</Label>
-              {isCatalogLoading ? (
+              {sedangMemuatKatalog ? (
                 <div className="text-sm text-muted-foreground">Lagi ambil katalog provider...</div>
               ) : (
                 <div className="space-y-2">
-                  {(integrationsCatalog?.providers || []).map((row) => {
-                    const exists = integrationAccounts.some((account) => account.provider === row.provider);
+                  {(katalogIntegrasi?.providers || []).map((row) => {
+                    const exists = akunIntegrasi.some((account) => account.provider === row.provider);
                     return (
                       <div
                         key={row.provider}
@@ -526,7 +530,7 @@ export default function SettingsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleApplyProviderTemplateToForm(row.provider)}
+                            onClick={() => terapkanTemplateProviderKeForm(row.provider)}
                           >
                             Isi Form
                           </Button>
@@ -534,7 +538,7 @@ export default function SettingsPage() {
                             variant="outline"
                             size="sm"
                             disabled={exists}
-                            onClick={() => handleBootstrapSingleProviderTemplate(row.provider)}
+                            onClick={() => bootstrapSatuTemplateProvider(row.provider)}
                           >
                             {exists ? "Sudah Ada" : "Tambah"}
                           </Button>
@@ -548,12 +552,12 @@ export default function SettingsPage() {
 
             <div className="space-y-2">
               <Label>Template MCP Server</Label>
-              {isCatalogLoading ? (
+              {sedangMemuatKatalog ? (
                 <div className="text-sm text-muted-foreground">Lagi ambil katalog MCP...</div>
               ) : (
                 <div className="space-y-2">
-                  {(integrationsCatalog?.mcp_servers || []).map((row) => {
-                    const exists = mcpServers.some((server) => server.server_id === row.server_id);
+                  {(katalogIntegrasi?.mcp_servers || []).map((row) => {
+                    const exists = serverMcp.some((server) => server.server_id === row.server_id);
                     return (
                       <div
                         key={row.template_id}
@@ -570,7 +574,7 @@ export default function SettingsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleApplyMcpTemplateToForm(row.template_id)}
+                            onClick={() => terapkanTemplateMcpKeForm(row.template_id)}
                           >
                             Isi Form
                           </Button>
@@ -578,7 +582,7 @@ export default function SettingsPage() {
                             variant="outline"
                             size="sm"
                             disabled={exists}
-                            onClick={() => handleBootstrapSingleMcpTemplate(row.template_id, row.label)}
+                            onClick={() => bootstrapSatuTemplateMcp(row.template_id, row.label)}
                           >
                             {exists ? "Sudah Ada" : "Tambah"}
                           </Button>
@@ -602,29 +606,29 @@ export default function SettingsPage() {
             <div className="rounded-xl border border-border bg-muted p-4">
               <p className="text-xs text-muted-foreground">Telegram Bridge</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
-                {setupStats.telegramReady ? "Siap" : "Belum Siap"}
+                {statistikKesiapan.telegramReady ? "Siap" : "Belum Siap"}
               </p>
             </div>
             <div className="rounded-xl border border-border bg-muted p-4">
               <p className="text-xs text-muted-foreground">Provider Tersimpan</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
-                {setupStats.providerConfigured}/{setupStats.providerTotal}
+                {statistikKesiapan.providerConfigured}/{statistikKesiapan.providerTotal}
               </p>
               <p className="text-xs text-muted-foreground">
-                Enabled {setupStats.providerEnabled}, token siap {setupStats.providerReady}
+                Enabled {statistikKesiapan.providerEnabled}, token siap {statistikKesiapan.providerReady}
               </p>
             </div>
             <div className="rounded-xl border border-border bg-muted p-4">
               <p className="text-xs text-muted-foreground">MCP Tersimpan</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
-                {setupStats.mcpConfigured}/{setupStats.mcpTotal}
+                {statistikKesiapan.mcpConfigured}/{statistikKesiapan.mcpTotal}
               </p>
-              <p className="text-xs text-muted-foreground">Enabled {setupStats.mcpEnabled}</p>
+              <p className="text-xs text-muted-foreground">Enabled {statistikKesiapan.mcpEnabled}</p>
             </div>
             <div className="rounded-xl border border-border bg-muted p-4">
               <p className="text-xs text-muted-foreground">Template Belum Masuk</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
-                Provider {missingProviderTemplateIds.length}, MCP {missingMcpTemplateIds.length}
+                Provider {idTemplateProviderKurang.length}, MCP {idTemplateMcpKurang.length}
               </p>
             </div>
           </div>
@@ -645,8 +649,8 @@ export default function SettingsPage() {
             <Label htmlFor="api-base-url">Alamat API</Label>
             <Input
               id="api-base-url"
-              value={apiBaseUrl}
-              onChange={(event) => setApiBaseUrl(event.target.value)}
+              value={urlDasarApi}
+              onChange={(event) => setUrlDasarApi(event.target.value)}
               placeholder="http://localhost:8000"
             />
             <p className="mt-1 text-sm text-muted-foreground">Isi dengan alamat backend yang bisa diakses browser.</p>
@@ -657,7 +661,7 @@ export default function SettingsPage() {
               <Label>Auto Refresh</Label>
               <p className="text-sm text-muted-foreground">Kalau aktif, dashboard update otomatis tanpa reload manual.</p>
             </div>
-            <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
+            <Switch checked={refreshOtomatis} onCheckedChange={setRefreshOtomatis} />
           </div>
 
           <div className="max-w-sm">
@@ -667,12 +671,12 @@ export default function SettingsPage() {
               type="number"
               min={1}
               max={60}
-              value={refreshInterval}
-              onChange={(event) => setRefreshInterval(Number(event.target.value))}
+              value={jedaPembaruan}
+              onChange={(event) => setJedaPembaruan(Number(event.target.value))}
             />
           </div>
 
-          <Button onClick={handleSaveUiSettings}>Simpan Setelan Dashboard</Button>
+          <Button onClick={simpanPengaturanUi}>Simpan Setelan Dashboard</Button>
         </CardContent>
       </Card>
 
@@ -757,7 +761,7 @@ export default function SettingsPage() {
                 min={0}
                 max={30}
                 value={waitSeconds}
-                onChange={(event) => setWaitSeconds(clampWaitSeconds(Number(event.target.value)))}
+                onChange={(event) => setWaitSeconds(batasiDetikTunggu(Number(event.target.value)))}
                 disabled={!runImmediately}
               />
             </div>
@@ -783,16 +787,16 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <Button onClick={handleSaveTelegramAccount}>Simpan Akun Telegram</Button>
+          <Button onClick={simpanAkunTelegram}>Simpan Akun Telegram</Button>
 
           <div className="space-y-2">
             <Label>Daftar Akun Telegram</Label>
-            {isTelegramLoading ? (
+            {sedangMemuatTelegram ? (
               <div className="text-sm text-muted-foreground">Lagi ambil akun Telegram...</div>
-            ) : telegramAccounts.length === 0 ? (
+            ) : akunTelegram.length === 0 ? (
               <div className="text-sm text-muted-foreground">Belum ada akun Telegram tersimpan.</div>
             ) : (
-              telegramAccounts.map((row) => (
+              akunTelegram.map((row) => (
                 <div
                   key={row.account_id}
                   className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
@@ -808,10 +812,10 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleUseTelegramAccount(row.account_id)}>
+                    <Button variant="outline" size="sm" onClick={() => pakaiAkunTelegram(row.account_id)}>
                       Pakai
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDeleteTelegramAccount(row.account_id)}>
+                    <Button variant="outline" size="sm" onClick={() => hapusAkunTelegram(row.account_id)}>
                       Hapus
                     </Button>
                   </div>
@@ -945,16 +949,16 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <Button onClick={handleSaveMcpServer}>Simpan MCP Server</Button>
+          <Button onClick={simpanServerMcp}>Simpan MCP Server</Button>
 
           <div className="space-y-2">
             <Label>Daftar MCP Server</Label>
-            {isMcpLoading ? (
+            {sedangMemuatMcp ? (
               <div className="text-sm text-muted-foreground">Lagi ambil MCP server...</div>
-            ) : mcpServers.length === 0 ? (
+            ) : serverMcp.length === 0 ? (
               <div className="text-sm text-muted-foreground">Belum ada MCP server tersimpan.</div>
             ) : (
-              mcpServers.map((row) => (
+              serverMcp.map((row) => (
                 <div
                   key={row.server_id}
                   className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
@@ -972,10 +976,10 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleUseMcpServer(row.server_id)}>
+                    <Button variant="outline" size="sm" onClick={() => pakaiServerMcp(row.server_id)}>
                       Pakai
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDeleteMcpServer(row.server_id)}>
+                    <Button variant="outline" size="sm" onClick={() => hapusServerMcp(row.server_id)}>
                       Hapus
                     </Button>
                   </div>
@@ -1040,17 +1044,17 @@ export default function SettingsPage() {
             />
           </div>
 
-          <Button onClick={handleSaveIntegrationAccount}>Simpan Akun Integrasi</Button>
+          <Button onClick={simpanAkunIntegrasi}>Simpan Akun Integrasi</Button>
 
           <div className="space-y-2">
             <Label>Daftar Akun Integrasi</Label>
-            {isIntegrationLoading ? (
+            {sedangMemuatIntegrasi ? (
               <div className="text-sm text-muted-foreground">Lagi ambil akun integrasi...</div>
-            ) : integrationAccounts.length === 0 ? (
+            ) : akunIntegrasi.length === 0 ? (
               <div className="text-sm text-muted-foreground">Belum ada akun integrasi tersimpan.</div>
             ) : (
-              integrationAccounts.map((row) => {
-                const template = providerTemplateMap.get(row.provider);
+              akunIntegrasi.map((row) => {
+                const template = petaTemplateProvider.get(row.provider);
                 return (
                   <div
                     key={`${row.provider}-${row.account_id}`}
@@ -1069,13 +1073,13 @@ export default function SettingsPage() {
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => handleUseIntegrationAccount(row.provider, row.account_id)}>
+                      <Button variant="outline" size="sm" onClick={() => pakaiAkunIntegrasi(row.provider, row.account_id)}>
                         Pakai
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDeleteIntegrationAccount(row.provider, row.account_id)}
+                        onClick={() => hapusAkunIntegrasi(row.provider, row.account_id)}
                       >
                         Hapus
                       </Button>

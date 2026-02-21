@@ -8,27 +8,27 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getAgents } from "@/lib/api";
 
-const getAgentTypeLabel = (type?: string) => {
+const ambilLabelJenisAgen = (type?: string) => {
   if (type === "scheduler") return "Penjadwal";
   if (type === "worker") return "Pekerja";
   return type ?? "Pekerja";
 };
 
 export default function AgentsPage() {
-  const [searchTerm, setSearchTerm] = useState("");
+  const [kataCari, setKataCari] = useState("");
 
-  const { data: agents = [], isLoading } = useQuery({
+  const { data: daftarAgen = [], isLoading: sedangMemuat } = useQuery({
     queryKey: ["agents"],
     queryFn: getAgents,
     refetchInterval: 5000,
   });
 
-  const filteredAgents = useMemo(() => {
-    return agents.filter((agent) => {
-      const key = `${agent.id} ${agent.type ?? ""} ${agent.status}`.toLowerCase();
-      return key.includes(searchTerm.toLowerCase());
+  const agenTersaring = useMemo(() => {
+    return daftarAgen.filter((agen) => {
+      const kunci = `${agen.id} ${agen.type ?? ""} ${agen.status}`.toLowerCase();
+      return kunci.includes(kataCari.toLowerCase());
     });
-  }, [agents, searchTerm]);
+  }, [daftarAgen, kataCari]);
 
   return (
     <div className="space-y-6">
@@ -43,8 +43,8 @@ export default function AgentsPage() {
 
           <Input
             placeholder="Cari agen (ID/jenis/status)..."
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
+            value={kataCari}
+            onChange={(event) => setKataCari(event.target.value)}
             className="w-full sm:max-w-sm"
           />
         </div>
@@ -55,9 +55,9 @@ export default function AgentsPage() {
           <CardTitle>List Agen</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {sedangMemuat ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil data agen...</div>
-          ) : filteredAgents.length === 0 ? (
+          ) : agenTersaring.length === 0 ? (
             <div className="py-12 text-center">
               <div className="mb-2 text-muted-foreground">Belum ada agen yang terdeteksi.</div>
               <p className="text-sm text-muted-foreground">Nanti muncul otomatis saat agen sudah connect.</p>
@@ -75,18 +75,18 @@ export default function AgentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAgents.map((agent) => (
-                  <TableRow key={agent.id}>
-                    <TableCell className="font-medium">{agent.id}</TableCell>
-                    <TableCell>{getAgentTypeLabel(agent.type)}</TableCell>
+                {agenTersaring.map((agen) => (
+                  <TableRow key={agen.id}>
+                    <TableCell className="font-medium">{agen.id}</TableCell>
+                    <TableCell>{ambilLabelJenisAgen(agen.type)}</TableCell>
                     <TableCell>
-                      <span className={agent.status === "online" ? "status-baik" : "status-buruk"}>
-                        {agent.status === "online" ? "Online" : "Offline"}
+                      <span className={agen.status === "online" ? "status-baik" : "status-buruk"}>
+                        {agen.status === "online" ? "Online" : "Offline"}
                       </span>
                     </TableCell>
-                    <TableCell>{agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString("id-ID") : "-"}</TableCell>
-                    <TableCell>{agent.active_sessions ?? "-"}</TableCell>
-                    <TableCell>{agent.version || "-"}</TableCell>
+                    <TableCell>{agen.last_heartbeat ? new Date(agen.last_heartbeat).toLocaleString("id-ID") : "-"}</TableCell>
+                    <TableCell>{agen.active_sessions ?? "-"}</TableCell>
+                    <TableCell>{agen.version || "-"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
