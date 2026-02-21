@@ -60,12 +60,12 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border/80 bg-white/85 p-6 shadow-sm backdrop-blur">
+      <section className="rounded-2xl border border-border bg-card p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Tugas Terjadwal</h1>
+            <h1 className="text-3xl font-bold text-foreground">Daftar Tugas</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Kelola tugas otomatis: aktifkan, nonaktifkan, atau jalankan langsung kapan saja.
+              Kamu bisa cari, nyalain, matiin, atau langsung jalanin tugas dari sini.
             </p>
           </div>
 
@@ -73,7 +73,7 @@ export default function JobsPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Cari ID tugas atau tipe..."
+                placeholder="Cari tugas (ID atau tipe)..."
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 className="w-full pl-10 sm:w-72"
@@ -83,7 +83,7 @@ export default function JobsPage() {
             <select
               value={filterStatus}
               onChange={(event) => setFilterStatus(event.target.value)}
-              className="rounded-md border border-input bg-white px-3 py-2 text-sm"
+              className="rounded-md border border-input bg-card px-3 py-2 text-sm"
             >
               <option value="all">Semua Status</option>
               <option value="enabled">Aktif</option>
@@ -92,14 +92,14 @@ export default function JobsPage() {
 
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
               <Plus className="mr-2 h-4 w-4" />
-              Tugas Baru
+              Buat Tugas
             </Button>
           </div>
         </div>
       </section>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="bg-white/90">
+        <Card className="bg-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Tugas</CardTitle>
           </CardHeader>
@@ -107,35 +107,35 @@ export default function JobsPage() {
             <p className="text-3xl font-bold">{totalJobs}</p>
           </CardContent>
         </Card>
-        <Card className="border-emerald-200/80 bg-emerald-50/40">
+        <Card className="border-emerald-800/40 bg-emerald-950/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Tugas Aktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-emerald-700">{activeJobs}</p>
+            <p className="text-3xl font-bold text-emerald-400">{activeJobs}</p>
           </CardContent>
         </Card>
-        <Card className="border-slate-200/80 bg-slate-50/70">
+        <Card className="border-slate-700/60 bg-slate-800/40">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Tugas Nonaktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-700">{inactiveJobs}</p>
+            <p className="text-3xl font-bold text-slate-400">{inactiveJobs}</p>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="bg-white/90">
+      <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Daftar Tugas</CardTitle>
+          <CardTitle>List Tugas</CardTitle>
         </CardHeader>
         <CardContent>
           {jobsLoading ? (
-            <div className="py-8 text-center text-muted-foreground">Memuat daftar tugas...</div>
+            <div className="py-8 text-center text-muted-foreground">Lagi ambil daftar tugas...</div>
           ) : filteredJobs.length === 0 ? (
             <div className="py-12 text-center">
-              <div className="mb-2 text-muted-foreground">Tidak ada tugas yang cocok.</div>
-              <p className="text-sm text-muted-foreground">Ubah kata kunci pencarian atau buat tugas baru.</p>
+              <div className="mb-2 text-muted-foreground">Belum ada tugas yang cocok.</div>
+              <p className="text-sm text-muted-foreground">Coba ubah kata kunci atau bikin tugas baru.</p>
             </div>
           ) : (
             <Table>
@@ -206,3 +206,7 @@ export default function JobsPage() {
     </div>
   );
 }
+
+
+
+

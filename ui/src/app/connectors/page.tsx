@@ -38,17 +38,17 @@ export default function ConnectorsPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border/80 bg-white/85 p-6 shadow-sm backdrop-blur">
+      <section className="rounded-2xl border border-border/80 bg-card p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Koneksi Eksternal</h1>
+            <h1 className="text-3xl font-bold text-foreground">Status Koneksi</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Cek kondisi sambungan ke kanal eksternal seperti chat, webhook, dan layanan pihak ketiga.
+              Pantau koneksi ke kanal eksternal seperti chat, webhook, dan layanan lain.
             </p>
           </div>
 
           <Input
-            placeholder="Cari koneksi..."
+            placeholder="Cari koneksi (kanal / akun / status)..."
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             className="w-full sm:max-w-sm"
@@ -56,17 +56,17 @@ export default function ConnectorsPage() {
         </div>
       </section>
 
-      <Card className="bg-white/90">
+      <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Status Koneksi</CardTitle>
+          <CardTitle>List Koneksi</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="py-8 text-center text-muted-foreground">Memuat data koneksi...</div>
+            <div className="py-8 text-center text-muted-foreground">Lagi ambil data koneksi...</div>
           ) : filteredConnectors.length === 0 ? (
             <div className="py-12 text-center">
-              <div className="mb-2 text-muted-foreground">Belum ada koneksi terdaftar.</div>
-              <p className="text-sm text-muted-foreground">Koneksi akan muncul setelah agen melakukan registrasi kanal.</p>
+              <div className="mb-2 text-muted-foreground">Belum ada koneksi yang terdaftar.</div>
+              <p className="text-sm text-muted-foreground">Nanti muncul saat agen berhasil registrasi kanal.</p>
             </div>
           ) : (
             <Table>
@@ -75,7 +75,7 @@ export default function ConnectorsPage() {
                   <TableHead>Kanal</TableHead>
                   <TableHead>ID Akun</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Detak Terakhir</TableHead>
+                  <TableHead>Heartbeat Terakhir</TableHead>
                   <TableHead>Sambung Ulang</TableHead>
                   <TableHead>Error Terakhir</TableHead>
                 </TableRow>
@@ -103,3 +103,6 @@ export default function ConnectorsPage() {
     </div>
   );
 }
+
+
+

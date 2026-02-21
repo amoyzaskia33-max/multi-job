@@ -40,51 +40,51 @@ export default function SettingsPage() {
   const handleSave = () => {
     const payload: UiSettings = { apiBaseUrl, refreshInterval, autoRefresh };
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
-    alert("Pengaturan berhasil disimpan.");
+    alert("Sip, setelannya sudah disimpan.");
   };
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border/80 bg-white/85 p-6 shadow-sm backdrop-blur">
-        <h1 className="text-3xl font-bold text-foreground">Pengaturan</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Atur alamat API dan perilaku refresh dashboard sesuai kebutuhan Anda.</p>
+      <section className="rounded-2xl border border-border bg-card p-6">
+        <h1 className="text-3xl font-bold text-foreground">Setelan</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Atur koneksi API dan pola update data dashboard sesuai kebutuhanmu.</p>
       </section>
 
-      <Card className="bg-white/90">
+      <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Konfigurasi API</CardTitle>
+          <CardTitle>Koneksi API</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="api-base-url">Alamat Dasar API</Label>
+            <Label htmlFor="api-base-url">Alamat API</Label>
             <Input
               id="api-base-url"
               value={apiBaseUrl}
               onChange={(event) => setApiBaseUrl(event.target.value)}
               placeholder="http://localhost:8000"
             />
-            <p className="mt-1 text-sm text-muted-foreground">Alamat backend FastAPI yang bisa diakses browser.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Isi dengan alamat backend yang bisa diakses browser.</p>
           </div>
 
-          <Button onClick={handleSave}>Simpan Pengaturan</Button>
+          <Button onClick={handleSave}>Simpan Setelan</Button>
         </CardContent>
       </Card>
 
-      <Card className="bg-white/90">
+      <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Pengaturan Pembaruan Data</CardTitle>
+          <CardTitle>Update Data Otomatis</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/60 p-4">
+          <div className="flex items-center justify-between rounded-xl border border-border bg-muted p-4">
             <div>
-              <Label>Pembaruan Otomatis</Label>
-              <p className="text-sm text-muted-foreground">Jika aktif, data dashboard diperbarui tanpa klik manual.</p>
+              <Label>Auto Refresh</Label>
+              <p className="text-sm text-muted-foreground">Kalau aktif, dashboard update otomatis tanpa reload manual.</p>
             </div>
             <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
           </div>
 
           <div>
-            <Label htmlFor="refresh-interval">Jeda Pembaruan (detik)</Label>
+            <Label htmlFor="refresh-interval">Jeda Update (detik)</Label>
             <Input
               id="refresh-interval"
               type="number"
@@ -94,31 +94,31 @@ export default function SettingsPage() {
               onChange={(event) => setRefreshInterval(Number(event.target.value))}
             />
             <p className="mt-1 text-sm text-muted-foreground">
-              Atur seberapa sering data diperbarui. Berlaku untuk halaman Ringkasan, Koneksi, dan Agen.
+              Berlaku untuk halaman Dashboard, Koneksi, dan Agen.
             </p>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-white/90">
+      <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Informasi Sistem</CardTitle>
+          <CardTitle>Info Dashboard</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-border/70 bg-background/60 p-4">
+            <div className="rounded-lg border border-border bg-muted p-4">
               <h3 className="mb-1 text-sm font-semibold">Versi Dashboard</h3>
               <p className="text-sm text-muted-foreground">v0.1.0</p>
             </div>
-            <div className="rounded-lg border border-border/70 bg-background/60 p-4">
+            <div className="rounded-lg border border-border bg-muted p-4">
               <h3 className="mb-1 text-sm font-semibold">Platform UI</h3>
               <p className="text-sm text-muted-foreground">Next.js + TypeScript + TailwindCSS</p>
             </div>
-            <div className="rounded-lg border border-border/70 bg-background/60 p-4">
+            <div className="rounded-lg border border-border bg-muted p-4">
               <h3 className="mb-1 text-sm font-semibold">Pengambil Data</h3>
               <p className="text-sm text-muted-foreground">TanStack Query</p>
             </div>
-            <div className="rounded-lg border border-border/70 bg-background/60 p-4">
+            <div className="rounded-lg border border-border bg-muted p-4">
               <h3 className="mb-1 text-sm font-semibold">Visual Grafik</h3>
               <p className="text-sm text-muted-foreground">Recharts</p>
             </div>
@@ -128,3 +128,5 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+

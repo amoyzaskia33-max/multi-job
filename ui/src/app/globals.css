@@ -3,49 +3,26 @@
 @tailwind utilities;
 
 :root {
-  --background: 204 58% 97%;
-  --foreground: 216 33% 17%;
-  --card: 0 0% 100%;
-  --card-foreground: 216 33% 17%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 216 33% 17%;
-  --primary: 197 90% 42%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 190 72% 93%;
-  --secondary-foreground: 213 46% 22%;
-  --muted: 210 38% 95%;
-  --muted-foreground: 215 18% 40%;
-  --accent: 33 100% 93%;
-  --accent-foreground: 24 50% 26%;
-  --destructive: 0 78% 55%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 211 33% 86%;
-  --input: 211 33% 86%;
-  --ring: 197 90% 42%;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 217 42% 11%;
-    --foreground: 210 40% 96%;
-    --card: 216 37% 14%;
-    --card-foreground: 210 40% 98%;
-    --popover: 216 37% 14%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 192 95% 56%;
-    --primary-foreground: 216 37% 14%;
-    --secondary: 214 30% 22%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 214 30% 22%;
-    --muted-foreground: 213 20% 74%;
-    --accent: 28 55% 26%;
-    --accent-foreground: 38 95% 88%;
-    --destructive: 0 80% 62%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 213 28% 26%;
-    --input: 213 28% 26%;
-    --ring: 192 95% 56%;
-  }
+  color-scheme: dark;
+  --background: 220 16% 12%;
+  --foreground: 210 20% 84%;
+  --card: 220 14% 14%;
+  --card-foreground: 210 20% 84%;
+  --popover: 220 14% 14%;
+  --popover-foreground: 210 20% 84%;
+  --primary: 197 74% 54%;
+  --primary-foreground: 220 20% 14%;
+  --secondary: 220 12% 18%;
+  --secondary-foreground: 210 18% 82%;
+  --muted: 220 12% 17%;
+  --muted-foreground: 216 10% 66%;
+  --accent: 220 12% 21%;
+  --accent-foreground: 210 18% 82%;
+  --destructive: 0 72% 56%;
+  --destructive-foreground: 210 18% 86%;
+  --border: 220 10% 24%;
+  --input: 220 10% 24%;
+  --ring: 197 74% 54%;
 }
 
 * {
@@ -60,9 +37,6 @@ body {
 body {
   margin: 0;
   background-color: hsl(var(--background));
-  background-image:
-    radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.16), transparent 35%),
-    radial-gradient(circle at 92% 82%, rgba(251, 191, 36, 0.16), transparent 38%);
   color: hsl(var(--foreground));
 }
 
@@ -92,18 +66,18 @@ a {
 
 @layer utilities {
   .status-baik {
-    @apply rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700;
+    @apply rounded-full bg-emerald-900/45 px-2 py-1 text-xs font-medium text-emerald-300;
   }
 
   .status-waspada {
-    @apply rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700;
+    @apply rounded-full bg-amber-900/45 px-2 py-1 text-xs font-medium text-amber-300;
   }
 
   .status-buruk {
-    @apply rounded-full bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700;
+    @apply rounded-full bg-rose-900/45 px-2 py-1 text-xs font-medium text-rose-300;
   }
 
   .status-netral {
-    @apply rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700;
+    @apply rounded-full bg-slate-700/45 px-2 py-1 text-xs font-medium text-slate-300;
   }
 }

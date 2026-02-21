@@ -11,13 +11,13 @@ type SidebarNavProps = {
 };
 
 const navItems = [
-  { href: "/", label: "Ringkasan", icon: Gauge },
+  { href: "/", label: "Dashboard", icon: Gauge },
   { href: "/prompt", label: "Prompt", icon: Sparkles },
   { href: "/jobs", label: "Tugas", icon: Workflow },
   { href: "/runs", label: "Riwayat", icon: History },
   { href: "/agents", label: "Agen", icon: Bot },
   { href: "/connectors", label: "Koneksi", icon: Cable },
-  { href: "/settings", label: "Pengaturan", icon: Settings2 },
+  { href: "/settings", label: "Setelan", icon: Settings2 },
 ];
 
 export default function SidebarNav({ compact = false }: SidebarNavProps) {
@@ -28,7 +28,7 @@ export default function SidebarNav({ compact = false }: SidebarNavProps) {
     return cn(
       "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
       isActive
-        ? "bg-primary text-primary-foreground shadow-sm"
+        ? "bg-primary text-primary-foreground"
         : "text-foreground/80 hover:bg-secondary hover:text-secondary-foreground",
       compact && "justify-center sm:justify-start",
     );
@@ -64,3 +64,4 @@ export default function SidebarNav({ compact = false }: SidebarNavProps) {
     </nav>
   );
 }
+

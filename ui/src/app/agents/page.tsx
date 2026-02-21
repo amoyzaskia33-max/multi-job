@@ -32,17 +32,17 @@ export default function AgentsPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border/80 bg-white/85 p-6 shadow-sm backdrop-blur">
+      <section className="rounded-2xl border border-border/80 bg-card p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Agen Sistem</h1>
+            <h1 className="text-3xl font-bold text-foreground">Status Agen</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Pantau worker dan penjadwal yang sedang terhubung ke sistem.
+              Lihat worker dan scheduler yang lagi online atau offline.
             </p>
           </div>
 
           <Input
-            placeholder="Cari agen..."
+            placeholder="Cari agen (ID/jenis/status)..."
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             className="w-full sm:max-w-sm"
@@ -50,17 +50,17 @@ export default function AgentsPage() {
         </div>
       </section>
 
-      <Card className="bg-white/90">
+      <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Status Agen</CardTitle>
+          <CardTitle>List Agen</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="py-8 text-center text-muted-foreground">Memuat data agen...</div>
+            <div className="py-8 text-center text-muted-foreground">Lagi ambil data agen...</div>
           ) : filteredAgents.length === 0 ? (
             <div className="py-12 text-center">
-              <div className="mb-2 text-muted-foreground">Agen belum ditemukan.</div>
-              <p className="text-sm text-muted-foreground">Agen akan muncul saat berhasil mendaftar ke sistem.</p>
+              <div className="mb-2 text-muted-foreground">Belum ada agen yang terdeteksi.</div>
+              <p className="text-sm text-muted-foreground">Nanti muncul otomatis saat agen sudah connect.</p>
             </div>
           ) : (
             <Table>
@@ -69,7 +69,7 @@ export default function AgentsPage() {
                   <TableHead>ID Agen</TableHead>
                   <TableHead>Jenis</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Detak Terakhir</TableHead>
+                  <TableHead>Heartbeat Terakhir</TableHead>
                   <TableHead>Sesi Aktif</TableHead>
                   <TableHead>Versi</TableHead>
                 </TableRow>
@@ -81,7 +81,7 @@ export default function AgentsPage() {
                     <TableCell>{getAgentTypeLabel(agent.type)}</TableCell>
                     <TableCell>
                       <span className={agent.status === "online" ? "status-baik" : "status-buruk"}>
-                        {agent.status === "online" ? "Aktif" : "Tidak Aktif"}
+                        {agent.status === "online" ? "Online" : "Offline"}
                       </span>
                     </TableCell>
                     <TableCell>{agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString("id-ID") : "-"}</TableCell>
@@ -97,3 +97,6 @@ export default function AgentsPage() {
     </div>
   );
 }
+
+
+
