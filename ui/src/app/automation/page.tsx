@@ -81,6 +81,7 @@ export default function AutomationPage() {
   const [cron, setCron] = useState("0 */2 * * *");
   const [aktif, setAktif] = useState(true);
   const [wajibApproval, setWajibApproval] = useState(true);
+  const [izinkanOverlap, setIzinkanOverlap] = useState(false);
   const [zonaWaktu, setZonaWaktu] = useState("Asia/Jakarta");
   const [defaultChannel, setDefaultChannel] = useState("telegram");
   const [defaultAccountId, setDefaultAccountId] = useState("default");
@@ -146,6 +147,7 @@ export default function AutomationPage() {
       default_channel: defaultChannel.trim() || "telegram",
       default_account_id: defaultAccountId.trim() || "default",
       require_approval_for_missing: wajibApproval,
+      allow_overlap: izinkanOverlap,
       timeout_ms: 90000,
       max_retry: 1,
       backoff_sec: [2, 5],
@@ -251,7 +253,7 @@ export default function AutomationPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
               <div>
                 <Label htmlFor="default-channel">Default Channel</Label>
                 <Input
@@ -272,6 +274,12 @@ export default function AutomationPage() {
                 <div className="flex w-full items-center justify-between rounded-xl border border-border bg-muted p-3">
                   <Label>Wajib Approval Jika Resource Kurang</Label>
                   <Switch checked={wajibApproval} onCheckedChange={setWajibApproval} />
+                </div>
+              </div>
+              <div className="flex items-end">
+                <div className="flex w-full items-center justify-between rounded-xl border border-border bg-muted p-3">
+                  <Label>Izinkan Overlap Run</Label>
+                  <Switch checked={izinkanOverlap} onCheckedChange={setIzinkanOverlap} />
                 </div>
               </div>
             </div>

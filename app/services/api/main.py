@@ -294,6 +294,7 @@ class AgentWorkflowAutomationRequest(BaseModel):
     default_channel: str = "telegram"
     default_account_id: str = "default"
     require_approval_for_missing: bool = True
+    allow_overlap: bool = False
     timeout_ms: int = Field(default=90000, ge=5000, le=300000)
     max_retry: int = Field(default=1, ge=0, le=10)
     backoff_sec: List[int] = Field(default_factory=lambda: [2, 5])
@@ -617,6 +618,7 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
             "default_channel": request.default_channel.strip() or "telegram",
             "default_account_id": request.default_account_id.strip() or "default",
             "require_approval_for_missing": request.require_approval_for_missing,
+            "allow_overlap": request.allow_overlap,
         },
     )
 

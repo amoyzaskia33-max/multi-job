@@ -233,6 +233,7 @@ export interface AgentWorkflowAutomationRequest {
   default_channel?: string;
   default_account_id?: string;
   require_approval_for_missing?: boolean;
+  allow_overlap?: boolean;
   timeout_ms?: number;
   max_retry?: number;
   backoff_sec?: number[];

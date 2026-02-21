@@ -23,6 +23,7 @@ JOB_ALL_SET = "job:all"
 RUN_PREFIX = "run:"
 ZSET_RUNS = "zset:runs"
 JOB_RUNS_PREFIX = "job:runs:"
+JOB_ACTIVE_RUNS_PREFIX = "job:active:runs:"
 EVENTS_LOG = "events:log"
 EVENTS_MAX = 500
 
@@ -37,6 +38,7 @@ _fallback_job_enabled: set = set()
 _fallback_runs: Dict[str, Dict[str, Any]] = {}
 _fallback_run_scores: Dict[str, float] = {}
 _fallback_job_runs: Dict[str, List[str]] = defaultdict(list)
+_fallback_active_runs: Dict[str, set] = defaultdict(set)
 _fallback_events: List[Dict[str, Any]] = []
 _mode_fallback_redis = False
 
@@ -87,6 +89,49 @@ def _ke_timestamp(value: Any) -> float:
         except ValueError:
             return time.time()
     return time.time()
+
+
+def _status_run_aktif(value: Any) -> bool:
+    status = str(value or "").strip().lower()
+    return status in {"queued", "running"}
+
+
+def _kunci_active_runs(job_id: str) -> str:
+    return f"{JOB_ACTIVE_RUNS_PREFIX}{job_id}"
+
+
+def _refresh_index_active_runs_fallback(previous_data: Optional[Dict[str, Any]], current_data: Dict[str, Any], run_id: str) -> None:
+    if isinstance(previous_data, dict):
+        prev_job_id = str(previous_data.get("job_id") or "").strip()
+        prev_status = previous_data.get("status")
+        if prev_job_id and _status_run_aktif(prev_status):
+            _fallback_active_runs[prev_job_id].discard(run_id)
+
+    job_id = str(current_data.get("job_id") or "").strip()
+    if not job_id:
+        return
+
+    if _status_run_aktif(current_data.get("status")):
+        _fallback_active_runs[job_id].add(run_id)
+    else:
+        _fallback_active_runs[job_id].discard(run_id)
+
+
+async def _refresh_index_active_runs_redis(previous_data: Optional[Dict[str, Any]], current_data: Dict[str, Any], run_id: str) -> None:
+    if isinstance(previous_data, dict):
+        prev_job_id = str(previous_data.get("job_id") or "").strip()
+        prev_status = previous_data.get("status")
+        if prev_job_id and _status_run_aktif(prev_status):
+            await redis_client.srem(_kunci_active_runs(prev_job_id), run_id)
+
+    job_id = str(current_data.get("job_id") or "").strip()
+    if not job_id:
+        return
+
+    if _status_run_aktif(current_data.get("status")):
+        await redis_client.sadd(_kunci_active_runs(job_id), run_id)
+    else:
+        await redis_client.srem(_kunci_active_runs(job_id), run_id)
 
 
 def _id_pesan_fallback_berikutnya() -> str:
@@ -325,17 +370,24 @@ async def save_run(run: Run):
     score = _ke_timestamp(run_data.get("scheduled_at"))
 
     if _sedang_mode_fallback_redis():
+        previous = _fallback_runs.get(run.run_id)
         _fallback_runs[run.run_id] = _salin_nilai(run_data)
         _fallback_run_scores[run.run_id] = score
+        _refresh_index_active_runs_fallback(previous, run_data, run.run_id)
         return
 
     try:
+        previous_payload = await redis_client.get(f"{RUN_PREFIX}{run.run_id}")
+        previous = json.loads(previous_payload) if previous_payload else None
         await redis_client.set(f"{RUN_PREFIX}{run.run_id}", json.dumps(run_data))
         await redis_client.zadd(ZSET_RUNS, {run.run_id: score})
+        await _refresh_index_active_runs_redis(previous, run_data, run.run_id)
     except RedisError:
         _aktifkan_mode_fallback()
+        previous = _fallback_runs.get(run.run_id)
         _fallback_runs[run.run_id] = _salin_nilai(run_data)
         _fallback_run_scores[run.run_id] = score
+        _refresh_index_active_runs_fallback(previous, run_data, run.run_id)
 
 
 async def get_run(run_id: str) -> Optional[Run]:
@@ -394,17 +446,22 @@ async def add_run_to_job_history(job_id: str, run_id: str, max_history: int = 50
     """Add run_id to job's run history list."""
     if _sedang_mode_fallback_redis():
         rows = _fallback_job_runs[job_id]
-        rows.insert(0, run_id)
+        if not rows or rows[0] != run_id:
+            rows.insert(0, run_id)
         del rows[max_history:]
         return
 
     try:
-        await redis_client.lpush(f"{JOB_RUNS_PREFIX}{job_id}", run_id)
-        await redis_client.ltrim(f"{JOB_RUNS_PREFIX}{job_id}", 0, max_history - 1)
+        key = f"{JOB_RUNS_PREFIX}{job_id}"
+        head = await redis_client.lindex(key, 0)
+        if head != run_id:
+            await redis_client.lpush(key, run_id)
+            await redis_client.ltrim(key, 0, max_history - 1)
     except RedisError:
         _aktifkan_mode_fallback()
         rows = _fallback_job_runs[job_id]
-        rows.insert(0, run_id)
+        if not rows or rows[0] != run_id:
+            rows.insert(0, run_id)
         del rows[max_history:]
 
 
@@ -424,6 +481,22 @@ async def get_queue_metrics() -> Dict[str, int]:
     """Get queue metrics for dashboard."""
     if _sedang_mode_fallback_redis():
         return {"depth": len(_fallback_stream), "delayed": len(_fallback_delayed)}
+
+
+async def has_active_runs(job_id: str) -> bool:
+    """Check whether a job currently has queued/running runs."""
+    normalized_job_id = job_id.strip()
+    if not normalized_job_id:
+        return False
+
+    if _sedang_mode_fallback_redis():
+        return len(_fallback_active_runs.get(normalized_job_id, set())) > 0
+
+    try:
+        return int(await redis_client.scard(_kunci_active_runs(normalized_job_id))) > 0
+    except RedisError:
+        _aktifkan_mode_fallback()
+        return len(_fallback_active_runs.get(normalized_job_id, set())) > 0
 
     try:
         depth = await redis_client.xlen(STREAM_JOBS)

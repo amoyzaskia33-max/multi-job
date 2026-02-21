@@ -34,6 +34,7 @@ def _reset_queue_fallback_state():
     queue._fallback_runs.clear()
     queue._fallback_run_scores.clear()
     queue._fallback_job_runs.clear()
+    queue._fallback_active_runs.clear()
     queue._fallback_events.clear()
 
 
@@ -122,3 +123,24 @@ def test_queue_auto_switches_to_fallback_after_redis_error(monkeypatch):
     )
     assert second_id
     assert redis_fail.xadd_calls == 1
+
+
+def test_active_runs_index_updates_in_fallback_mode(monkeypatch):
+    _reset_queue_fallback_state()
+    monkeypatch.setattr(queue, "redis_client", _MustNotCallRedis())
+    queue.set_mode_fallback_redis(True)
+
+    run = Run(
+        run_id="run_active_1",
+        job_id="job_active_1",
+        status=RunStatus.QUEUED,
+        attempt=0,
+        scheduled_at=datetime.now(timezone.utc),
+        inputs={},
+    )
+    asyncio.run(queue.save_run(run))
+    assert asyncio.run(queue.has_active_runs("job_active_1")) is True
+
+    run.status = RunStatus.SUCCESS
+    asyncio.run(queue.save_run(run))
+    assert asyncio.run(queue.has_active_runs("job_active_1")) is False
