@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Cable, Gauge, History, Settings2, Workflow } from "lucide-react";
+import { Bot, Cable, Gauge, History, Sparkles, Settings2, Workflow } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ type SidebarNavProps = {
 
 const navItems = [
   { href: "/", label: "Ringkasan", icon: Gauge },
+  { href: "/prompt", label: "Prompt", icon: Sparkles },
   { href: "/jobs", label: "Tugas", icon: Workflow },
   { href: "/runs", label: "Riwayat", icon: History },
   { href: "/agents", label: "Agen", icon: Bot },

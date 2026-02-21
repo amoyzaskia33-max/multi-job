@@ -63,6 +63,34 @@ export interface SystemMetrics {
   api_online: boolean;
 }
 
+export interface PlannerExecutionResult {
+  job_id: string;
+  type: string;
+  create_status: "created" | "updated" | "error";
+  run_id?: string;
+  queue_status?: string;
+  run_status?: "queued" | "running" | "success" | "failed";
+  result_success?: boolean;
+  result_error?: string;
+}
+
+export interface PlannerExecuteResponse {
+  planner_source: "rule_based" | "smolagents";
+  summary: string;
+  assumptions: string[];
+  warnings: string[];
+  results: PlannerExecutionResult[];
+}
+
+export interface PlannerExecuteRequest {
+  prompt: string;
+  use_ai?: boolean;
+  force_rule_based?: boolean;
+  run_immediately?: boolean;
+  wait_seconds?: number;
+  timezone?: string;
+}
+
 const handleApiError = <T>(error: unknown, message: string, fallback: T): T => {
   console.error(`${message}:`, error);
   toast.error(message);
@@ -206,4 +234,12 @@ export const getSystemMetrics = async (): Promise<SystemMetrics> => {
     redis_online: health.systemReady,
     api_online: health.apiHealthy,
   };
+};
+
+export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse | undefined> => {
+  try {
+    return await send<PlannerExecuteResponse>("/planner/execute", "POST", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal mengeksekusi prompt", undefined);
+  }
 };
