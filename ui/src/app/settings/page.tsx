@@ -10,9 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  deleteIntegrationAccount,
+  deleteMcpIntegrationServer,
   deleteTelegramConnectorAccount,
+  getIntegrationAccounts,
+  getMcpIntegrationServers,
   getTelegramConnectorAccounts,
+  upsertIntegrationAccount,
+  upsertMcpIntegrationServer,
   upsertTelegramConnectorAccount,
+  type McpIntegrationServerUpsertRequest,
 } from "@/lib/api";
 
 const SETTINGS_KEY = "spio_ui_pengaturan";
@@ -26,6 +33,33 @@ type UiSettings = {
 const clampWaitSeconds = (value: number) => {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(30, Math.floor(value)));
+};
+
+const parseObjectInput = (raw: string, fieldName: string): Record<string, unknown> | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      toast.error(`${fieldName} harus object JSON.`);
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    toast.error(`${fieldName} bukan JSON valid.`);
+    return null;
+  }
+};
+
+const toStringMap = (source: Record<string, unknown>): Record<string, string> => {
+  const output: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    const cleanKey = key.trim();
+    if (!cleanKey) continue;
+    output[cleanKey] = String(value);
+  }
+  return output;
 };
 
 export default function SettingsPage() {
@@ -45,9 +79,39 @@ export default function SettingsPage() {
   const [defaultChannel, setDefaultChannel] = useState("telegram");
   const [defaultAccountId, setDefaultAccountId] = useState("default");
 
+  const [mcpServerId, setMcpServerId] = useState("mcp_main");
+  const [mcpEnabled, setMcpEnabled] = useState(true);
+  const [mcpTransport, setMcpTransport] = useState<"stdio" | "http" | "sse">("stdio");
+  const [mcpDescription, setMcpDescription] = useState("");
+  const [mcpCommand, setMcpCommand] = useState("");
+  const [mcpArgsText, setMcpArgsText] = useState("");
+  const [mcpUrl, setMcpUrl] = useState("");
+  const [mcpHeadersText, setMcpHeadersText] = useState("{}");
+  const [mcpEnvText, setMcpEnvText] = useState("{}");
+  const [mcpAuthToken, setMcpAuthToken] = useState("");
+  const [mcpTimeoutSec, setMcpTimeoutSec] = useState(20);
+
+  const [integrationProvider, setIntegrationProvider] = useState("openai");
+  const [integrationAccountId, setIntegrationAccountId] = useState("default");
+  const [integrationEnabled, setIntegrationEnabled] = useState(true);
+  const [integrationSecret, setIntegrationSecret] = useState("");
+  const [integrationConfigText, setIntegrationConfigText] = useState("{}");
+
   const { data: telegramAccounts = [], isLoading: isTelegramLoading, refetch: refetchTelegramAccounts } = useQuery({
     queryKey: ["telegram-accounts"],
     queryFn: getTelegramConnectorAccounts,
+    refetchInterval: 10000,
+  });
+
+  const { data: mcpServers = [], isLoading: isMcpLoading, refetch: refetchMcpServers } = useQuery({
+    queryKey: ["mcp-servers"],
+    queryFn: getMcpIntegrationServers,
+    refetchInterval: 10000,
+  });
+
+  const { data: integrationAccounts = [], isLoading: isIntegrationLoading, refetch: refetchIntegrationAccounts } = useQuery({
+    queryKey: ["integration-accounts"],
+    queryFn: () => getIntegrationAccounts(),
     refetchInterval: 10000,
   });
 
@@ -73,7 +137,7 @@ export default function SettingsPage() {
     toast.success("Setelan dashboard tersimpan.");
   };
 
-  const handleUseAccount = (targetAccountId: string) => {
+  const handleUseTelegramAccount = (targetAccountId: string) => {
     const selected = telegramAccounts.find((row) => row.account_id === targetAccountId);
     if (!selected) return;
 
@@ -133,18 +197,135 @@ export default function SettingsPage() {
     await refetchTelegramAccounts();
   };
 
+  const handleUseMcpServer = (serverId: string) => {
+    const selected = mcpServers.find((row) => row.server_id === serverId);
+    if (!selected) return;
+
+    setMcpServerId(selected.server_id);
+    setMcpEnabled(selected.enabled);
+    setMcpTransport(selected.transport);
+    setMcpDescription(selected.description || "");
+    setMcpCommand(selected.command || "");
+    setMcpArgsText((selected.args || []).join(" "));
+    setMcpUrl(selected.url || "");
+    setMcpHeadersText(JSON.stringify(selected.headers || {}, null, 2));
+    setMcpEnvText(JSON.stringify(selected.env || {}, null, 2));
+    setMcpTimeoutSec(Number.isFinite(selected.timeout_sec) ? selected.timeout_sec : 20);
+    setMcpAuthToken("");
+  };
+
+  const handleSaveMcpServer = async () => {
+    const normalizedServerId = mcpServerId.trim();
+    if (!normalizedServerId) {
+      toast.error("Server ID MCP wajib diisi.");
+      return;
+    }
+
+    const parsedHeaders = parseObjectInput(mcpHeadersText, "Headers MCP");
+    if (!parsedHeaders) return;
+
+    const parsedEnv = parseObjectInput(mcpEnvText, "Environment MCP");
+    if (!parsedEnv) return;
+
+    const payload: McpIntegrationServerUpsertRequest = {
+      enabled: mcpEnabled,
+      transport: mcpTransport,
+      description: mcpDescription.trim(),
+      command: mcpCommand.trim(),
+      args: mcpArgsText
+        .split(" ")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+      url: mcpUrl.trim(),
+      headers: toStringMap(parsedHeaders),
+      env: toStringMap(parsedEnv),
+      auth_token: mcpAuthToken.trim() || undefined,
+      timeout_sec: Math.max(1, Math.min(120, Math.floor(mcpTimeoutSec || 20))),
+    };
+
+    const saved = await upsertMcpIntegrationServer(normalizedServerId, payload);
+    if (!saved) return;
+
+    setMcpAuthToken("");
+    toast.success(`MCP server '${saved.server_id}' tersimpan.`);
+    await refetchMcpServers();
+  };
+
+  const handleDeleteMcpServer = async (serverId: string) => {
+    const confirmed = window.confirm(`Hapus MCP server '${serverId}'?`);
+    if (!confirmed) return;
+
+    const deleted = await deleteMcpIntegrationServer(serverId);
+    if (!deleted) return;
+
+    toast.success(`MCP server '${serverId}' dihapus.`);
+    await refetchMcpServers();
+  };
+
+  const handleUseIntegrationAccount = (provider: string, accountIdValue: string) => {
+    const selected = integrationAccounts.find(
+      (row) => row.provider === provider && row.account_id === accountIdValue,
+    );
+    if (!selected) return;
+
+    setIntegrationProvider(selected.provider);
+    setIntegrationAccountId(selected.account_id);
+    setIntegrationEnabled(selected.enabled);
+    setIntegrationSecret("");
+    setIntegrationConfigText(JSON.stringify(selected.config || {}, null, 2));
+  };
+
+  const handleSaveIntegrationAccount = async () => {
+    const provider = integrationProvider.trim().toLowerCase();
+    const accountIdValue = integrationAccountId.trim();
+
+    if (!provider) {
+      toast.error("Provider integrasi wajib diisi.");
+      return;
+    }
+    if (!accountIdValue) {
+      toast.error("Account ID integrasi wajib diisi.");
+      return;
+    }
+
+    const parsedConfig = parseObjectInput(integrationConfigText, "Config akun integrasi");
+    if (!parsedConfig) return;
+
+    const saved = await upsertIntegrationAccount(provider, accountIdValue, {
+      enabled: integrationEnabled,
+      secret: integrationSecret.trim() || undefined,
+      config: parsedConfig,
+    });
+    if (!saved) return;
+
+    setIntegrationSecret("");
+    toast.success(`Akun integrasi '${saved.provider}/${saved.account_id}' tersimpan.`);
+    await refetchIntegrationAccounts();
+  };
+
+  const handleDeleteIntegrationAccount = async (provider: string, accountIdValue: string) => {
+    const confirmed = window.confirm(`Hapus akun integrasi '${provider}/${accountIdValue}'?`);
+    if (!confirmed) return;
+
+    const deleted = await deleteIntegrationAccount(provider, accountIdValue);
+    if (!deleted) return;
+
+    toast.success(`Akun integrasi '${provider}/${accountIdValue}' dihapus.`);
+    await refetchIntegrationAccounts();
+  };
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-border bg-card p-6">
-        <h1 className="text-3xl font-bold text-foreground">Setelan</h1>
+        <h1 className="text-3xl font-bold text-foreground">Setelan Integrasi</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Atur koneksi API, update dashboard, dan akun Telegram untuk perintah AI otomatis.
+          Semua koneksi disimpan di sini: API dashboard, Telegram bridge, MCP server, dan akun provider/tool lainnya.
         </p>
       </section>
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Koneksi API</CardTitle>
+          <CardTitle>Koneksi API Dashboard</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -158,15 +339,6 @@ export default function SettingsPage() {
             <p className="mt-1 text-sm text-muted-foreground">Isi dengan alamat backend yang bisa diakses browser.</p>
           </div>
 
-          <Button onClick={handleSaveUiSettings}>Simpan Setelan</Button>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-card">
-        <CardHeader>
-          <CardTitle>Update Data Otomatis</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted p-4">
             <div>
               <Label>Auto Refresh</Label>
@@ -175,7 +347,7 @@ export default function SettingsPage() {
             <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
           </div>
 
-          <div>
+          <div className="max-w-sm">
             <Label htmlFor="refresh-interval">Jeda Update (detik)</Label>
             <Input
               id="refresh-interval"
@@ -185,14 +357,15 @@ export default function SettingsPage() {
               value={refreshInterval}
               onChange={(event) => setRefreshInterval(Number(event.target.value))}
             />
-            <p className="mt-1 text-sm text-muted-foreground">Berlaku untuk halaman Dashboard, Koneksi, dan Agen.</p>
           </div>
+
+          <Button onClick={handleSaveUiSettings}>Simpan Setelan Dashboard</Button>
         </CardContent>
       </Card>
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Akun Telegram Untuk AI</CardTitle>
+          <CardTitle>Telegram Bridge (Perintah Dari Chat)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -204,7 +377,6 @@ export default function SettingsPage() {
                 onChange={(event) => setAccountId(event.target.value)}
                 placeholder="bot_a01"
               />
-              <p className="mt-1 text-xs text-muted-foreground">ID internal untuk konektor Telegram.</p>
             </div>
 
             <div>
@@ -219,16 +391,13 @@ export default function SettingsPage() {
             </div>
 
             <div className="lg:col-span-2">
-              <Label htmlFor="telegram-allowed-chat-ids">Allowed Chat IDs (pisahkan dengan koma)</Label>
+              <Label htmlFor="telegram-allowed-chat-ids">Allowed Chat IDs (pisahkan koma)</Label>
               <Input
                 id="telegram-allowed-chat-ids"
                 value={allowedChatIdsText}
                 onChange={(event) => setAllowedChatIdsText(event.target.value)}
                 placeholder="123456789, -1001122334455"
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Kosongkan untuk mengizinkan semua chat yang masuk ke bot ini.
-              </p>
             </div>
           </div>
 
@@ -236,7 +405,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between rounded-xl border border-border bg-muted p-4">
               <div>
                 <Label>Akun Aktif</Label>
-                <p className="text-sm text-muted-foreground">Kalau nonaktif, pesan Telegram tidak diproses.</p>
+                <p className="text-sm text-muted-foreground">Jika nonaktif, pesan bot tidak diproses.</p>
               </div>
               <Switch checked={enabled} onCheckedChange={setEnabled} />
             </div>
@@ -266,9 +435,9 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
             <div>
-              <Label htmlFor="telegram-wait-seconds">Tunggu Hasil (detik)</Label>
+              <Label htmlFor="telegram-wait-seconds">Wait (detik)</Label>
               <Input
                 id="telegram-wait-seconds"
                 type="number"
@@ -279,14 +448,20 @@ export default function SettingsPage() {
                 disabled={!runImmediately}
               />
             </div>
-
             <div>
               <Label htmlFor="telegram-timezone">Timezone</Label>
               <Input id="telegram-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
             </div>
-
             <div>
-              <Label htmlFor="telegram-default-account-id">Default Account ID Planner</Label>
+              <Label htmlFor="telegram-default-channel">Default Channel</Label>
+              <Input
+                id="telegram-default-channel"
+                value={defaultChannel}
+                onChange={(event) => setDefaultChannel(event.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="telegram-default-account-id">Default Account ID</Label>
               <Input
                 id="telegram-default-account-id"
                 value={defaultAccountId}
@@ -295,84 +470,302 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="max-w-sm">
-            <Label htmlFor="telegram-default-channel">Default Channel Planner</Label>
+          <Button onClick={handleSaveTelegramAccount}>Simpan Akun Telegram</Button>
+
+          <div className="space-y-2">
+            <Label>Daftar Akun Telegram</Label>
+            {isTelegramLoading ? (
+              <div className="text-sm text-muted-foreground">Lagi ambil akun Telegram...</div>
+            ) : telegramAccounts.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Belum ada akun Telegram tersimpan.</div>
+            ) : (
+              telegramAccounts.map((row) => (
+                <div
+                  key={row.account_id}
+                  className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">{row.account_id}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Status: {row.enabled ? "aktif" : "nonaktif"} | Token:{" "}
+                      {row.has_bot_token ? row.bot_token_masked || "tersimpan" : "belum ada"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Allowed chats: {row.allowed_chat_ids.length ? row.allowed_chat_ids.join(", ") : "semua chat"}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleUseTelegramAccount(row.account_id)}>
+                      Pakai
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDeleteTelegramAccount(row.account_id)}>
+                      Hapus
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle>MCP Servers</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div>
+              <Label htmlFor="mcp-server-id">Server ID</Label>
+              <Input
+                id="mcp-server-id"
+                value={mcpServerId}
+                onChange={(event) => setMcpServerId(event.target.value)}
+                placeholder="mcp_main"
+              />
+            </div>
+            <div>
+              <Label htmlFor="mcp-transport">Transport</Label>
+              <select
+                id="mcp-transport"
+                value={mcpTransport}
+                onChange={(event) => setMcpTransport(event.target.value as "stdio" | "http" | "sse")}
+                className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground"
+              >
+                <option value="stdio">stdio</option>
+                <option value="http">http</option>
+                <option value="sse">sse</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <div className="flex w-full items-center justify-between rounded-xl border border-border bg-muted p-3">
+                <Label>Aktif</Label>
+                <Switch checked={mcpEnabled} onCheckedChange={setMcpEnabled} />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="mcp-description">Deskripsi</Label>
             <Input
-              id="telegram-default-channel"
-              value={defaultChannel}
-              onChange={(event) => setDefaultChannel(event.target.value)}
+              id="mcp-description"
+              value={mcpDescription}
+              onChange={(event) => setMcpDescription(event.target.value)}
+              placeholder="MCP untuk automasi internal"
             />
           </div>
 
-          <Button onClick={handleSaveTelegramAccount}>Simpan Akun Telegram</Button>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div>
+              <Label htmlFor="mcp-command">Command (untuk stdio)</Label>
+              <Input
+                id="mcp-command"
+                value={mcpCommand}
+                onChange={(event) => setMcpCommand(event.target.value)}
+                placeholder="npx @modelcontextprotocol/server-github"
+              />
+            </div>
+            <div>
+              <Label htmlFor="mcp-url">URL (untuk http/sse)</Label>
+              <Input
+                id="mcp-url"
+                value={mcpUrl}
+                onChange={(event) => setMcpUrl(event.target.value)}
+                placeholder="https://mcp.example.com/sse"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div>
+              <Label htmlFor="mcp-args">Args (pisahkan spasi)</Label>
+              <Input
+                id="mcp-args"
+                value={mcpArgsText}
+                onChange={(event) => setMcpArgsText(event.target.value)}
+                placeholder="--verbose --port 7777"
+              />
+            </div>
+            <div>
+              <Label htmlFor="mcp-timeout">Timeout (detik)</Label>
+              <Input
+                id="mcp-timeout"
+                type="number"
+                min={1}
+                max={120}
+                value={mcpTimeoutSec}
+                onChange={(event) => setMcpTimeoutSec(Number(event.target.value))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="mcp-auth-token">Auth Token (opsional)</Label>
+              <Input
+                id="mcp-auth-token"
+                type="password"
+                value={mcpAuthToken}
+                onChange={(event) => setMcpAuthToken(event.target.value)}
+                placeholder="Bearer token"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div>
+              <Label htmlFor="mcp-headers">Headers JSON</Label>
+              <textarea
+                id="mcp-headers"
+                className="min-h-[110px] w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground"
+                value={mcpHeadersText}
+                onChange={(event) => setMcpHeadersText(event.target.value)}
+                placeholder='{"x-api-key":"..."}'
+              />
+            </div>
+            <div>
+              <Label htmlFor="mcp-env">Environment JSON</Label>
+              <textarea
+                id="mcp-env"
+                className="min-h-[110px] w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground"
+                value={mcpEnvText}
+                onChange={(event) => setMcpEnvText(event.target.value)}
+                placeholder='{"OPENAI_API_KEY":"..."}'
+              />
+            </div>
+          </div>
+
+          <Button onClick={handleSaveMcpServer}>Simpan MCP Server</Button>
+
+          <div className="space-y-2">
+            <Label>Daftar MCP Server</Label>
+            {isMcpLoading ? (
+              <div className="text-sm text-muted-foreground">Lagi ambil MCP server...</div>
+            ) : mcpServers.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Belum ada MCP server tersimpan.</div>
+            ) : (
+              mcpServers.map((row) => (
+                <div
+                  key={row.server_id}
+                  className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">{row.server_id}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {row.transport.toUpperCase()} | Status: {row.enabled ? "aktif" : "nonaktif"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {row.transport === "stdio" ? `Command: ${row.command || "-"}` : `URL: ${row.url || "-"}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Auth token: {row.has_auth_token ? row.auth_token_masked || "tersimpan" : "tidak ada"}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleUseMcpServer(row.server_id)}>
+                      Pakai
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDeleteMcpServer(row.server_id)}>
+                      Hapus
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Daftar Akun Telegram</CardTitle>
+          <CardTitle>Akun Integrasi Lainnya</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {isTelegramLoading ? (
-            <div className="text-sm text-muted-foreground">Lagi ambil akun Telegram...</div>
-          ) : telegramAccounts.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Belum ada akun Telegram yang tersimpan.</div>
-          ) : (
-            telegramAccounts.map((row) => (
-              <div
-                key={row.account_id}
-                className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
-              >
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">{row.account_id}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Status: {row.enabled ? "aktif" : "nonaktif"} | Token:{" "}
-                    {row.has_bot_token ? row.bot_token_masked || "tersimpan" : "belum ada"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Allowed chats: {row.allowed_chat_ids.length > 0 ? row.allowed_chat_ids.join(", ") : "semua chat"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Planner: {row.use_ai ? "AI" : "Rule-Based"} | Run: {row.run_immediately ? "langsung" : "tanpa run"}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleUseAccount(row.account_id)}>
-                    Pakai
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleDeleteTelegramAccount(row.account_id)}>
-                    Hapus
-                  </Button>
-                </div>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div>
+              <Label htmlFor="integration-provider">Provider</Label>
+              <Input
+                id="integration-provider"
+                value={integrationProvider}
+                onChange={(event) => setIntegrationProvider(event.target.value)}
+                placeholder="openai / github / notion / linear"
+              />
+            </div>
+            <div>
+              <Label htmlFor="integration-account-id">Account ID</Label>
+              <Input
+                id="integration-account-id"
+                value={integrationAccountId}
+                onChange={(event) => setIntegrationAccountId(event.target.value)}
+                placeholder="default"
+              />
+            </div>
+            <div className="flex items-end">
+              <div className="flex w-full items-center justify-between rounded-xl border border-border bg-muted p-3">
+                <Label>Aktif</Label>
+                <Switch checked={integrationEnabled} onCheckedChange={setIntegrationEnabled} />
               </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+            </div>
+          </div>
 
-      <Card className="bg-card">
-        <CardHeader>
-          <CardTitle>Info Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-border bg-muted p-4">
-              <h3 className="mb-1 text-sm font-semibold">Versi Dashboard</h3>
-              <p className="text-sm text-muted-foreground">v0.1.0</p>
-            </div>
-            <div className="rounded-lg border border-border bg-muted p-4">
-              <h3 className="mb-1 text-sm font-semibold">Platform UI</h3>
-              <p className="text-sm text-muted-foreground">Next.js + TypeScript + TailwindCSS</p>
-            </div>
-            <div className="rounded-lg border border-border bg-muted p-4">
-              <h3 className="mb-1 text-sm font-semibold">Pengambil Data</h3>
-              <p className="text-sm text-muted-foreground">TanStack Query</p>
-            </div>
-            <div className="rounded-lg border border-border bg-muted p-4">
-              <h3 className="mb-1 text-sm font-semibold">Visual Grafik</h3>
-              <p className="text-sm text-muted-foreground">Recharts</p>
-            </div>
+          <div>
+            <Label htmlFor="integration-secret">Secret/Token (opsional jika sudah tersimpan)</Label>
+            <Input
+              id="integration-secret"
+              type="password"
+              value={integrationSecret}
+              onChange={(event) => setIntegrationSecret(event.target.value)}
+              placeholder="sk-..., ghp_..., dll"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="integration-config">Config JSON</Label>
+            <textarea
+              id="integration-config"
+              className="min-h-[120px] w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground"
+              value={integrationConfigText}
+              onChange={(event) => setIntegrationConfigText(event.target.value)}
+              placeholder='{"base_url":"...", "workspace":"..."}'
+            />
+          </div>
+
+          <Button onClick={handleSaveIntegrationAccount}>Simpan Akun Integrasi</Button>
+
+          <div className="space-y-2">
+            <Label>Daftar Akun Integrasi</Label>
+            {isIntegrationLoading ? (
+              <div className="text-sm text-muted-foreground">Lagi ambil akun integrasi...</div>
+            ) : integrationAccounts.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Belum ada akun integrasi tersimpan.</div>
+            ) : (
+              integrationAccounts.map((row) => (
+                <div
+                  key={`${row.provider}-${row.account_id}`}
+                  className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">
+                      {row.provider} / {row.account_id}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Status: {row.enabled ? "aktif" : "nonaktif"} | Secret:{" "}
+                      {row.has_secret ? row.secret_masked || "tersimpan" : "tidak ada"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Config keys: {Object.keys(row.config || {}).join(", ") || "-"}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleUseIntegrationAccount(row.provider, row.account_id)}>
+                      Pakai
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeleteIntegrationAccount(row.provider, row.account_id)}
+                    >
+                      Hapus
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

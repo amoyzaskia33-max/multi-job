@@ -75,6 +75,53 @@ export interface TelegramConnectorAccountUpsertRequest {
   default_account_id: string;
 }
 
+export interface McpIntegrationServer {
+  server_id: string;
+  enabled: boolean;
+  transport: "stdio" | "http" | "sse";
+  description: string;
+  command: string;
+  args: string[];
+  url: string;
+  headers: Record<string, string>;
+  env: Record<string, string>;
+  has_auth_token: boolean;
+  auth_token_masked?: string;
+  timeout_sec: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface McpIntegrationServerUpsertRequest {
+  enabled: boolean;
+  transport: "stdio" | "http" | "sse";
+  description: string;
+  command: string;
+  args: string[];
+  url: string;
+  headers: Record<string, string>;
+  env: Record<string, string>;
+  auth_token?: string;
+  timeout_sec: number;
+}
+
+export interface IntegrationAccount {
+  provider: string;
+  account_id: string;
+  enabled: boolean;
+  has_secret: boolean;
+  secret_masked?: string;
+  config: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface IntegrationAccountUpsertRequest {
+  enabled: boolean;
+  secret?: string;
+  config: Record<string, unknown>;
+}
+
 export interface Agent {
   id: string;
   type?: string;
@@ -244,6 +291,67 @@ export const deleteTelegramConnectorAccount = async (accountId: string): Promise
     return true;
   } catch (error) {
     return handleApiError(error, "Gagal menghapus akun Telegram", false);
+  }
+};
+
+export const getMcpIntegrationServers = async (): Promise<McpIntegrationServer[]> => {
+  try {
+    return await getJson<McpIntegrationServer[]>("/integrations/mcp/servers");
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat daftar MCP server", []);
+  }
+};
+
+export const upsertMcpIntegrationServer = async (
+  serverId: string,
+  payload: McpIntegrationServerUpsertRequest,
+): Promise<McpIntegrationServer | undefined> => {
+  try {
+    return await send<McpIntegrationServer>(`/integrations/mcp/servers/${serverId}`, "PUT", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menyimpan MCP server", undefined);
+  }
+};
+
+export const deleteMcpIntegrationServer = async (serverId: string): Promise<boolean> => {
+  try {
+    await send<{ server_id: string; status: string }>(`/integrations/mcp/servers/${serverId}`, "DELETE");
+    return true;
+  } catch (error) {
+    return handleApiError(error, "Gagal menghapus MCP server", false);
+  }
+};
+
+export const getIntegrationAccounts = async (provider?: string): Promise<IntegrationAccount[]> => {
+  try {
+    const query = provider ? `?provider=${encodeURIComponent(provider)}` : "";
+    return await getJson<IntegrationAccount[]>(`/integrations/accounts${query}`);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat akun integrasi", []);
+  }
+};
+
+export const upsertIntegrationAccount = async (
+  provider: string,
+  accountId: string,
+  payload: IntegrationAccountUpsertRequest,
+): Promise<IntegrationAccount | undefined> => {
+  try {
+    return await send<IntegrationAccount>(`/integrations/accounts/${provider}/${accountId}`, "PUT", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menyimpan akun integrasi", undefined);
+  }
+};
+
+export const deleteIntegrationAccount = async (provider: string, accountId: string): Promise<boolean> => {
+  try {
+    await send<{ provider: string; account_id: string; status: string }>(
+      `/integrations/accounts/${provider}/${accountId}`,
+      "DELETE",
+    );
+    return true;
+  } catch (error) {
+    return handleApiError(error, "Gagal menghapus akun integrasi", false);
   }
 };
 

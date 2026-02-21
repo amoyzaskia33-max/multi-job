@@ -17,6 +17,16 @@ from app.core.connector_accounts import (
     list_telegram_accounts,
     upsert_telegram_account,
 )
+from app.core.integration_configs import (
+    delete_integration_account,
+    delete_mcp_server,
+    get_integration_account,
+    get_mcp_server,
+    list_integration_accounts,
+    list_mcp_servers,
+    upsert_integration_account,
+    upsert_mcp_server,
+)
 from app.core.models import JobSpec, QueueEvent, Run, RunStatus
 from app.core.observability import expose_metrics, logger
 from app.core.queue import (
@@ -153,6 +163,53 @@ class TelegramConnectorAccountView(BaseModel):
     timezone: str = "Asia/Jakarta"
     default_channel: str = "telegram"
     default_account_id: str = "default"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class McpServerUpsertRequest(BaseModel):
+    enabled: bool = True
+    transport: str = "stdio"
+    description: str = ""
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    url: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    env: Dict[str, str] = Field(default_factory=dict)
+    auth_token: Optional[str] = None
+    timeout_sec: int = Field(default=20, ge=1, le=120)
+
+
+class McpServerView(BaseModel):
+    server_id: str
+    enabled: bool = True
+    transport: str = "stdio"
+    description: str = ""
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    url: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    env: Dict[str, str] = Field(default_factory=dict)
+    has_auth_token: bool = False
+    auth_token_masked: Optional[str] = None
+    timeout_sec: int = 20
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class IntegrationAccountUpsertRequest(BaseModel):
+    enabled: bool = True
+    secret: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IntegrationAccountView(BaseModel):
+    provider: str
+    account_id: str
+    enabled: bool = True
+    has_secret: bool = False
+    secret_masked: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -448,6 +505,100 @@ async def delete_telegram_connector_account(account_id: str):
     )
 
     return {"account_id": account_id, "status": "deleted"}
+
+
+@app.get("/integrations/mcp/servers", response_model=List[McpServerView])
+async def list_mcp_integration_servers():
+    return await list_mcp_servers(include_secret=False)
+
+
+@app.get("/integrations/mcp/servers/{server_id}", response_model=McpServerView)
+async def get_mcp_integration_server(server_id: str):
+    row = await get_mcp_server(server_id, include_secret=False)
+    if not row:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    return row
+
+
+@app.put("/integrations/mcp/servers/{server_id}", response_model=McpServerView)
+async def upsert_mcp_integration_server(server_id: str, request: McpServerUpsertRequest):
+    try:
+        row = await upsert_mcp_server(server_id, request.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await append_event(
+        "integration.mcp_server_upserted",
+        {
+            "server_id": server_id,
+            "enabled": row.get("enabled", True),
+            "transport": row.get("transport", "stdio"),
+        },
+    )
+
+    return row
+
+
+@app.delete("/integrations/mcp/servers/{server_id}")
+async def delete_mcp_integration_server(server_id: str):
+    removed = await delete_mcp_server(server_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+
+    await append_event("integration.mcp_server_deleted", {"server_id": server_id})
+    return {"server_id": server_id, "status": "deleted"}
+
+
+@app.get("/integrations/accounts", response_model=List[IntegrationAccountView])
+async def list_integration_accounts_endpoint(provider: Optional[str] = None):
+    try:
+        return await list_integration_accounts(provider=provider, include_secret=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/integrations/accounts/{provider}/{account_id}", response_model=IntegrationAccountView)
+async def get_integration_account_endpoint(provider: str, account_id: str):
+    try:
+        row = await get_integration_account(provider, account_id, include_secret=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration account not found")
+    return row
+
+
+@app.put("/integrations/accounts/{provider}/{account_id}", response_model=IntegrationAccountView)
+async def upsert_integration_account_endpoint(
+    provider: str,
+    account_id: str,
+    request: IntegrationAccountUpsertRequest,
+):
+    try:
+        row = await upsert_integration_account(provider, account_id, request.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await append_event(
+        "integration.account_upserted",
+        {"provider": row.get("provider"), "account_id": row.get("account_id"), "enabled": row.get("enabled", True)},
+    )
+    return row
+
+
+@app.delete("/integrations/accounts/{provider}/{account_id}")
+async def delete_integration_account_endpoint(provider: str, account_id: str):
+    try:
+        removed = await delete_integration_account(provider, account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not removed:
+        raise HTTPException(status_code=404, detail="Integration account not found")
+
+    await append_event("integration.account_deleted", {"provider": provider, "account_id": account_id})
+    return {"provider": provider, "account_id": account_id, "status": "deleted"}
 
 
 @app.get("/connectors")
