@@ -250,3 +250,108 @@ def test_scheduler_skips_dispatch_when_job_in_cooldown(monkeypatch):
     asyncio.run(sched.process_interval_jobs())
 
     assert any(name == "scheduler.dispatch_skipped_cooldown" for name, _ in events)
+
+
+def test_scheduler_skips_non_critical_during_pressure_mode(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
+    sched = scheduler_module.Scheduler()
+    sched.jobs = {"job_pressure": _job_spec_interval("job_pressure")}
+    sched.pressure_mode = True
+    sched.queue_depth_snapshot = 999
+    sched.queue_delayed_snapshot = 12
+
+    events = []
+
+    async def _no_active(job_id: str):
+        return False
+
+    async def fake_enqueue_job(event):
+        raise AssertionError("enqueue should not be called for non-critical job during pressure mode")
+
+    async def fake_append_event(event_type: str, data):
+        events.append((event_type, data))
+        return None
+
+    monkeypatch.setattr(scheduler_module, "has_active_runs", _no_active)
+    monkeypatch.setattr(scheduler_module, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(scheduler_module, "append_event", fake_append_event)
+    monkeypatch.setattr(scheduler_module, "save_run", _noop)
+    monkeypatch.setattr(scheduler_module, "add_run_to_job_history", _noop)
+    monkeypatch.setattr(scheduler_module, "get_run", lambda run_id: _noop())
+
+    asyncio.run(sched.process_interval_jobs())
+
+    assert any(name == "scheduler.dispatch_skipped_pressure" for name, _ in events)
+
+
+def test_scheduler_allows_critical_job_during_pressure_mode(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
+    sched = scheduler_module.Scheduler()
+    spec = JobSpec(
+        job_id="job_critical",
+        type="agent.workflow",
+        schedule=Schedule(interval_sec=1),
+        timeout_ms=30000,
+        retry_policy=RetryPolicy(max_retry=1, backoff_sec=[1]),
+        inputs={"prompt": "x", "pressure_priority": "critical"},
+    )
+    sched.jobs = {"job_critical": spec}
+    sched.pressure_mode = True
+    sched.queue_depth_snapshot = 999
+    sched.queue_delayed_snapshot = 12
+
+    enqueued = []
+
+    async def _no_active(job_id: str):
+        return False
+
+    async def fake_enqueue_job(event):
+        enqueued.append(event)
+        return "1-0"
+
+    monkeypatch.setattr(scheduler_module, "has_active_runs", _no_active)
+    monkeypatch.setattr(scheduler_module, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(scheduler_module, "append_event", _noop)
+    monkeypatch.setattr(scheduler_module, "save_run", _noop)
+    monkeypatch.setattr(scheduler_module, "add_run_to_job_history", _noop)
+    monkeypatch.setattr(scheduler_module, "get_run", lambda run_id: _noop())
+
+    asyncio.run(sched.process_interval_jobs())
+
+    assert len(enqueued) == 1
+
+
+def test_scheduler_respects_dispatch_cap_per_tick(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
+    sched = scheduler_module.Scheduler()
+    sched.max_dispatch_per_tick = 1
+    sched.jobs = {
+        "job_a": _job_spec_interval("job_a"),
+        "job_b": _job_spec_interval("job_b"),
+    }
+
+    enqueued = []
+    events = []
+
+    async def _no_active(job_id: str):
+        return False
+
+    async def fake_enqueue_job(event):
+        enqueued.append(event)
+        return "1-0"
+
+    async def fake_append_event(event_type: str, data):
+        events.append((event_type, data))
+        return None
+
+    monkeypatch.setattr(scheduler_module, "has_active_runs", _no_active)
+    monkeypatch.setattr(scheduler_module, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(scheduler_module, "append_event", fake_append_event)
+    monkeypatch.setattr(scheduler_module, "save_run", _noop)
+    monkeypatch.setattr(scheduler_module, "add_run_to_job_history", _noop)
+    monkeypatch.setattr(scheduler_module, "get_run", lambda run_id: _noop())
+
+    asyncio.run(sched.process_interval_jobs())
+
+    assert len(enqueued) == 1
+    assert any(name == "scheduler.dispatch_capped" for name, _ in events)

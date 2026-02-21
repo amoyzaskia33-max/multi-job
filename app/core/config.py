@@ -17,5 +17,10 @@ class Settings:
     # Worker configuration
     WORKER_CONCURRENCY: int = int(os.getenv("WORKER_CONCURRENCY", 5))
 
+    # Scheduler pressure-control configuration
+    SCHEDULER_MAX_DISPATCH_PER_TICK: int = int(os.getenv("SCHEDULER_MAX_DISPATCH_PER_TICK", 80))
+    SCHEDULER_PRESSURE_DEPTH_HIGH: int = int(os.getenv("SCHEDULER_PRESSURE_DEPTH_HIGH", 300))
+    SCHEDULER_PRESSURE_DEPTH_LOW: int = int(os.getenv("SCHEDULER_PRESSURE_DEPTH_LOW", 180))
+
 
 settings = Settings()

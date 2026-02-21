@@ -82,6 +82,7 @@ export default function AutomationPage() {
   const [aktif, setAktif] = useState(true);
   const [wajibApproval, setWajibApproval] = useState(true);
   const [izinkanOverlap, setIzinkanOverlap] = useState(false);
+  const [prioritasTekanan, setPrioritasTekanan] = useState<"critical" | "normal" | "low">("normal");
   const [jitterDetik, setJitterDetik] = useState(0);
   const [failureThreshold, setFailureThreshold] = useState(3);
   const [failureCooldownSec, setFailureCooldownSec] = useState(120);
@@ -153,6 +154,7 @@ export default function AutomationPage() {
       default_account_id: defaultAccountId.trim() || "default",
       require_approval_for_missing: wajibApproval,
       allow_overlap: izinkanOverlap,
+      pressure_priority: prioritasTekanan,
       dispatch_jitter_sec: Math.max(0, Number(jitterDetik) || 0),
       failure_threshold: Math.max(1, Number(failureThreshold) || 3),
       failure_cooldown_sec: Math.max(10, Number(failureCooldownSec) || 120),
@@ -263,7 +265,7 @@ export default function AutomationPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
               <div>
                 <Label htmlFor="default-channel">Default Channel</Label>
                 <Input
@@ -291,6 +293,19 @@ export default function AutomationPage() {
                   <Label>Izinkan Overlap Run</Label>
                   <Switch checked={izinkanOverlap} onCheckedChange={setIzinkanOverlap} />
                 </div>
+              </div>
+              <div>
+                <Label htmlFor="pressure-priority">Prioritas Saat Tekanan Tinggi</Label>
+                <select
+                  id="pressure-priority"
+                  value={prioritasTekanan}
+                  onChange={(event) => setPrioritasTekanan(event.target.value as "critical" | "normal" | "low")}
+                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground"
+                >
+                  <option value="normal">Normal</option>
+                  <option value="critical">Critical (tetap jalan)</option>
+                  <option value="low">Low</option>
+                </select>
               </div>
               <div>
                 <Label htmlFor="dispatch-jitter-sec">Jitter Dispatch (detik)</Label>
@@ -370,6 +385,7 @@ export default function AutomationPage() {
                 <TableRow>
                   <TableHead>Job ID</TableHead>
                   <TableHead>Jadwal</TableHead>
+                  <TableHead>Prioritas</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
@@ -379,6 +395,7 @@ export default function AutomationPage() {
                   <TableRow key={row.job_id}>
                     <TableCell className="font-medium">{row.job_id}</TableCell>
                     <TableCell>{formatJadwal(row.schedule?.interval_sec, row.schedule?.cron)}</TableCell>
+                    <TableCell>{String((row.inputs?.["pressure_priority"] as string) || "normal")}</TableCell>
                     <TableCell>
                       <span className={row.enabled ? "status-baik" : "status-buruk"}>
                         {row.enabled ? "Aktif" : "Nonaktif"}

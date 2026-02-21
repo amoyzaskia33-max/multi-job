@@ -297,6 +297,7 @@ class AgentWorkflowAutomationRequest(BaseModel):
     default_account_id: str = "default"
     require_approval_for_missing: bool = True
     allow_overlap: bool = False
+    pressure_priority: str = Field(default="normal", pattern="^(critical|normal|low)$")
     dispatch_jitter_sec: int = Field(default=0, ge=0, le=3600)
     failure_threshold: int = Field(default=3, ge=1, le=20)
     failure_cooldown_sec: int = Field(default=120, ge=10, le=86400)
@@ -657,6 +658,7 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
             "default_account_id": request.default_account_id.strip() or "default",
             "require_approval_for_missing": request.require_approval_for_missing,
             "allow_overlap": request.allow_overlap,
+            "pressure_priority": request.pressure_priority,
             "dispatch_jitter_sec": request.dispatch_jitter_sec,
             "failure_threshold": request.failure_threshold,
             "failure_cooldown_sec": request.failure_cooldown_sec,

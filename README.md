@@ -281,6 +281,14 @@ Failure memory and anti-loop safeguards:
    - `failure_cooldown_max_sec` (default `3600`)
    - `failure_memory_enabled` (default `true`)
 
+Extreme pressure safeguards:
+1. Worker runs multi-slot concurrency via `WORKER_CONCURRENCY` (default `5`).
+2. Scheduler caps new dispatch per tick via `SCHEDULER_MAX_DISPATCH_PER_TICK` (default `80`).
+3. Scheduler enters pressure mode when queue depth reaches `SCHEDULER_PRESSURE_DEPTH_HIGH` (default `300`).
+4. Pressure mode is released when queue depth drops to `SCHEDULER_PRESSURE_DEPTH_LOW` (default `180`).
+5. During pressure mode, only jobs with `inputs.pressure_priority = "critical"` are dispatched.
+6. Configure per `agent.workflow` job using input `pressure_priority` (`critical|normal|low`).
+
 ## Job Specification Example
 
 ```json

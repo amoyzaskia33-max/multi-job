@@ -234,6 +234,7 @@ export interface AgentWorkflowAutomationRequest {
   default_account_id?: string;
   require_approval_for_missing?: boolean;
   allow_overlap?: boolean;
+  pressure_priority?: "critical" | "normal" | "low";
   dispatch_jitter_sec?: number;
   failure_threshold?: number;
   failure_cooldown_sec?: number;

@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict
 
+from .config import settings
 from .approval_queue import has_pending_approval_for_job
 from .models import JobSpec, QueueEvent, Run, RunStatus
 from .queue import (
@@ -13,6 +14,7 @@ from .queue import (
     enqueue_job,
     get_job_cooldown_remaining,
     get_due_jobs,
+    get_queue_metrics,
     get_run,
     has_active_runs,
     list_enabled_job_ids,
@@ -35,7 +37,17 @@ class Scheduler:
         self.last_overlap_notice: Dict[str, float] = {}
         self.last_pending_approval_notice: Dict[str, float] = {}
         self.last_cooldown_notice: Dict[str, float] = {}
+        self.last_pressure_notice: Dict[str, float] = {}
         self.scheduler_id = f"scheduler_{int(time.time())}"
+        self.dispatch_count_tick = 0
+        self.last_dispatch_cap_notice = 0.0
+        self.pressure_mode = False
+        self.queue_depth_snapshot = 0
+        self.queue_delayed_snapshot = 0
+        self.max_dispatch_per_tick = max(1, int(settings.SCHEDULER_MAX_DISPATCH_PER_TICK))
+        self.pressure_depth_high = max(1, int(settings.SCHEDULER_PRESSURE_DEPTH_HIGH))
+        configured_low = max(0, int(settings.SCHEDULER_PRESSURE_DEPTH_LOW))
+        self.pressure_depth_low = min(configured_low, self.pressure_depth_high - 1)
 
     async def load_jobs(self):
         """Load all enabled jobs from Redis."""
@@ -60,6 +72,9 @@ class Scheduler:
         self.last_cooldown_notice = {
             job_id: value for job_id, value in self.last_cooldown_notice.items() if job_id in valid_job_ids
         }
+        self.last_pressure_notice = {
+            job_id: value for job_id, value in self.last_pressure_notice.items() if job_id in valid_job_ids
+        }
 
     async def heartbeat(self):
         if is_mode_fallback_redis():
@@ -82,6 +97,8 @@ class Scheduler:
         putaran = 0
         while self.running:
             await self.heartbeat()
+            await self._refresh_pressure_state()
+            self.dispatch_count_tick = 0
             if putaran % 5 == 0:
                 await self.load_jobs()
             await self.process_interval_jobs()
@@ -98,6 +115,65 @@ class Scheduler:
     def _job_izinkan_overlap(spesifikasi: JobSpec) -> bool:
         inputs = spesifikasi.inputs if isinstance(spesifikasi.inputs, dict) else {}
         return bool(inputs.get("allow_overlap", False))
+
+    @staticmethod
+    def _job_priority_pressure(spesifikasi: JobSpec) -> str:
+        inputs = spesifikasi.inputs if isinstance(spesifikasi.inputs, dict) else {}
+        value = str(inputs.get("pressure_priority", "normal") or "normal").strip().lower()
+        if value not in {"critical", "normal", "low"}:
+            return "normal"
+        return value
+
+    async def _refresh_pressure_state(self) -> None:
+        metrik = await get_queue_metrics()
+        depth = max(0, int(metrik.get("depth", 0)))
+        delayed = max(0, int(metrik.get("delayed", 0)))
+        self.queue_depth_snapshot = depth
+        self.queue_delayed_snapshot = delayed
+
+        if not self.pressure_mode and depth >= self.pressure_depth_high:
+            self.pressure_mode = True
+            await append_event(
+                "scheduler.pressure_mode_enabled",
+                {
+                    "queue_depth": depth,
+                    "queue_delayed": delayed,
+                    "pressure_depth_high": self.pressure_depth_high,
+                    "pressure_depth_low": self.pressure_depth_low,
+                },
+            )
+            return
+
+        if self.pressure_mode and depth <= self.pressure_depth_low:
+            self.pressure_mode = False
+            await append_event(
+                "scheduler.pressure_mode_released",
+                {
+                    "queue_depth": depth,
+                    "queue_delayed": delayed,
+                    "pressure_depth_high": self.pressure_depth_high,
+                    "pressure_depth_low": self.pressure_depth_low,
+                },
+            )
+
+    async def _cek_batas_dispatch_tick(self) -> bool:
+        if self.dispatch_count_tick < self.max_dispatch_per_tick:
+            return True
+
+        sekarang_ts = time.time()
+        if sekarang_ts - self.last_dispatch_cap_notice >= 15:
+            await append_event(
+                "scheduler.dispatch_capped",
+                {
+                    "dispatch_count_tick": self.dispatch_count_tick,
+                    "max_dispatch_per_tick": self.max_dispatch_per_tick,
+                    "queue_depth": self.queue_depth_snapshot,
+                    "queue_delayed": self.queue_delayed_snapshot,
+                },
+            )
+            self.last_dispatch_cap_notice = sekarang_ts
+
+        return False
 
     @staticmethod
     def _hitung_offset_jitter_awal(job_id: str, interval_detik: int, spesifikasi: JobSpec) -> int:
@@ -145,6 +221,24 @@ class Scheduler:
                     },
                 )
                 self.last_cooldown_notice[job_id] = sekarang_ts
+            return False
+
+        if self.pressure_mode and self._job_priority_pressure(spesifikasi) != "critical":
+            sekarang_ts = time.time()
+            terakhir_notice = self.last_pressure_notice.get(job_id, 0.0)
+            if sekarang_ts - terakhir_notice >= 20:
+                await append_event(
+                    "scheduler.dispatch_skipped_pressure",
+                    {
+                        "job_id": job_id,
+                        "job_type": spesifikasi.type,
+                        "queue_depth": self.queue_depth_snapshot,
+                        "queue_delayed": self.queue_delayed_snapshot,
+                        "priority": self._job_priority_pressure(spesifikasi),
+                        "message": "Dispatch dilewati karena pressure mode aktif (hanya priority critical).",
+                    },
+                )
+                self.last_pressure_notice[job_id] = sekarang_ts
             return False
 
         if self._job_izinkan_overlap(spesifikasi):
@@ -290,6 +384,8 @@ class Scheduler:
         waktu_sekarang_ts = time.time()
 
         for job_id, spesifikasi in self.jobs.items():
+            if not await self._cek_batas_dispatch_tick():
+                break
             if not spesifikasi.schedule or not spesifikasi.schedule.interval_sec:
                 continue
 
@@ -324,6 +420,7 @@ class Scheduler:
                 {"run_id": run_id, "job_id": job_id, "job_type": spesifikasi.type, "source": "scheduler"},
             )
             self.last_dispatch[job_id] = waktu_sekarang_ts
+            self.dispatch_count_tick += 1
 
     async def process_cron_jobs(self):
         """Process jobs with cron scheduling."""
@@ -331,6 +428,8 @@ class Scheduler:
         slot_menit = sekarang.strftime("%Y%m%d%H%M")
 
         for job_id, spesifikasi in self.jobs.items():
+            if not await self._cek_batas_dispatch_tick():
+                break
             cron_expr = spesifikasi.schedule.cron if spesifikasi.schedule else None
             if not cron_expr:
                 continue
@@ -362,6 +461,7 @@ class Scheduler:
                 {"run_id": run_id, "job_id": job_id, "job_type": spesifikasi.type, "source": "scheduler_cron"},
             )
             self.last_cron_slot[job_id] = slot_menit
+            self.dispatch_count_tick += 1
 
     async def process_due_jobs(self):
         """Move delayed jobs into stream when due."""
