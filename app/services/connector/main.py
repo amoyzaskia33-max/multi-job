@@ -2,6 +2,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 import aiohttp
+from redis.exceptions import RedisError, TimeoutError as RedisTimeoutError
 
 from app.core.connector_accounts import (
     get_telegram_last_update_id,
@@ -9,7 +10,7 @@ from app.core.connector_accounts import (
     set_telegram_last_update_id,
 )
 from app.core.observability import logger
-from app.core.queue import append_event, is_mode_fallback_redis
+from app.core.queue import append_event, is_mode_fallback_redis, set_mode_fallback_redis
 from app.core.redis_client import redis_client
 from app.services.api.planner_execute import PlannerExecuteRequest, execute_prompt_plan
 
@@ -24,13 +25,36 @@ POLL_LOOP_SLEEP_SEC = 1
 IDLE_SLEEP_SEC = 2
 
 
+async def _is_redis_ready() -> bool:
+    try:
+        await asyncio.wait_for(redis_client.ping(), timeout=0.5)
+        return True
+    except (RedisError, RedisTimeoutError, asyncio.TimeoutError, OSError):
+        return False
+    except Exception:
+        return False
+
+
+def _switch_fallback_redis(error: Exception) -> None:
+    if is_mode_fallback_redis():
+        return
+    set_mode_fallback_redis(True)
+    logger.warning(
+        "Redis connector tidak tersedia, beralih ke fallback mode",
+        extra={"error": str(error)},
+    )
+
+
 async def kirim_heartbeat_konektor(channel: str, account_id: str, status: str = "online"):
     """Update connector heartbeat in Redis."""
     if is_mode_fallback_redis():
         return
 
     key = f"{CONNECTOR_PREFIX}:{channel}:{account_id}"
-    await redis_client.setex(key, HEARTBEAT_TTL, status)
+    try:
+        await redis_client.setex(key, HEARTBEAT_TTL, status)
+    except Exception as exc:
+        _switch_fallback_redis(exc)
 
 
 async def pantau_konektor():
@@ -58,6 +82,7 @@ async def pantau_konektor():
 
             await asyncio.sleep(10)
         except Exception as exc:
+            _switch_fallback_redis(exc)
             logger.error(f"Error monitoring connectors: {exc}")
             await asyncio.sleep(5)
 
@@ -280,7 +305,10 @@ async def telegram_connector():
             try:
                 daftar_akun = await list_telegram_accounts(include_secret=True)
                 if not is_mode_fallback_redis():
-                    await redis_client.setex(AGENT_HEARTBEAT_KEY, HEARTBEAT_TTL, "connected")
+                    try:
+                        await redis_client.setex(AGENT_HEARTBEAT_KEY, HEARTBEAT_TTL, "connected")
+                    except Exception as exc:
+                        _switch_fallback_redis(exc)
 
                 if not daftar_akun:
                     await asyncio.sleep(IDLE_SLEEP_SEC)
@@ -297,7 +325,15 @@ async def telegram_connector():
 
 async def connector_main():
     """Main connector loop."""
-    await append_event("system.connector_started", {"message": "Connector service started"})
+    redis_ready = await _is_redis_ready()
+    set_mode_fallback_redis(not redis_ready)
+    if not redis_ready:
+        logger.warning("Connector berjalan tanpa Redis (fallback mode aktif).")
+
+    await append_event(
+        "system.connector_started",
+        {"message": "Connector service started", "redis_ready": redis_ready},
+    )
     daftar_tugas = [
         asyncio.create_task(telegram_connector()),
         asyncio.create_task(pantau_konektor()),
