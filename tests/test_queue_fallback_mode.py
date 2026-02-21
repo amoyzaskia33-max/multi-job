@@ -35,6 +35,7 @@ def _reset_queue_fallback_state():
     queue._fallback_run_scores.clear()
     queue._fallback_job_runs.clear()
     queue._fallback_active_runs.clear()
+    queue._fallback_active_flow_runs.clear()
     queue._fallback_failure_state.clear()
     queue._fallback_events.clear()
 
@@ -174,3 +175,24 @@ def test_failure_memory_sets_and_clears_cooldown_in_fallback(monkeypatch):
     state_after = asyncio.run(queue.get_job_failure_state("job_fail_1"))
     assert state_after["consecutive_failures"] == 0
     assert state_after["cooldown_until"] is None
+
+
+def test_flow_active_runs_index_updates_in_fallback_mode(monkeypatch):
+    _reset_queue_fallback_state()
+    monkeypatch.setattr(queue, "redis_client", _MustNotCallRedis())
+    queue.set_mode_fallback_redis(True)
+
+    run = Run(
+        run_id="run_flow_1",
+        job_id="job_flow_1",
+        status=RunStatus.RUNNING,
+        attempt=0,
+        scheduled_at=datetime.now(timezone.utc),
+        inputs={"flow_group": "tim_konten"},
+    )
+    asyncio.run(queue.save_run(run))
+    assert asyncio.run(queue.count_active_runs_for_flow_group("tim_konten")) == 1
+
+    run.status = RunStatus.SUCCESS
+    asyncio.run(queue.save_run(run))
+    assert asyncio.run(queue.count_active_runs_for_flow_group("tim_konten")) == 0

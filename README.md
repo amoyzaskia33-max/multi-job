@@ -289,6 +289,12 @@ Extreme pressure safeguards:
 5. During pressure mode, only jobs with `inputs.pressure_priority = "critical"` are dispatched.
 6. Configure per `agent.workflow` job using input `pressure_priority` (`critical|normal|low`).
 
+Flow isolation safeguards (agar jalur agen tidak saling ganggu):
+1. Set `flow_group` untuk mengelompokkan job dalam satu jalur kerja (contoh: `konten_harian`, `riset_produk`).
+2. Set `flow_max_active_runs` untuk membatasi run aktif per jalur flow.
+3. Scheduler akan skip dispatch jika jalur flow sudah penuh (event: `scheduler.dispatch_skipped_flow_limit`).
+4. Cocok untuk skenario banyak job campur: tiap tim/jalur punya kuota sendiri.
+
 ## Job Specification Example
 
 ```json
@@ -299,6 +305,25 @@ Extreme pressure safeguards:
   "timeout_ms": 15000,
   "retry_policy": { "max_retry": 5, "backoff_sec": [1,2,5,10,30] },
   "inputs": { "channel": "telegram", "account_id": "bot_a01" }
+}
+```
+
+Example `agent.workflow` with isolated flow lane:
+
+```json
+{
+  "job_id": "campaign_konten_harian",
+  "type": "agent.workflow",
+  "schedule": { "interval_sec": 300 },
+  "timeout_ms": 90000,
+  "retry_policy": { "max_retry": 1, "backoff_sec": [2, 5] },
+  "inputs": {
+    "prompt": "Siapkan konten compliance harian dan kirim ke approval queue",
+    "flow_group": "konten_harian",
+    "flow_max_active_runs": 8,
+    "pressure_priority": "normal",
+    "allow_overlap": false
+  }
 }
 ```
 

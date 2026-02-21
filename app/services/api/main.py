@@ -295,6 +295,8 @@ class AgentWorkflowAutomationRequest(BaseModel):
     timezone: str = "Asia/Jakarta"
     default_channel: str = "telegram"
     default_account_id: str = "default"
+    flow_group: str = Field(default="default", min_length=1, max_length=64, pattern="^[a-zA-Z0-9._:-]+$")
+    flow_max_active_runs: int = Field(default=10, ge=1, le=1000)
     require_approval_for_missing: bool = True
     allow_overlap: bool = False
     pressure_priority: str = Field(default="normal", pattern="^(critical|normal|low)$")
@@ -645,6 +647,7 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
 
     jadwal = Schedule(cron=cron, interval_sec=interval_sec)
     retry_policy = RetryPolicy(max_retry=request.max_retry, backoff_sec=list(request.backoff_sec))
+    flow_group = request.flow_group.strip() or "default"
     spesifikasi = JobSpec(
         job_id=job_id,
         type="agent.workflow",
@@ -656,6 +659,8 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
             "timezone": request.timezone.strip() or "Asia/Jakarta",
             "default_channel": request.default_channel.strip() or "telegram",
             "default_account_id": request.default_account_id.strip() or "default",
+            "flow_group": flow_group,
+            "flow_max_active_runs": request.flow_max_active_runs,
             "require_approval_for_missing": request.require_approval_for_missing,
             "allow_overlap": request.allow_overlap,
             "pressure_priority": request.pressure_priority,

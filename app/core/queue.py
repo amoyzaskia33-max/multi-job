@@ -24,6 +24,7 @@ RUN_PREFIX = "run:"
 ZSET_RUNS = "zset:runs"
 JOB_RUNS_PREFIX = "job:runs:"
 JOB_ACTIVE_RUNS_PREFIX = "job:active:runs:"
+FLOW_ACTIVE_RUNS_PREFIX = "flow:active:runs:"
 JOB_FAILURE_STATE_PREFIX = "job:failure:state:"
 EVENTS_LOG = "events:log"
 EVENTS_MAX = 500
@@ -40,6 +41,7 @@ _fallback_runs: Dict[str, Dict[str, Any]] = {}
 _fallback_run_scores: Dict[str, float] = {}
 _fallback_job_runs: Dict[str, List[str]] = defaultdict(list)
 _fallback_active_runs: Dict[str, set] = defaultdict(set)
+_fallback_active_flow_runs: Dict[str, set] = defaultdict(set)
 _fallback_failure_state: Dict[str, Dict[str, Any]] = {}
 _fallback_events: List[Dict[str, Any]] = []
 _mode_fallback_redis = False
@@ -102,6 +104,10 @@ def _kunci_active_runs(job_id: str) -> str:
     return f"{JOB_ACTIVE_RUNS_PREFIX}{job_id}"
 
 
+def _kunci_active_flow_runs(flow_group: str) -> str:
+    return f"{FLOW_ACTIVE_RUNS_PREFIX}{flow_group}"
+
+
 def _kunci_failure_state(job_id: str) -> str:
     return f"{JOB_FAILURE_STATE_PREFIX}{job_id}"
 
@@ -122,21 +128,46 @@ def _ke_datetime_utc(raw: Any) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _normalisasi_flow_group(raw: Any) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    return value[:64]
+
+
+def _ambil_flow_group_dari_run_data(data: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(data, dict):
+        return ""
+    inputs = data.get("inputs")
+    if not isinstance(inputs, dict):
+        return ""
+    return _normalisasi_flow_group(inputs.get("flow_group"))
+
+
 def _refresh_index_active_runs_fallback(previous_data: Optional[Dict[str, Any]], current_data: Dict[str, Any], run_id: str) -> None:
     if isinstance(previous_data, dict):
         prev_job_id = str(previous_data.get("job_id") or "").strip()
         prev_status = previous_data.get("status")
         if prev_job_id and _status_run_aktif(prev_status):
             _fallback_active_runs[prev_job_id].discard(run_id)
+        prev_flow_group = _ambil_flow_group_dari_run_data(previous_data)
+        if prev_flow_group and _status_run_aktif(prev_status):
+            _fallback_active_flow_runs[prev_flow_group].discard(run_id)
 
     job_id = str(current_data.get("job_id") or "").strip()
-    if not job_id:
-        return
+    flow_group = _ambil_flow_group_dari_run_data(current_data)
+    status_aktif = _status_run_aktif(current_data.get("status"))
 
-    if _status_run_aktif(current_data.get("status")):
-        _fallback_active_runs[job_id].add(run_id)
-    else:
-        _fallback_active_runs[job_id].discard(run_id)
+    if job_id:
+        if status_aktif:
+            _fallback_active_runs[job_id].add(run_id)
+        else:
+            _fallback_active_runs[job_id].discard(run_id)
+
+    if flow_group and status_aktif:
+        _fallback_active_flow_runs[flow_group].add(run_id)
+    elif flow_group:
+        _fallback_active_flow_runs[flow_group].discard(run_id)
 
 
 async def _refresh_index_active_runs_redis(previous_data: Optional[Dict[str, Any]], current_data: Dict[str, Any], run_id: str) -> None:
@@ -145,15 +176,24 @@ async def _refresh_index_active_runs_redis(previous_data: Optional[Dict[str, Any
         prev_status = previous_data.get("status")
         if prev_job_id and _status_run_aktif(prev_status):
             await redis_client.srem(_kunci_active_runs(prev_job_id), run_id)
+        prev_flow_group = _ambil_flow_group_dari_run_data(previous_data)
+        if prev_flow_group and _status_run_aktif(prev_status):
+            await redis_client.srem(_kunci_active_flow_runs(prev_flow_group), run_id)
 
     job_id = str(current_data.get("job_id") or "").strip()
-    if not job_id:
-        return
+    flow_group = _ambil_flow_group_dari_run_data(current_data)
+    status_aktif = _status_run_aktif(current_data.get("status"))
 
-    if _status_run_aktif(current_data.get("status")):
-        await redis_client.sadd(_kunci_active_runs(job_id), run_id)
-    else:
-        await redis_client.srem(_kunci_active_runs(job_id), run_id)
+    if job_id:
+        if status_aktif:
+            await redis_client.sadd(_kunci_active_runs(job_id), run_id)
+        else:
+            await redis_client.srem(_kunci_active_runs(job_id), run_id)
+
+    if flow_group and status_aktif:
+        await redis_client.sadd(_kunci_active_flow_runs(flow_group), run_id)
+    elif flow_group:
+        await redis_client.srem(_kunci_active_flow_runs(flow_group), run_id)
 
 
 def _id_pesan_fallback_berikutnya() -> str:
@@ -527,6 +567,21 @@ async def has_active_runs(job_id: str) -> bool:
     except RedisError:
         _aktifkan_mode_fallback()
         return len(_fallback_active_runs.get(normalized_job_id, set())) > 0
+
+
+async def count_active_runs_for_flow_group(flow_group: str) -> int:
+    normalized_group = _normalisasi_flow_group(flow_group)
+    if not normalized_group:
+        return 0
+
+    if _sedang_mode_fallback_redis():
+        return int(len(_fallback_active_flow_runs.get(normalized_group, set())))
+
+    try:
+        return int(await redis_client.scard(_kunci_active_flow_runs(normalized_group)))
+    except RedisError:
+        _aktifkan_mode_fallback()
+        return int(len(_fallback_active_flow_runs.get(normalized_group, set())))
 
 
 async def get_job_failure_state(job_id: str) -> Dict[str, Any]:

@@ -80,6 +80,8 @@ export default function AutomationPage() {
   const [intervalDetik, setIntervalDetik] = useState(900);
   const [cron, setCron] = useState("0 */2 * * *");
   const [aktif, setAktif] = useState(true);
+  const [flowGroup, setFlowGroup] = useState("default");
+  const [flowMaxActiveRuns, setFlowMaxActiveRuns] = useState(10);
   const [wajibApproval, setWajibApproval] = useState(true);
   const [izinkanOverlap, setIzinkanOverlap] = useState(false);
   const [prioritasTekanan, setPrioritasTekanan] = useState<"critical" | "normal" | "low">("normal");
@@ -152,6 +154,8 @@ export default function AutomationPage() {
       timezone: zonaWaktu.trim() || "Asia/Jakarta",
       default_channel: defaultChannel.trim() || "telegram",
       default_account_id: defaultAccountId.trim() || "default",
+      flow_group: flowGroup.trim() || "default",
+      flow_max_active_runs: Math.max(1, Number(flowMaxActiveRuns) || 1),
       require_approval_for_missing: wajibApproval,
       allow_overlap: izinkanOverlap,
       pressure_priority: prioritasTekanan,
@@ -282,6 +286,21 @@ export default function AutomationPage() {
                   onChange={(event) => setDefaultAccountId(event.target.value)}
                 />
               </div>
+              <div>
+                <Label htmlFor="flow-group">Flow Group</Label>
+                <Input id="flow-group" value={flowGroup} onChange={(event) => setFlowGroup(event.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="flow-max-active-runs">Batas Run Aktif per Flow</Label>
+                <Input
+                  id="flow-max-active-runs"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={flowMaxActiveRuns}
+                  onChange={(event) => setFlowMaxActiveRuns(Number(event.target.value))}
+                />
+              </div>
               <div className="flex items-end">
                 <div className="flex w-full items-center justify-between rounded-xl border border-border bg-muted p-3">
                   <Label>Wajib Approval Jika Resource Kurang</Label>
@@ -385,6 +404,7 @@ export default function AutomationPage() {
                 <TableRow>
                   <TableHead>Job ID</TableHead>
                   <TableHead>Jadwal</TableHead>
+                  <TableHead>Flow</TableHead>
                   <TableHead>Prioritas</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Aksi</TableHead>
@@ -395,6 +415,10 @@ export default function AutomationPage() {
                   <TableRow key={row.job_id}>
                     <TableCell className="font-medium">{row.job_id}</TableCell>
                     <TableCell>{formatJadwal(row.schedule?.interval_sec, row.schedule?.cron)}</TableCell>
+                    <TableCell>
+                      {String((row.inputs?.["flow_group"] as string) || "default")} /{" "}
+                      {String((row.inputs?.["flow_max_active_runs"] as number) || 0)}
+                    </TableCell>
                     <TableCell>{String((row.inputs?.["pressure_priority"] as string) || "normal")}</TableCell>
                     <TableCell>
                       <span className={row.enabled ? "status-baik" : "status-buruk"}>

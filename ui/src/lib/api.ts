@@ -232,6 +232,8 @@ export interface AgentWorkflowAutomationRequest {
   timezone?: string;
   default_channel?: string;
   default_account_id?: string;
+  flow_group?: string;
+  flow_max_active_runs?: number;
   require_approval_for_missing?: boolean;
   allow_overlap?: boolean;
   pressure_priority?: "critical" | "normal" | "low";

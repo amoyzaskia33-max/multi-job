@@ -19,8 +19,12 @@ def _patch_guard_defaults(monkeypatch):
     async def _no_active(job_id: str):
         return False
 
+    async def _no_flow_active(flow_group: str):
+        return 0
+
     monkeypatch.setattr(scheduler_module, "has_pending_approval_for_job", _no_pending)
     monkeypatch.setattr(scheduler_module, "get_job_cooldown_remaining", _no_cooldown)
+    monkeypatch.setattr(scheduler_module, "count_active_runs_for_flow_group", _no_flow_active)
 
 
 def _job_spec_interval(job_id: str = "job_interval") -> JobSpec:
@@ -181,6 +185,7 @@ def test_scheduler_initial_jitter_offsets_first_interval_dispatch(monkeypatch):
 
 
 def test_scheduler_skips_dispatch_when_pending_approval_exists(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
     sched = scheduler_module.Scheduler()
     sched.jobs = {"job_pending": _job_spec_interval("job_pending")}
 
@@ -217,6 +222,7 @@ def test_scheduler_skips_dispatch_when_pending_approval_exists(monkeypatch):
 
 
 def test_scheduler_skips_dispatch_when_job_in_cooldown(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
     sched = scheduler_module.Scheduler()
     sched.jobs = {"job_cooldown": _job_spec_interval("job_cooldown")}
 
@@ -355,3 +361,45 @@ def test_scheduler_respects_dispatch_cap_per_tick(monkeypatch):
 
     assert len(enqueued) == 1
     assert any(name == "scheduler.dispatch_capped" for name, _ in events)
+
+
+def test_scheduler_skips_dispatch_when_flow_limit_reached(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
+    sched = scheduler_module.Scheduler()
+    spec = JobSpec(
+        job_id="job_flow_cap",
+        type="agent.workflow",
+        schedule=Schedule(interval_sec=1),
+        timeout_ms=30000,
+        retry_policy=RetryPolicy(max_retry=1, backoff_sec=[1]),
+        inputs={"prompt": "x", "flow_group": "tim_a", "flow_max_active_runs": 2},
+    )
+    sched.jobs = {"job_flow_cap": spec}
+
+    events = []
+
+    async def _no_active(job_id: str):
+        return False
+
+    async def _flow_cap(group: str):
+        assert group == "tim_a"
+        return 2
+
+    async def fake_enqueue_job(event):
+        raise AssertionError("enqueue should not be called when flow limit is reached")
+
+    async def fake_append_event(event_type: str, data):
+        events.append((event_type, data))
+        return None
+
+    monkeypatch.setattr(scheduler_module, "has_active_runs", _no_active)
+    monkeypatch.setattr(scheduler_module, "count_active_runs_for_flow_group", _flow_cap)
+    monkeypatch.setattr(scheduler_module, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(scheduler_module, "append_event", fake_append_event)
+    monkeypatch.setattr(scheduler_module, "save_run", _noop)
+    monkeypatch.setattr(scheduler_module, "add_run_to_job_history", _noop)
+    monkeypatch.setattr(scheduler_module, "get_run", lambda run_id: _noop())
+
+    asyncio.run(sched.process_interval_jobs())
+
+    assert any(name == "scheduler.dispatch_skipped_flow_limit" for name, _ in events)

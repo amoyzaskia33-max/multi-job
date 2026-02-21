@@ -11,6 +11,7 @@ from .models import JobSpec, QueueEvent, Run, RunStatus
 from .queue import (
     add_run_to_job_history,
     append_event,
+    count_active_runs_for_flow_group,
     enqueue_job,
     get_job_cooldown_remaining,
     get_due_jobs,
@@ -38,6 +39,7 @@ class Scheduler:
         self.last_pending_approval_notice: Dict[str, float] = {}
         self.last_cooldown_notice: Dict[str, float] = {}
         self.last_pressure_notice: Dict[str, float] = {}
+        self.last_flow_limit_notice: Dict[str, float] = {}
         self.scheduler_id = f"scheduler_{int(time.time())}"
         self.dispatch_count_tick = 0
         self.last_dispatch_cap_notice = 0.0
@@ -75,6 +77,7 @@ class Scheduler:
         self.last_pressure_notice = {
             job_id: value for job_id, value in self.last_pressure_notice.items() if job_id in valid_job_ids
         }
+        self.last_flow_limit_notice = {}
 
     async def heartbeat(self):
         if is_mode_fallback_redis():
@@ -123,6 +126,24 @@ class Scheduler:
         if value not in {"critical", "normal", "low"}:
             return "normal"
         return value
+
+    @staticmethod
+    def _job_flow_group(spesifikasi: JobSpec) -> str:
+        inputs = spesifikasi.inputs if isinstance(spesifikasi.inputs, dict) else {}
+        value = str(inputs.get("flow_group") or "").strip()
+        if not value:
+            return ""
+        return value[:64]
+
+    @staticmethod
+    def _job_flow_limit(spesifikasi: JobSpec) -> int:
+        inputs = spesifikasi.inputs if isinstance(spesifikasi.inputs, dict) else {}
+        raw = inputs.get("flow_max_active_runs", 0)
+        try:
+            value = int(raw)
+        except Exception:
+            value = 0
+        return max(0, min(value, 1000))
 
     async def _refresh_pressure_state(self) -> None:
         metrik = await get_queue_metrics()
@@ -240,6 +261,28 @@ class Scheduler:
                 )
                 self.last_pressure_notice[job_id] = sekarang_ts
             return False
+
+        flow_group = self._job_flow_group(spesifikasi)
+        flow_limit = self._job_flow_limit(spesifikasi)
+        if flow_group and flow_limit > 0:
+            aktif_flow = await count_active_runs_for_flow_group(flow_group)
+            if aktif_flow >= flow_limit:
+                sekarang_ts = time.time()
+                terakhir_notice = self.last_flow_limit_notice.get(flow_group, 0.0)
+                if sekarang_ts - terakhir_notice >= 15:
+                    await append_event(
+                        "scheduler.dispatch_skipped_flow_limit",
+                        {
+                            "job_id": job_id,
+                            "job_type": spesifikasi.type,
+                            "flow_group": flow_group,
+                            "flow_max_active_runs": flow_limit,
+                            "active_runs_in_flow": aktif_flow,
+                            "message": "Dispatch dilewati karena jalur flow sudah mencapai batas run aktif.",
+                        },
+                    )
+                    self.last_flow_limit_notice[flow_group] = sekarang_ts
+                return False
 
         if self._job_izinkan_overlap(spesifikasi):
             return True
