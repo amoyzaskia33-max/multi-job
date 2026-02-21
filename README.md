@@ -129,6 +129,8 @@ Logs are stored in:
 - `GET /integrations/accounts/{provider}/{account_id}` - Get integration account detail
 - `PUT /integrations/accounts/{provider}/{account_id}` - Create/update integration account
 - `DELETE /integrations/accounts/{provider}/{account_id}` - Delete integration account
+- `GET /integrations/catalog` - List connector templates (providers + MCP)
+- `POST /integrations/catalog/bootstrap` - Add connector templates to dashboard storage
 
 Planner request example:
 ```json
@@ -224,6 +226,16 @@ Generic integration account example:
 }
 ```
 
+Catalog bootstrap example:
+```json
+{
+  "provider_ids": ["openai", "github", "notion", "shopee"],
+  "mcp_template_ids": ["mcp_github", "mcp_filesystem"],
+  "account_id": "default",
+  "overwrite": false
+}
+```
+
 Telegram command bridge flow:
 1. Save Telegram account from Dashboard `Setelan`.
 2. (Optional) Save MCP server and integration accounts from the same `Setelan` page.
@@ -240,6 +252,8 @@ Agent workflow notes:
 - OpenAI planner key is resolved from:
   1) `openai/default` (or selected account in job input), then
   2) `OPENAI_API_KEY` environment variable.
+- Use `Template Konektor Cepat` in Dashboard `Setelan` to auto-create provider/MCP templates
+  (OpenAI, GitHub, Notion, Linear, Shopee, Tokopedia, Lazada, etc.).
 
 ## Job Specification Example
 

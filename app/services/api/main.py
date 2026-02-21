@@ -27,6 +27,12 @@ from app.core.integration_configs import (
     upsert_integration_account,
     upsert_mcp_server,
 )
+from app.core.integration_catalog import (
+    get_mcp_server_template,
+    get_provider_template,
+    list_mcp_server_templates,
+    list_provider_templates,
+)
 from app.core.models import JobSpec, QueueEvent, Run, RunStatus
 from app.core.observability import expose_metrics, logger
 from app.core.queue import (
@@ -91,6 +97,14 @@ def _now_iso() -> str:
 def _fallback_payload(endpoint: str, payload: Any) -> Any:
     logger.warning("Serving degraded fallback payload", extra={"endpoint": endpoint})
     return payload
+
+
+def _merge_config_defaults(existing: Dict[str, Any], defaults: Dict[str, Any], overwrite: bool) -> Dict[str, Any]:
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    for key, value in defaults.items():
+        if overwrite or key not in merged:
+            merged[key] = value
+    return merged
 
 
 async def _is_redis_ready() -> bool:
@@ -212,6 +226,54 @@ class IntegrationAccountView(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class IntegrationProviderTemplateView(BaseModel):
+    provider: str
+    label: str
+    description: str
+    auth_hint: str
+    default_account_id: str = "default"
+    default_enabled: bool = False
+    default_config: Dict[str, Any] = Field(default_factory=dict)
+
+
+class McpServerTemplateView(BaseModel):
+    template_id: str
+    server_id: str
+    label: str
+    description: str
+    transport: str
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    url: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    env: Dict[str, str] = Field(default_factory=dict)
+    timeout_sec: int = 20
+    default_enabled: bool = False
+
+
+class IntegrationsCatalogView(BaseModel):
+    providers: List[IntegrationProviderTemplateView] = Field(default_factory=list)
+    mcp_servers: List[McpServerTemplateView] = Field(default_factory=list)
+
+
+class IntegrationsBootstrapRequest(BaseModel):
+    provider_ids: List[str] = Field(default_factory=list)
+    mcp_template_ids: List[str] = Field(default_factory=list)
+    account_id: str = "default"
+    overwrite: bool = False
+
+
+class IntegrationsBootstrapResponse(BaseModel):
+    account_id: str
+    overwrite: bool
+    providers_created: List[str] = Field(default_factory=list)
+    providers_updated: List[str] = Field(default_factory=list)
+    providers_skipped: List[str] = Field(default_factory=list)
+    mcp_created: List[str] = Field(default_factory=list)
+    mcp_updated: List[str] = Field(default_factory=list)
+    mcp_skipped: List[str] = Field(default_factory=list)
 
 
 async def _start_local_runtime():
@@ -599,6 +661,138 @@ async def delete_integration_account_endpoint(provider: str, account_id: str):
 
     await append_event("integration.account_deleted", {"provider": provider, "account_id": account_id})
     return {"provider": provider, "account_id": account_id, "status": "deleted"}
+
+
+@app.get("/integrations/catalog", response_model=IntegrationsCatalogView)
+async def get_integrations_catalog():
+    return {
+        "providers": list_provider_templates(),
+        "mcp_servers": list_mcp_server_templates(),
+    }
+
+
+@app.post("/integrations/catalog/bootstrap", response_model=IntegrationsBootstrapResponse)
+async def bootstrap_integrations_catalog(request: IntegrationsBootstrapRequest):
+    account_id = request.account_id.strip() or "default"
+
+    selected_provider_ids = [value.strip().lower() for value in request.provider_ids if value.strip()]
+    selected_mcp_template_ids = [value.strip().lower() for value in request.mcp_template_ids if value.strip()]
+
+    if not selected_provider_ids:
+        selected_provider_ids = [
+            str(row.get("provider", "")).strip().lower()
+            for row in list_provider_templates()
+            if str(row.get("provider", "")).strip()
+        ]
+    if not selected_mcp_template_ids:
+        selected_mcp_template_ids = [
+            str(row.get("template_id", "")).strip().lower()
+            for row in list_mcp_server_templates()
+            if str(row.get("template_id", "")).strip()
+        ]
+
+    providers_created: List[str] = []
+    providers_updated: List[str] = []
+    providers_skipped: List[str] = []
+
+    mcp_created: List[str] = []
+    mcp_updated: List[str] = []
+    mcp_skipped: List[str] = []
+
+    for provider_id in selected_provider_ids:
+        template = get_provider_template(provider_id)
+        if not template:
+            raise HTTPException(status_code=400, detail=f"Unknown provider template: {provider_id}")
+
+        provider = str(template.get("provider", "")).strip().lower()
+        existing = await get_integration_account(provider, account_id, include_secret=False)
+
+        if existing and not request.overwrite:
+            providers_skipped.append(provider)
+            continue
+
+        existing_config = existing.get("config", {}) if isinstance(existing, dict) else {}
+        template_config = template.get("default_config", {})
+        payload = {
+            "enabled": (
+                bool(template.get("default_enabled", False))
+                if request.overwrite or not existing
+                else bool(existing.get("enabled", True))
+            ),
+            "config": _merge_config_defaults(existing_config, template_config, overwrite=request.overwrite),
+        }
+
+        await upsert_integration_account(provider, account_id, payload)
+        if existing:
+            providers_updated.append(provider)
+        else:
+            providers_created.append(provider)
+
+    for template_id in selected_mcp_template_ids:
+        template = get_mcp_server_template(template_id)
+        if not template:
+            raise HTTPException(status_code=400, detail=f"Unknown MCP template: {template_id}")
+
+        server_id = str(template.get("server_id", "")).strip()
+        existing = await get_mcp_server(server_id, include_secret=False)
+
+        if existing and not request.overwrite:
+            mcp_skipped.append(server_id)
+            continue
+
+        existing_headers = existing.get("headers", {}) if isinstance(existing, dict) else {}
+        existing_env = existing.get("env", {}) if isinstance(existing, dict) else {}
+
+        payload = {
+            "enabled": (
+                bool(template.get("default_enabled", False))
+                if request.overwrite or not existing
+                else bool(existing.get("enabled", True))
+            ),
+            "transport": str(template.get("transport", "stdio")),
+            "description": str(template.get("description", "")),
+            "command": str(template.get("command", "")),
+            "args": list(template.get("args", [])),
+            "url": str(template.get("url", "")),
+            "headers": _merge_config_defaults(existing_headers, template.get("headers", {}), overwrite=request.overwrite),
+            "env": _merge_config_defaults(existing_env, template.get("env", {}), overwrite=request.overwrite),
+            "timeout_sec": int(template.get("timeout_sec", 20)),
+        }
+
+        try:
+            await upsert_mcp_server(server_id, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        if existing:
+            mcp_updated.append(server_id)
+        else:
+            mcp_created.append(server_id)
+
+    await append_event(
+        "integration.catalog_bootstrap",
+        {
+            "account_id": account_id,
+            "overwrite": request.overwrite,
+            "providers_created": len(providers_created),
+            "providers_updated": len(providers_updated),
+            "providers_skipped": len(providers_skipped),
+            "mcp_created": len(mcp_created),
+            "mcp_updated": len(mcp_updated),
+            "mcp_skipped": len(mcp_skipped),
+        },
+    )
+
+    return {
+        "account_id": account_id,
+        "overwrite": request.overwrite,
+        "providers_created": providers_created,
+        "providers_updated": providers_updated,
+        "providers_skipped": providers_skipped,
+        "mcp_created": mcp_created,
+        "mcp_updated": mcp_updated,
+        "mcp_skipped": mcp_skipped,
+    }
 
 
 @app.get("/connectors")

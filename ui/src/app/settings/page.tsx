@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  bootstrapIntegrationsCatalog,
   deleteIntegrationAccount,
   deleteMcpIntegrationServer,
   deleteTelegramConnectorAccount,
+  getIntegrationsCatalog,
   getIntegrationAccounts,
   getMcpIntegrationServers,
   getTelegramConnectorAccounts,
@@ -113,6 +115,12 @@ export default function SettingsPage() {
     queryKey: ["integration-accounts"],
     queryFn: () => getIntegrationAccounts(),
     refetchInterval: 10000,
+  });
+
+  const { data: integrationsCatalog, isLoading: isCatalogLoading } = useQuery({
+    queryKey: ["integration-catalog"],
+    queryFn: getIntegrationsCatalog,
+    refetchInterval: false,
   });
 
   useEffect(() => {
@@ -314,6 +322,50 @@ export default function SettingsPage() {
     await refetchIntegrationAccounts();
   };
 
+  const handleBootstrapAllTemplates = async () => {
+    const response = await bootstrapIntegrationsCatalog({ account_id: "default", overwrite: false });
+    if (!response) return;
+
+    toast.success(
+      `Template masuk: provider +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
+    );
+    await Promise.all([refetchIntegrationAccounts(), refetchMcpServers()]);
+  };
+
+  const handleBootstrapSingleProviderTemplate = async (provider: string) => {
+    const response = await bootstrapIntegrationsCatalog({
+      provider_ids: [provider],
+      mcp_template_ids: [],
+      account_id: "default",
+      overwrite: false,
+    });
+    if (!response) return;
+
+    if (response.providers_created.length > 0 || response.providers_updated.length > 0) {
+      toast.success(`Template provider '${provider}' ditambahkan.`);
+    } else {
+      toast.message(`Template provider '${provider}' sudah ada.`);
+    }
+    await refetchIntegrationAccounts();
+  };
+
+  const handleBootstrapSingleMcpTemplate = async (templateId: string, label: string) => {
+    const response = await bootstrapIntegrationsCatalog({
+      provider_ids: [],
+      mcp_template_ids: [templateId],
+      account_id: "default",
+      overwrite: false,
+    });
+    if (!response) return;
+
+    if (response.mcp_created.length > 0 || response.mcp_updated.length > 0) {
+      toast.success(`Template MCP '${label}' ditambahkan.`);
+    } else {
+      toast.message(`Template MCP '${label}' sudah ada.`);
+    }
+    await refetchMcpServers();
+  };
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-border bg-card p-6">
@@ -322,6 +374,93 @@ export default function SettingsPage() {
           Semua koneksi disimpan di sini: API dashboard, Telegram bridge, MCP server, dan akun provider/tool lainnya.
         </p>
       </section>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle>Template Konektor Cepat</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Klik sekali untuk menampilkan konektor populer di dashboard. Setelah muncul, tinggal isi token atau config.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleBootstrapAllTemplates}>Tambah Semua Template</Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Provider Integrasi</Label>
+              {isCatalogLoading ? (
+                <div className="text-sm text-muted-foreground">Lagi ambil katalog provider...</div>
+              ) : (
+                <div className="space-y-2">
+                  {(integrationsCatalog?.providers || []).map((row) => {
+                    const exists = integrationAccounts.some((account) => account.provider === row.provider);
+                    return (
+                      <div
+                        key={row.provider}
+                        className="flex items-center justify-between rounded-xl border border-border bg-muted p-3"
+                      >
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-foreground">{row.label}</p>
+                          <p className="text-xs text-muted-foreground">{row.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Auth: {row.auth_hint} | Account: {row.default_account_id}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={exists}
+                          onClick={() => handleBootstrapSingleProviderTemplate(row.provider)}
+                        >
+                          {exists ? "Sudah Ada" : "Tambah"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Template MCP Server</Label>
+              {isCatalogLoading ? (
+                <div className="text-sm text-muted-foreground">Lagi ambil katalog MCP...</div>
+              ) : (
+                <div className="space-y-2">
+                  {(integrationsCatalog?.mcp_servers || []).map((row) => {
+                    const exists = mcpServers.some((server) => server.server_id === row.server_id);
+                    return (
+                      <div
+                        key={row.template_id}
+                        className="flex items-center justify-between rounded-xl border border-border bg-muted p-3"
+                      >
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-foreground">{row.label}</p>
+                          <p className="text-xs text-muted-foreground">{row.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {row.transport.toUpperCase()} | Server ID: {row.server_id}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={exists}
+                          onClick={() => handleBootstrapSingleMcpTemplate(row.template_id, row.label)}
+                        >
+                          {exists ? "Sudah Ada" : "Tambah"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="bg-card">
         <CardHeader>

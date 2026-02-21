@@ -122,6 +122,54 @@ export interface IntegrationAccountUpsertRequest {
   config: Record<string, unknown>;
 }
 
+export interface IntegrationProviderTemplate {
+  provider: string;
+  label: string;
+  description: string;
+  auth_hint: string;
+  default_account_id: string;
+  default_enabled: boolean;
+  default_config: Record<string, unknown>;
+}
+
+export interface McpServerTemplate {
+  template_id: string;
+  server_id: string;
+  label: string;
+  description: string;
+  transport: "stdio" | "http" | "sse";
+  command: string;
+  args: string[];
+  url: string;
+  headers: Record<string, string>;
+  env: Record<string, string>;
+  timeout_sec: number;
+  default_enabled: boolean;
+}
+
+export interface IntegrationsCatalog {
+  providers: IntegrationProviderTemplate[];
+  mcp_servers: McpServerTemplate[];
+}
+
+export interface IntegrationsBootstrapRequest {
+  provider_ids?: string[];
+  mcp_template_ids?: string[];
+  account_id?: string;
+  overwrite?: boolean;
+}
+
+export interface IntegrationsBootstrapResponse {
+  account_id: string;
+  overwrite: boolean;
+  providers_created: string[];
+  providers_updated: string[];
+  providers_skipped: string[];
+  mcp_created: string[];
+  mcp_updated: string[];
+  mcp_skipped: string[];
+}
+
 export interface Agent {
   id: string;
   type?: string;
@@ -352,6 +400,24 @@ export const deleteIntegrationAccount = async (provider: string, accountId: stri
     return true;
   } catch (error) {
     return handleApiError(error, "Gagal menghapus akun integrasi", false);
+  }
+};
+
+export const getIntegrationsCatalog = async (): Promise<IntegrationsCatalog> => {
+  try {
+    return await getJson<IntegrationsCatalog>("/integrations/catalog");
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat katalog konektor", { providers: [], mcp_servers: [] });
+  }
+};
+
+export const bootstrapIntegrationsCatalog = async (
+  payload: IntegrationsBootstrapRequest,
+): Promise<IntegrationsBootstrapResponse | undefined> => {
+  try {
+    return await send<IntegrationsBootstrapResponse>("/integrations/catalog/bootstrap", "POST", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menambahkan template konektor", undefined);
   }
 };
 
