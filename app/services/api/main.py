@@ -49,6 +49,8 @@ from app.core.queue import (
     get_events,
     get_job_run_ids,
     get_job_spec,
+    get_job_cooldown_remaining,
+    get_job_failure_state,
     get_queue_metrics,
     get_run,
     init_queue,
@@ -296,6 +298,10 @@ class AgentWorkflowAutomationRequest(BaseModel):
     require_approval_for_missing: bool = True
     allow_overlap: bool = False
     dispatch_jitter_sec: int = Field(default=0, ge=0, le=3600)
+    failure_threshold: int = Field(default=3, ge=1, le=20)
+    failure_cooldown_sec: int = Field(default=120, ge=10, le=86400)
+    failure_cooldown_max_sec: int = Field(default=3600, ge=10, le=604800)
+    failure_memory_enabled: bool = True
     timeout_ms: int = Field(default=90000, ge=5000, le=300000)
     max_retry: int = Field(default=1, ge=0, le=10)
     backoff_sec: List[int] = Field(default_factory=lambda: [2, 5])
@@ -324,6 +330,17 @@ class ApprovalRequestView(BaseModel):
 class ApprovalDecisionRequest(BaseModel):
     decision_by: Optional[str] = None
     decision_note: Optional[str] = None
+
+
+class JobMemoryView(BaseModel):
+    job_id: str
+    consecutive_failures: int
+    cooldown_until: Optional[str] = None
+    cooldown_remaining_sec: int
+    last_error: Optional[str] = None
+    last_failure_at: Optional[str] = None
+    last_success_at: Optional[str] = None
+    updated_at: str
 
 
 async def _start_local_runtime():
@@ -476,6 +493,26 @@ async def get_job(job_id: str):
     return spec
 
 
+@app.get("/jobs/{job_id}/memory", response_model=JobMemoryView)
+async def get_job_memory(job_id: str):
+    spec = await get_job_spec(job_id)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    memory = await get_job_failure_state(job_id)
+    cooldown_remaining = await get_job_cooldown_remaining(job_id)
+    return {
+        "job_id": job_id,
+        "consecutive_failures": int(memory.get("consecutive_failures") or 0),
+        "cooldown_until": memory.get("cooldown_until"),
+        "cooldown_remaining_sec": cooldown_remaining,
+        "last_error": memory.get("last_error"),
+        "last_failure_at": memory.get("last_failure_at"),
+        "last_success_at": memory.get("last_success_at"),
+        "updated_at": str(memory.get("updated_at") or _sekarang_iso()),
+    }
+
+
 @app.put("/jobs/{job_id}/enable")
 async def enable_job_endpoint(job_id: str):
     spec = await get_job_spec(job_id)
@@ -621,6 +658,10 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
             "require_approval_for_missing": request.require_approval_for_missing,
             "allow_overlap": request.allow_overlap,
             "dispatch_jitter_sec": request.dispatch_jitter_sec,
+            "failure_threshold": request.failure_threshold,
+            "failure_cooldown_sec": request.failure_cooldown_sec,
+            "failure_cooldown_max_sec": request.failure_cooldown_max_sec,
+            "failure_memory_enabled": request.failure_memory_enabled,
         },
     )
 

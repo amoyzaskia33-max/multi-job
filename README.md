@@ -116,6 +116,7 @@ Logs are stored in:
 - `PUT /jobs/{job_id}/enable` - Enable job
 - `PUT /jobs/{job_id}/disable` - Disable job
 - `GET /jobs/{job_id}/runs` - Get recent runs for a job
+- `GET /jobs/{job_id}/memory` - Get failure memory (consecutive failures + cooldown)
 - `GET /jobs` - List all jobs
 - `GET /connector/telegram/accounts` - List Telegram connector accounts
 - `GET /connector/telegram/accounts/{account_id}` - Get Telegram connector account detail
@@ -269,6 +270,16 @@ What this does:
 2. Monitors runs, queue depth, and overlap guard every few seconds.
 3. Prints recommended worker count and final safety summary.
 4. Disables simulation jobs at the end (`--cleanup`).
+
+Failure memory and anti-loop safeguards:
+1. Scheduler skips dispatch when approval for that job is still pending.
+2. Scheduler skips dispatch while job is in failure cooldown window.
+3. Failure memory is tracked per job (`consecutive_failures`, `cooldown_until`, `last_error`).
+4. Configure from job inputs (optional):
+   - `failure_threshold` (default `3`)
+   - `failure_cooldown_sec` (default `120`)
+   - `failure_cooldown_max_sec` (default `3600`)
+   - `failure_memory_enabled` (default `true`)
 
 ## Job Specification Example
 

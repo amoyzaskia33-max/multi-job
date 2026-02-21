@@ -2,11 +2,11 @@ import asyncio
 import time
 import traceback
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 from .approval_queue import create_approval_request
 from .models import RunStatus, Run, RunResult
-from .queue import add_run_to_job_history, append_event, get_run, save_run
+from .queue import add_run_to_job_history, append_event, get_run, record_job_outcome, save_run
 from .redis_client import redis_client
 
 
@@ -172,6 +172,12 @@ async def process_job_event(
             data_run.result = RunResult(success=False, error=pesan_error)
             data_run.finished_at = datetime.now(timezone.utc)
             await save_run(data_run)
+            await _record_failure_memory(
+                job_id=job_id,
+                inputs=inputs,
+                success=False,
+                error=pesan_error,
+            )
             await append_event(
                 "run.failed",
                 {"run_id": run_id, "job_id": job_id, "job_type": job_type, "error": pesan_error, "attempt": attempt},
@@ -209,6 +215,12 @@ async def process_job_event(
             hasil_run=hasil_run,
             logger=logger,
         )
+        await _record_failure_memory(
+            job_id=job_id,
+            inputs=inputs,
+            success=hasil_run.success,
+            error=hasil_run.error,
+        )
 
         await append_event(
             "run.completed" if hasil_run.success else "run.failed",
@@ -237,6 +249,49 @@ async def process_job_event(
             extra={"job_id": event_data.get("job_id"), "run_id": event_data.get("run_id"), "error": str(e)},
         )
         return False
+
+
+def _ambil_int_dari_inputs(inputs: Dict[str, Any], key: str, default: int, minimum: int, maximum: int) -> int:
+    raw = inputs.get(key, default)
+    try:
+        value = int(raw)
+    except Exception:
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+async def _record_failure_memory(
+    *,
+    job_id: str,
+    inputs: Dict[str, Any],
+    success: bool,
+    error: Optional[str] = None,
+) -> None:
+    enabled = bool(inputs.get("failure_memory_enabled", True))
+    if not enabled:
+        return
+
+    threshold = _ambil_int_dari_inputs(inputs, "failure_threshold", default=3, minimum=1, maximum=20)
+    cooldown_sec = _ambil_int_dari_inputs(inputs, "failure_cooldown_sec", default=120, minimum=10, maximum=86400)
+    cooldown_max_sec = _ambil_int_dari_inputs(
+        inputs,
+        "failure_cooldown_max_sec",
+        default=max(600, cooldown_sec * 4),
+        minimum=cooldown_sec,
+        maximum=604800,
+    )
+
+    try:
+        await record_job_outcome(
+            job_id,
+            success=success,
+            error=error,
+            failure_threshold=threshold,
+            failure_cooldown_sec=cooldown_sec,
+            failure_cooldown_max_sec=cooldown_max_sec,
+        )
+    except Exception:
+        return
 
 
 async def handle_retry(job_id: str, run_id: str, attempt: int, retry_policy: dict, scheduled_at: datetime):

@@ -5,11 +5,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict
 
+from .approval_queue import has_pending_approval_for_job
 from .models import JobSpec, QueueEvent, Run, RunStatus
 from .queue import (
     add_run_to_job_history,
     append_event,
     enqueue_job,
+    get_job_cooldown_remaining,
     get_due_jobs,
     get_run,
     has_active_runs,
@@ -31,6 +33,8 @@ class Scheduler:
         self.last_dispatch: Dict[str, float] = {}
         self.last_cron_slot: Dict[str, str] = {}
         self.last_overlap_notice: Dict[str, float] = {}
+        self.last_pending_approval_notice: Dict[str, float] = {}
+        self.last_cooldown_notice: Dict[str, float] = {}
         self.scheduler_id = f"scheduler_{int(time.time())}"
 
     async def load_jobs(self):
@@ -49,6 +53,12 @@ class Scheduler:
         self.last_cron_slot = {job_id: value for job_id, value in self.last_cron_slot.items() if job_id in valid_job_ids}
         self.last_overlap_notice = {
             job_id: value for job_id, value in self.last_overlap_notice.items() if job_id in valid_job_ids
+        }
+        self.last_pending_approval_notice = {
+            job_id: value for job_id, value in self.last_pending_approval_notice.items() if job_id in valid_job_ids
+        }
+        self.last_cooldown_notice = {
+            job_id: value for job_id, value in self.last_cooldown_notice.items() if job_id in valid_job_ids
         }
 
     async def heartbeat(self):
@@ -105,6 +115,38 @@ class Scheduler:
         return int(digest[:8], 16) % (jitter_detik + 1)
 
     async def _boleh_dispatch_job(self, job_id: str, spesifikasi: JobSpec) -> bool:
+        if await has_pending_approval_for_job(job_id):
+            sekarang_ts = time.time()
+            terakhir_notice = self.last_pending_approval_notice.get(job_id, 0.0)
+            if sekarang_ts - terakhir_notice >= 20:
+                await append_event(
+                    "scheduler.dispatch_skipped_pending_approval",
+                    {
+                        "job_id": job_id,
+                        "job_type": spesifikasi.type,
+                        "message": "Dispatch dilewati karena approval request masih pending.",
+                    },
+                )
+                self.last_pending_approval_notice[job_id] = sekarang_ts
+            return False
+
+        cooldown_remaining = await get_job_cooldown_remaining(job_id)
+        if cooldown_remaining > 0:
+            sekarang_ts = time.time()
+            terakhir_notice = self.last_cooldown_notice.get(job_id, 0.0)
+            if sekarang_ts - terakhir_notice >= 20:
+                await append_event(
+                    "scheduler.dispatch_skipped_cooldown",
+                    {
+                        "job_id": job_id,
+                        "job_type": spesifikasi.type,
+                        "remaining_sec": cooldown_remaining,
+                        "message": "Dispatch dilewati karena job masih cooldown setelah failure beruntun.",
+                    },
+                )
+                self.last_cooldown_notice[job_id] = sekarang_ts
+            return False
+
         if self._job_izinkan_overlap(spesifikasi):
             return True
 

@@ -24,6 +24,7 @@ RUN_PREFIX = "run:"
 ZSET_RUNS = "zset:runs"
 JOB_RUNS_PREFIX = "job:runs:"
 JOB_ACTIVE_RUNS_PREFIX = "job:active:runs:"
+JOB_FAILURE_STATE_PREFIX = "job:failure:state:"
 EVENTS_LOG = "events:log"
 EVENTS_MAX = 500
 
@@ -39,6 +40,7 @@ _fallback_runs: Dict[str, Dict[str, Any]] = {}
 _fallback_run_scores: Dict[str, float] = {}
 _fallback_job_runs: Dict[str, List[str]] = defaultdict(list)
 _fallback_active_runs: Dict[str, set] = defaultdict(set)
+_fallback_failure_state: Dict[str, Dict[str, Any]] = {}
 _fallback_events: List[Dict[str, Any]] = []
 _mode_fallback_redis = False
 
@@ -98,6 +100,26 @@ def _status_run_aktif(value: Any) -> bool:
 
 def _kunci_active_runs(job_id: str) -> str:
     return f"{JOB_ACTIVE_RUNS_PREFIX}{job_id}"
+
+
+def _kunci_failure_state(job_id: str) -> str:
+    return f"{JOB_FAILURE_STATE_PREFIX}{job_id}"
+
+
+def _ke_datetime_utc(raw: Any) -> datetime:
+    if isinstance(raw, datetime):
+        if raw.tzinfo is None:
+            return raw.replace(tzinfo=timezone.utc)
+        return raw.astimezone(timezone.utc)
+    if isinstance(raw, str):
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
 
 
 def _refresh_index_active_runs_fallback(previous_data: Optional[Dict[str, Any]], current_data: Dict[str, Any], run_id: str) -> None:
@@ -482,6 +504,14 @@ async def get_queue_metrics() -> Dict[str, int]:
     if _sedang_mode_fallback_redis():
         return {"depth": len(_fallback_stream), "delayed": len(_fallback_delayed)}
 
+    try:
+        depth = await redis_client.xlen(STREAM_JOBS)
+        delayed = await redis_client.zcard(ZSET_DELAYED)
+        return {"depth": int(depth), "delayed": int(delayed)}
+    except RedisError:
+        _aktifkan_mode_fallback()
+        return {"depth": len(_fallback_stream), "delayed": len(_fallback_delayed)}
+
 
 async def has_active_runs(job_id: str) -> bool:
     """Check whether a job currently has queued/running runs."""
@@ -498,13 +528,111 @@ async def has_active_runs(job_id: str) -> bool:
         _aktifkan_mode_fallback()
         return len(_fallback_active_runs.get(normalized_job_id, set())) > 0
 
+
+async def get_job_failure_state(job_id: str) -> Dict[str, Any]:
+    normalized_job_id = job_id.strip()
+    if not normalized_job_id:
+        return {
+            "job_id": "",
+            "consecutive_failures": 0,
+            "cooldown_until": None,
+            "last_error": None,
+            "last_failure_at": None,
+            "last_success_at": None,
+            "updated_at": _sekarang_iso(),
+        }
+
+    if _sedang_mode_fallback_redis():
+        row = _fallback_failure_state.get(normalized_job_id)
+        if row:
+            return _salin_nilai(row)
+    else:
+        try:
+            payload = await redis_client.get(_kunci_failure_state(normalized_job_id))
+            if payload:
+                row = json.loads(payload)
+                if isinstance(row, dict):
+                    return row
+        except RedisError:
+            _aktifkan_mode_fallback()
+            row = _fallback_failure_state.get(normalized_job_id)
+            if row:
+                return _salin_nilai(row)
+
+    return {
+        "job_id": normalized_job_id,
+        "consecutive_failures": 0,
+        "cooldown_until": None,
+        "last_error": None,
+        "last_failure_at": None,
+        "last_success_at": None,
+        "updated_at": _sekarang_iso(),
+    }
+
+
+async def record_job_outcome(
+    job_id: str,
+    *,
+    success: bool,
+    error: Optional[str] = None,
+    failure_threshold: int = 3,
+    failure_cooldown_sec: int = 120,
+    failure_cooldown_max_sec: int = 3600,
+) -> Dict[str, Any]:
+    normalized_job_id = job_id.strip()
+    if not normalized_job_id:
+        raise ValueError("job_id wajib diisi.")
+
+    threshold = max(1, int(failure_threshold))
+    cooldown_base = max(10, int(failure_cooldown_sec))
+    cooldown_max = max(cooldown_base, int(failure_cooldown_max_sec))
+
+    row = await get_job_failure_state(normalized_job_id)
+    sekarang = datetime.now(timezone.utc)
+
+    if success:
+        row["consecutive_failures"] = 0
+        row["cooldown_until"] = None
+        row["last_error"] = None
+        row["last_success_at"] = sekarang.isoformat()
+    else:
+        gagal_beruntun = int(row.get("consecutive_failures") or 0) + 1
+        row["consecutive_failures"] = gagal_beruntun
+        row["last_failure_at"] = sekarang.isoformat()
+        row["last_error"] = (error or "").strip()[:500] or None
+
+        if gagal_beruntun >= threshold:
+            level = gagal_beruntun - threshold
+            cooldown = min(cooldown_max, cooldown_base * (2 ** level))
+            row["cooldown_until"] = datetime.fromtimestamp(
+                sekarang.timestamp() + cooldown, tz=timezone.utc
+            ).isoformat()
+
+    row["job_id"] = normalized_job_id
+    row["updated_at"] = sekarang.isoformat()
+
+    if _sedang_mode_fallback_redis():
+        _fallback_failure_state[normalized_job_id] = _salin_nilai(row)
+        return row
+
     try:
-        depth = await redis_client.xlen(STREAM_JOBS)
-        delayed = await redis_client.zcard(ZSET_DELAYED)
-        return {"depth": int(depth), "delayed": int(delayed)}
+        await redis_client.set(_kunci_failure_state(normalized_job_id), json.dumps(row))
     except RedisError:
         _aktifkan_mode_fallback()
-        return {"depth": len(_fallback_stream), "delayed": len(_fallback_delayed)}
+        _fallback_failure_state[normalized_job_id] = _salin_nilai(row)
+
+    return row
+
+
+async def get_job_cooldown_remaining(job_id: str) -> int:
+    row = await get_job_failure_state(job_id)
+    cooldown_until = row.get("cooldown_until")
+    if not cooldown_until:
+        return 0
+
+    deadline = _ke_datetime_utc(cooldown_until)
+    remaining = int((deadline - datetime.now(timezone.utc)).total_seconds())
+    return max(0, remaining)
 
 
 async def append_event(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:

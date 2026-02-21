@@ -235,6 +235,10 @@ export interface AgentWorkflowAutomationRequest {
   require_approval_for_missing?: boolean;
   allow_overlap?: boolean;
   dispatch_jitter_sec?: number;
+  failure_threshold?: number;
+  failure_cooldown_sec?: number;
+  failure_cooldown_max_sec?: number;
+  failure_memory_enabled?: boolean;
   timeout_ms?: number;
   max_retry?: number;
   backoff_sec?: number[];

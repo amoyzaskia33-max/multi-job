@@ -48,6 +48,7 @@ def test_process_job_event_creates_approval_when_handler_requires_it(monkeypatch
     monkeypatch.setattr(runner, "add_run_to_job_history", _noop)
     monkeypatch.setattr(runner, "append_event", fake_append_event)
     monkeypatch.setattr(runner, "create_approval_request", fake_create_approval_request)
+    monkeypatch.setattr(runner, "record_job_outcome", _noop)
 
     result = asyncio.run(
         runner.process_job_event(

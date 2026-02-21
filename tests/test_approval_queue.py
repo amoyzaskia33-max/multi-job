@@ -10,12 +10,13 @@ def _paksa_mode_fallback(monkeypatch):
     async def _redis_error(*args, **kwargs):
         raise RedisError("forced fallback")
 
-    for nama_metode in ("get", "set", "lpush", "ltrim", "lrange"):
+    for nama_metode in ("get", "set", "lpush", "ltrim", "lrange", "sadd", "srem", "scard"):
         monkeypatch.setattr(approval_queue.redis_client, nama_metode, _redis_error)
 
     approval_queue._fallback_rows.clear()
     approval_queue._fallback_order.clear()
     approval_queue._fallback_run_index.clear()
+    approval_queue._fallback_pending_job_index.clear()
 
 
 def test_create_approval_request_deduplicates_by_run_id(monkeypatch):
@@ -67,6 +68,8 @@ def test_decide_and_filter_approval_requests(monkeypatch):
 
     pending_awal = asyncio.run(approval_queue.list_approval_requests(status="pending"))
     assert {item["approval_id"] for item in pending_awal} == {row_a["approval_id"], row_b["approval_id"]}
+    assert asyncio.run(approval_queue.has_pending_approval_for_job("job_a")) is True
+    assert asyncio.run(approval_queue.has_pending_approval_for_job("job_b")) is True
 
     approved = asyncio.run(
         approval_queue.decide_approval_request(
@@ -87,6 +90,8 @@ def test_decide_and_filter_approval_requests(monkeypatch):
 
     assert {item["approval_id"] for item in pending_setelah} == {row_b["approval_id"]}
     assert {item["approval_id"] for item in approved_list} == {row_a["approval_id"]}
+    assert asyncio.run(approval_queue.has_pending_approval_for_job("job_a")) is False
+    assert asyncio.run(approval_queue.has_pending_approval_for_job("job_b")) is True
 
 
 def test_invalid_status_raises_error(monkeypatch):

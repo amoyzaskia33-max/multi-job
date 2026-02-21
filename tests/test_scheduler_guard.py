@@ -9,6 +9,20 @@ async def _noop(*args, **kwargs):
     return None
 
 
+def _patch_guard_defaults(monkeypatch):
+    async def _no_pending(job_id: str):
+        return False
+
+    async def _no_cooldown(job_id: str):
+        return 0
+
+    async def _no_active(job_id: str):
+        return False
+
+    monkeypatch.setattr(scheduler_module, "has_pending_approval_for_job", _no_pending)
+    monkeypatch.setattr(scheduler_module, "get_job_cooldown_remaining", _no_cooldown)
+
+
 def _job_spec_interval(job_id: str = "job_interval") -> JobSpec:
     return JobSpec(
         job_id=job_id,
@@ -32,6 +46,7 @@ def _job_spec_cron(job_id: str = "job_cron") -> JobSpec:
 
 
 def test_scheduler_skips_interval_dispatch_when_previous_run_still_active(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
     sched = scheduler_module.Scheduler()
     sched.jobs = {"job_interval": _job_spec_interval()}
 
@@ -63,6 +78,7 @@ def test_scheduler_skips_interval_dispatch_when_previous_run_still_active(monkey
 
 
 def test_scheduler_cron_dispatches_once_per_minute_slot(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
     sched = scheduler_module.Scheduler()
     sched.jobs = {"job_cron": _job_spec_cron()}
 
@@ -117,6 +133,7 @@ def test_scheduler_cron_match_handles_common_daily_expression():
 
 
 def test_scheduler_initial_jitter_offsets_first_interval_dispatch(monkeypatch):
+    _patch_guard_defaults(monkeypatch)
     sched = scheduler_module.Scheduler()
     spec = JobSpec(
         job_id="job_jitter",
@@ -161,3 +178,75 @@ def test_scheduler_initial_jitter_offsets_first_interval_dispatch(monkeypatch):
     fake_now["value"] = 1006.0
     asyncio.run(sched.process_interval_jobs())
     assert len(enqueued) == 1
+
+
+def test_scheduler_skips_dispatch_when_pending_approval_exists(monkeypatch):
+    sched = scheduler_module.Scheduler()
+    sched.jobs = {"job_pending": _job_spec_interval("job_pending")}
+
+    events = []
+
+    async def _pending(job_id: str):
+        return True
+
+    async def _no_cooldown(job_id: str):
+        return 0
+
+    async def _no_active(job_id: str):
+        return False
+
+    async def fake_enqueue_job(event):
+        raise AssertionError("enqueue should not be called when approval is pending")
+
+    async def fake_append_event(event_type: str, data):
+        events.append((event_type, data))
+        return None
+
+    monkeypatch.setattr(scheduler_module, "has_pending_approval_for_job", _pending)
+    monkeypatch.setattr(scheduler_module, "get_job_cooldown_remaining", _no_cooldown)
+    monkeypatch.setattr(scheduler_module, "has_active_runs", _no_active)
+    monkeypatch.setattr(scheduler_module, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(scheduler_module, "append_event", fake_append_event)
+    monkeypatch.setattr(scheduler_module, "save_run", _noop)
+    monkeypatch.setattr(scheduler_module, "add_run_to_job_history", _noop)
+    monkeypatch.setattr(scheduler_module, "get_run", lambda run_id: _noop())
+
+    asyncio.run(sched.process_interval_jobs())
+
+    assert any(name == "scheduler.dispatch_skipped_pending_approval" for name, _ in events)
+
+
+def test_scheduler_skips_dispatch_when_job_in_cooldown(monkeypatch):
+    sched = scheduler_module.Scheduler()
+    sched.jobs = {"job_cooldown": _job_spec_interval("job_cooldown")}
+
+    events = []
+
+    async def _no_pending(job_id: str):
+        return False
+
+    async def _cooldown(job_id: str):
+        return 45
+
+    async def _no_active(job_id: str):
+        return False
+
+    async def fake_enqueue_job(event):
+        raise AssertionError("enqueue should not be called when cooldown is active")
+
+    async def fake_append_event(event_type: str, data):
+        events.append((event_type, data))
+        return None
+
+    monkeypatch.setattr(scheduler_module, "has_pending_approval_for_job", _no_pending)
+    monkeypatch.setattr(scheduler_module, "get_job_cooldown_remaining", _cooldown)
+    monkeypatch.setattr(scheduler_module, "has_active_runs", _no_active)
+    monkeypatch.setattr(scheduler_module, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(scheduler_module, "append_event", fake_append_event)
+    monkeypatch.setattr(scheduler_module, "save_run", _noop)
+    monkeypatch.setattr(scheduler_module, "add_run_to_job_history", _noop)
+    monkeypatch.setattr(scheduler_module, "get_run", lambda run_id: _noop())
+
+    asyncio.run(sched.process_interval_jobs())
+
+    assert any(name == "scheduler.dispatch_skipped_cooldown" for name, _ in events)

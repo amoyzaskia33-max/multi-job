@@ -35,6 +35,7 @@ def _reset_queue_fallback_state():
     queue._fallback_run_scores.clear()
     queue._fallback_job_runs.clear()
     queue._fallback_active_runs.clear()
+    queue._fallback_failure_state.clear()
     queue._fallback_events.clear()
 
 
@@ -144,3 +145,32 @@ def test_active_runs_index_updates_in_fallback_mode(monkeypatch):
     run.status = RunStatus.SUCCESS
     asyncio.run(queue.save_run(run))
     assert asyncio.run(queue.has_active_runs("job_active_1")) is False
+
+
+def test_failure_memory_sets_and_clears_cooldown_in_fallback(monkeypatch):
+    _reset_queue_fallback_state()
+    monkeypatch.setattr(queue, "redis_client", _MustNotCallRedis())
+    queue.set_mode_fallback_redis(True)
+
+    # Fail 3x to trigger cooldown.
+    for _ in range(3):
+        asyncio.run(
+            queue.record_job_outcome(
+                "job_fail_1",
+                success=False,
+                error="simulated error",
+                failure_threshold=3,
+                failure_cooldown_sec=60,
+                failure_cooldown_max_sec=300,
+            )
+        )
+
+    state = asyncio.run(queue.get_job_failure_state("job_fail_1"))
+    assert state["consecutive_failures"] == 3
+    assert state["cooldown_until"] is not None
+    assert asyncio.run(queue.get_job_cooldown_remaining("job_fail_1")) > 0
+
+    asyncio.run(queue.record_job_outcome("job_fail_1", success=True))
+    state_after = asyncio.run(queue.get_job_failure_state("job_fail_1"))
+    assert state_after["consecutive_failures"] == 0
+    assert state_after["cooldown_until"] is None

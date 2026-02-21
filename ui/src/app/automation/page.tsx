@@ -83,6 +83,10 @@ export default function AutomationPage() {
   const [wajibApproval, setWajibApproval] = useState(true);
   const [izinkanOverlap, setIzinkanOverlap] = useState(false);
   const [jitterDetik, setJitterDetik] = useState(0);
+  const [failureThreshold, setFailureThreshold] = useState(3);
+  const [failureCooldownSec, setFailureCooldownSec] = useState(120);
+  const [failureCooldownMaxSec, setFailureCooldownMaxSec] = useState(3600);
+  const [failureMemoryEnabled, setFailureMemoryEnabled] = useState(true);
   const [zonaWaktu, setZonaWaktu] = useState("Asia/Jakarta");
   const [defaultChannel, setDefaultChannel] = useState("telegram");
   const [defaultAccountId, setDefaultAccountId] = useState("default");
@@ -150,6 +154,10 @@ export default function AutomationPage() {
       require_approval_for_missing: wajibApproval,
       allow_overlap: izinkanOverlap,
       dispatch_jitter_sec: Math.max(0, Number(jitterDetik) || 0),
+      failure_threshold: Math.max(1, Number(failureThreshold) || 3),
+      failure_cooldown_sec: Math.max(10, Number(failureCooldownSec) || 120),
+      failure_cooldown_max_sec: Math.max(10, Number(failureCooldownMaxSec) || 3600),
+      failure_memory_enabled: failureMemoryEnabled,
       timeout_ms: 90000,
       max_retry: 1,
       backoff_sec: [2, 5],
@@ -293,6 +301,48 @@ export default function AutomationPage() {
                   max={3600}
                   value={jitterDetik}
                   onChange={(event) => setJitterDetik(Number(event.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+              <div className="flex items-end">
+                <div className="flex w-full items-center justify-between rounded-xl border border-border bg-muted p-3">
+                  <Label>Failure Memory Aktif</Label>
+                  <Switch checked={failureMemoryEnabled} onCheckedChange={setFailureMemoryEnabled} />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="failure-threshold">Ambang Gagal Beruntun</Label>
+                <Input
+                  id="failure-threshold"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={failureThreshold}
+                  onChange={(event) => setFailureThreshold(Number(event.target.value))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="failure-cooldown-sec">Cooldown Awal (detik)</Label>
+                <Input
+                  id="failure-cooldown-sec"
+                  type="number"
+                  min={10}
+                  max={86400}
+                  value={failureCooldownSec}
+                  onChange={(event) => setFailureCooldownSec(Number(event.target.value))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="failure-cooldown-max-sec">Cooldown Maks (detik)</Label>
+                <Input
+                  id="failure-cooldown-max-sec"
+                  type="number"
+                  min={10}
+                  max={604800}
+                  value={failureCooldownMaxSec}
+                  onChange={(event) => setFailureCooldownMaxSec(Number(event.target.value))}
                 />
               </div>
             </div>

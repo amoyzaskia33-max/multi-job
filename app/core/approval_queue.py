@@ -1,6 +1,7 @@
 import json
 import time
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -11,12 +12,14 @@ from .redis_client import redis_client
 APPROVAL_PREFIX = "approval:req:"
 APPROVAL_ORDER_KEY = "approval:req:order"
 APPROVAL_RUN_INDEX_PREFIX = "approval:req:run:"
+APPROVAL_PENDING_JOB_PREFIX = "approval:req:pending:job:"
 APPROVAL_MAX = 500
 VALID_STATUS = {"pending", "approved", "rejected"}
 
 _fallback_rows: Dict[str, Dict[str, Any]] = {}
 _fallback_order: List[str] = []
 _fallback_run_index: Dict[str, str] = {}
+_fallback_pending_job_index: Dict[str, set] = defaultdict(set)
 
 
 def _sekarang_iso() -> str:
@@ -46,6 +49,10 @@ def _kunci_approval(approval_id: str) -> str:
 
 def _kunci_run(run_id: str) -> str:
     return f"{APPROVAL_RUN_INDEX_PREFIX}{run_id}"
+
+
+def _kunci_pending_job(job_id: str) -> str:
+    return f"{APPROVAL_PENDING_JOB_PREFIX}{job_id}"
 
 
 def _bersih_requests(rows: Any) -> List[Dict[str, Any]]:
@@ -153,11 +160,13 @@ async def create_approval_request(
         await redis_client.set(_kunci_run(normalized_run_id), approval_id)
         await redis_client.lpush(APPROVAL_ORDER_KEY, approval_id)
         await redis_client.ltrim(APPROVAL_ORDER_KEY, 0, APPROVAL_MAX - 1)
+        await redis_client.sadd(_kunci_pending_job(normalized_job_id), approval_id)
     except RedisError:
         _fallback_rows[approval_id] = _salin(row)
         _fallback_run_index[normalized_run_id] = approval_id
         _fallback_order.insert(0, approval_id)
         del _fallback_order[APPROVAL_MAX:]
+        _fallback_pending_job_index[normalized_job_id].add(approval_id)
 
     return row, True
 
@@ -192,6 +201,18 @@ async def list_approval_requests(status: Optional[str] = None, limit: int = 100)
     return rows
 
 
+async def has_pending_approval_for_job(job_id: str) -> bool:
+    normalized_job_id = job_id.strip()
+    if not normalized_job_id:
+        return False
+
+    try:
+        pending_count = int(await redis_client.scard(_kunci_pending_job(normalized_job_id)))
+        return pending_count > 0
+    except RedisError:
+        return len(_fallback_pending_job_index.get(normalized_job_id, set())) > 0
+
+
 async def decide_approval_request(
     approval_id: str,
     *,
@@ -206,6 +227,7 @@ async def decide_approval_request(
     row = await _ambil_approval_raw(approval_id.strip())
     if not row:
         return None
+    previous_status = str(row.get("status") or "").strip().lower()
 
     now = _sekarang_iso()
     row["status"] = normalized_status
@@ -216,14 +238,19 @@ async def decide_approval_request(
 
     key_id = str(row.get("approval_id") or approval_id).strip()
     run_id = str(row.get("run_id") or "").strip()
+    job_id = str(row.get("job_id") or "").strip()
 
     try:
         await redis_client.set(_kunci_approval(key_id), json.dumps(row))
         if run_id:
             await redis_client.set(_kunci_run(run_id), key_id)
+        if previous_status == "pending" and job_id:
+            await redis_client.srem(_kunci_pending_job(job_id), key_id)
     except RedisError:
         _fallback_rows[key_id] = _salin(row)
         if run_id:
             _fallback_run_index[run_id] = key_id
+        if previous_status == "pending" and job_id:
+            _fallback_pending_job_index[job_id].discard(key_id)
 
     return _salin(row)
