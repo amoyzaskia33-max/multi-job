@@ -69,7 +69,7 @@ def test_agent_workflow_executes_provider_and_mcp_steps(monkeypatch):
 
     monkeypatch.setattr(agent_workflow, "list_integration_accounts", fake_list_accounts)
     monkeypatch.setattr(agent_workflow, "list_mcp_servers", fake_list_mcp_servers)
-    monkeypatch.setattr(agent_workflow, "_plan_actions_with_openai", fake_plan_actions_with_openai)
+    monkeypatch.setattr(agent_workflow, "_rencanakan_aksi_dengan_openai", fake_plan_actions_with_openai)
 
     http_tool = _FakeHttpTool()
     result = asyncio.run(

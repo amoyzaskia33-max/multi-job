@@ -76,7 +76,7 @@ def test_execute_prompt_plan_creates_and_runs_job(monkeypatch):
     monkeypatch.setattr(planner_execute, "save_job_spec", fake_save_job_spec)
     monkeypatch.setattr(planner_execute, "enable_job", fake_enable_job)
     monkeypatch.setattr(planner_execute, "append_event", fake_append_event)
-    monkeypatch.setattr(planner_execute, "_enqueue_run_from_spec", fake_enqueue_run_from_spec)
+    monkeypatch.setattr(planner_execute, "_antrikan_run_dari_spesifikasi", fake_enqueue_run_from_spec)
     monkeypatch.setattr(planner_execute, "get_run", fake_get_run)
     monkeypatch.setattr(planner_execute.asyncio, "sleep", fake_sleep)
 
@@ -123,7 +123,7 @@ def test_execute_prompt_plan_updates_existing_job_without_run(monkeypatch):
     monkeypatch.setattr(planner_execute, "save_job_spec", fake_save_job_spec)
     monkeypatch.setattr(planner_execute, "enable_job", fake_enable_job)
     monkeypatch.setattr(planner_execute, "append_event", fake_append_event)
-    monkeypatch.setattr(planner_execute, "_enqueue_run_from_spec", should_not_enqueue)
+    monkeypatch.setattr(planner_execute, "_antrikan_run_dari_spesifikasi", should_not_enqueue)
 
     result = asyncio.run(
         planner_execute.execute_prompt_plan(
@@ -171,7 +171,7 @@ def test_execute_prompt_plan_keeps_processing_when_single_job_fails(monkeypatch)
     monkeypatch.setattr(planner_execute, "save_job_spec", fake_save_job_spec)
     monkeypatch.setattr(planner_execute, "enable_job", fake_enable_job)
     monkeypatch.setattr(planner_execute, "append_event", fake_append_event)
-    monkeypatch.setattr(planner_execute, "_enqueue_run_from_spec", should_not_enqueue)
+    monkeypatch.setattr(planner_execute, "_antrikan_run_dari_spesifikasi", should_not_enqueue)
 
     result = asyncio.run(
         planner_execute.execute_prompt_plan(
@@ -218,7 +218,7 @@ def test_execute_prompt_plan_uses_ai_planner_when_enabled(monkeypatch):
     monkeypatch.setattr(planner_execute, "save_job_spec", fake_save_job_spec)
     monkeypatch.setattr(planner_execute, "enable_job", fake_enable_job)
     monkeypatch.setattr(planner_execute, "append_event", fake_append_event)
-    monkeypatch.setattr(planner_execute, "_enqueue_run_from_spec", should_not_enqueue)
+    monkeypatch.setattr(planner_execute, "_antrikan_run_dari_spesifikasi", should_not_enqueue)
 
     result = asyncio.run(
         planner_execute.execute_prompt_plan(
