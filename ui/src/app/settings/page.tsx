@@ -14,10 +14,12 @@ import {
   deleteIntegrationAccount,
   deleteMcpIntegrationServer,
   deleteTelegramConnectorAccount,
+  getEvents,
   getIntegrationsCatalog,
   getIntegrationAccounts,
   getMcpIntegrationServers,
   getTelegramConnectorAccounts,
+  type SystemEvent,
   upsertIntegrationAccount,
   upsertMcpIntegrationServer,
   upsertTelegramConnectorAccount,
@@ -62,6 +64,53 @@ const ubahKePetaString = (source: Record<string, unknown>): Record<string, strin
     output[cleanKey] = String(value);
   }
   return output;
+};
+
+const JENIS_EVENT_UPDATE_SKILL = new Set([
+  "integration.account_upserted",
+  "integration.mcp_server_upserted",
+  "integration.catalog_bootstrap",
+  "connector.telegram.account_upserted",
+  "agent.approval_requested",
+]);
+
+const formatWaktuEvent = (value?: string) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("id-ID");
+};
+
+const formatRingkasanEvent = (event: SystemEvent) => {
+  const data = event.data || {};
+
+  if (event.type === "integration.account_upserted") {
+    const provider = String(data.provider || "-");
+    const accountId = String(data.account_id || "-");
+    return `Akun integrasi ${provider}/${accountId} diperbarui.`;
+  }
+  if (event.type === "integration.mcp_server_upserted") {
+    const serverId = String(data.server_id || "-");
+    const transport = String(data.transport || "-");
+    return `MCP server ${serverId} diperbarui (${transport}).`;
+  }
+  if (event.type === "integration.catalog_bootstrap") {
+    const providerCreated = Number(data.providers_created || 0);
+    const mcpCreated = Number(data.mcp_created || 0);
+    return `Template baru ditambahkan: provider +${providerCreated}, MCP +${mcpCreated}.`;
+  }
+  if (event.type === "connector.telegram.account_upserted") {
+    const accountId = String(data.account_id || "-");
+    return `Akun Telegram ${accountId} diperbarui.`;
+  }
+  if (event.type === "agent.approval_requested") {
+    const count = Number(data.request_count || 0);
+    return count > 0
+      ? `Agen minta izin untuk ${count} puzzle/skill baru.`
+      : "Agen minta izin menambah puzzle/skill.";
+  }
+
+  return "Update sistem terbaru.";
 };
 
 export default function SettingsPage() {
@@ -123,6 +172,12 @@ export default function SettingsPage() {
     refetchInterval: false,
   });
 
+  const { data: dataEventSkill = [], isLoading: sedangMemuatEventSkill } = useQuery({
+    queryKey: ["skill-updates"],
+    queryFn: () => getEvents({ limit: 120 }),
+    refetchInterval: 10000,
+  });
+
   const daftarProviderKatalog = katalogIntegrasi?.providers || [];
   const daftarTemplateMcpKatalog = katalogIntegrasi?.mcp_servers || [];
 
@@ -180,6 +235,15 @@ export default function SettingsPage() {
     petaTemplateProvider,
     akunTelegram,
   ]);
+
+  const daftarUpdateSkill = useMemo(
+    () =>
+      dataEventSkill
+        .filter((event) => JENIS_EVENT_UPDATE_SKILL.has(event.type))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 8),
+    [dataEventSkill],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -484,6 +548,30 @@ export default function SettingsPage() {
           Semua koneksi disimpan di sini: API dashboard, Telegram bridge, MCP server, dan akun provider/tool lainnya.
         </p>
       </section>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle>Update Skill & Puzzle Terbaru</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {sedangMemuatEventSkill ? (
+            <div className="text-sm text-muted-foreground">Lagi ambil update terbaru...</div>
+          ) : daftarUpdateSkill.length === 0 ? (
+            <div className="text-sm text-muted-foreground">Belum ada update skill/puzzle baru.</div>
+          ) : (
+            <div className="space-y-2">
+              {daftarUpdateSkill.map((event) => (
+                <div key={event.id} className="rounded-xl border border-border bg-muted p-3">
+                  <p className="text-sm font-medium text-foreground">{formatRingkasanEvent(event)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatWaktuEvent(event.timestamp)} | {event.type}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="bg-card">
         <CardHeader>

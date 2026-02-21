@@ -1,11 +1,13 @@
 import json
 import os
+from contextlib import suppress
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 import aiohttp
 
 from app.core.integration_configs import list_integration_accounts, list_mcp_servers
+from app.core.queue import append_event
 
 OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
@@ -211,6 +213,140 @@ def _katalog_mcp(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         if server_id:
             output[server_id] = row
     return output
+
+
+def _buat_request_izin(
+    *,
+    kind: str,
+    reason: str,
+    provider: Optional[str] = None,
+    account_id: Optional[str] = None,
+    server_id: Optional[str] = None,
+    action_hint: str = "",
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "kind": kind,
+        "reason": reason.strip(),
+        "action_hint": action_hint.strip(),
+    }
+    if provider:
+        payload["provider"] = provider.strip().lower()
+    if account_id:
+        payload["account_id"] = account_id.strip()
+    if server_id:
+        payload["server_id"] = server_id.strip()
+    return payload
+
+
+def _hapus_duplikat_request_izin(requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    output: List[Dict[str, Any]] = []
+    for item in requests:
+        signature = json.dumps(
+            {
+                "kind": item.get("kind"),
+                "provider": item.get("provider"),
+                "account_id": item.get("account_id"),
+                "server_id": item.get("server_id"),
+                "reason": item.get("reason"),
+            },
+            sort_keys=True,
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        output.append(item)
+    return output
+
+
+def _kumpulkan_request_izin_dari_rencana(
+    steps: List[Dict[str, Any]],
+    provider_catalog: Dict[str, List[Dict[str, Any]]],
+    mcp_catalog: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    requests: List[Dict[str, Any]] = []
+
+    for step in steps:
+        kind = str(step.get("kind") or "").strip().lower()
+
+        if kind == "provider_http":
+            provider = str(step.get("provider") or "").strip().lower()
+            account_id = str(step.get("account_id") or "default").strip() or "default"
+            if not provider:
+                continue
+            selected = _pilih_akun(provider_catalog, provider, account_id)
+            if not selected:
+                requests.append(
+                    _buat_request_izin(
+                        kind="provider_account",
+                        provider=provider,
+                        account_id=account_id,
+                        reason=f"Provider '{provider}' akun '{account_id}' belum tersedia atau belum aktif.",
+                        action_hint="Tambahkan akun integrasi di Setelan > Akun Integrasi.",
+                    )
+                )
+
+        if kind == "mcp_http":
+            server_id = str(step.get("server_id") or "").strip()
+            if not server_id:
+                continue
+            server = mcp_catalog.get(server_id)
+            if not server:
+                requests.append(
+                    _buat_request_izin(
+                        kind="mcp_server",
+                        server_id=server_id,
+                        reason=f"MCP server '{server_id}' belum tersedia atau belum aktif.",
+                        action_hint="Tambahkan MCP server di Setelan > MCP Servers.",
+                    )
+                )
+                continue
+
+            transport = str(server.get("transport") or "").strip().lower()
+            if transport not in {"http", "sse"}:
+                requests.append(
+                    _buat_request_izin(
+                        kind="mcp_transport",
+                        server_id=server_id,
+                        reason=f"MCP server '{server_id}' belum bisa HTTP call karena transport '{transport}'.",
+                        action_hint="Ubah transport MCP ke http/sse untuk dipakai workflow agent.",
+                    )
+                )
+
+    return _hapus_duplikat_request_izin(requests)
+
+
+def _buat_respons_butuh_izin(
+    *,
+    prompt: str,
+    summary: str,
+    model_id: str,
+    approval_requests: List[Dict[str, Any]],
+    provider_catalog: Dict[str, List[Dict[str, Any]]],
+    mcp_catalog: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    provider_tersedia = {
+        provider: sorted({str(row.get("account_id") or "default") for row in rows})
+        for provider, rows in provider_catalog.items()
+    }
+    server_mcp_tersedia = sorted(mcp_catalog.keys())
+    pesan = "Butuh izin untuk menambah puzzle/skill yang belum tersedia."
+
+    return {
+        "success": False,
+        "requires_approval": True,
+        "error": pesan,
+        "summary": summary,
+        "final_message": "",
+        "model_id": model_id,
+        "prompt": prompt,
+        "steps_planned": 0,
+        "steps_executed": 0,
+        "step_results": [],
+        "approval_requests": approval_requests,
+        "available_providers": provider_tersedia,
+        "available_mcp_servers": server_mcp_tersedia,
+    }
 
 
 def _bangun_prompt_sistem_planner(
@@ -471,6 +607,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
 
     akun_openai_pilihan = str(inputs.get("openai_account_id") or "default").strip() or "default"
     akun_openai = _pilih_akun(katalog_provider, "openai", akun_openai_pilihan)
+    perlu_izin_saat_kurang = bool(inputs.get("require_approval_for_missing", True))
 
     kunci_api_openai = ""
     id_model_openai = str(inputs.get("model_id") or "").strip()
@@ -485,6 +622,32 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         kunci_api_openai = str(os.getenv("OPENAI_API_KEY") or "").strip()
 
     if not kunci_api_openai:
+        requests = [
+            _buat_request_izin(
+                kind="provider_account",
+                provider="openai",
+                account_id=akun_openai_pilihan,
+                reason="Token OpenAI belum tersedia untuk planner agent.",
+                action_hint="Isi token provider OpenAI di Setelan > Akun Integrasi.",
+            )
+        ]
+
+        with_izin = _buat_respons_butuh_izin(
+            prompt=prompt_pengguna,
+            summary="Planner berhenti karena butuh akses provider OpenAI.",
+            model_id="",
+            approval_requests=requests,
+            provider_catalog=katalog_provider,
+            mcp_catalog=katalog_mcp,
+        )
+        with suppress(Exception):
+            await append_event(
+                "agent.approval_requested",
+                {"prompt": prompt_pengguna[:200], "reason": "missing_openai_key", "requests": requests},
+            )
+        if perlu_izin_saat_kurang:
+            return with_izin
+
         return {
             "success": False,
             "error": "OpenAI API key belum tersedia. Isi provider 'openai' di dashboard atau set OPENAI_API_KEY.",
@@ -505,6 +668,31 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         rencana = _sanitasi_rencana(rencana_raw)
     except Exception as exc:
         return {"success": False, "error": f"Agent planner gagal: {exc}"}
+
+    request_izin = _kumpulkan_request_izin_dari_rencana(
+        rencana["steps"],
+        provider_catalog=katalog_provider,
+        mcp_catalog=katalog_mcp,
+    )
+    if request_izin and perlu_izin_saat_kurang:
+        with suppress(Exception):
+            await append_event(
+                "agent.approval_requested",
+                {
+                    "prompt": prompt_pengguna[:200],
+                    "reason": "missing_resources_for_plan",
+                    "request_count": len(request_izin),
+                    "requests": request_izin,
+                },
+            )
+        return _buat_respons_butuh_izin(
+            prompt=prompt_pengguna,
+            summary="Rencana ada, tapi perlu izin untuk menambah puzzle/skill.",
+            model_id=model_id,
+            approval_requests=request_izin,
+            provider_catalog=katalog_provider,
+            mcp_catalog=katalog_mcp,
+        )
 
     hasil_langkah: List[Dict[str, Any]] = []
     for step in rencana["steps"]:
@@ -532,7 +720,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
     }
     server_mcp_tersedia = sorted(katalog_mcp.keys())
 
-    return {
+    hasil = {
         "success": sukses_total,
         "summary": rencana["summary"],
         "final_message": rencana.get("final_message") or "",
@@ -544,3 +732,13 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         "available_providers": provider_tersedia,
         "available_mcp_servers": server_mcp_tersedia,
     }
+    with suppress(Exception):
+        await append_event(
+            "agent.workflow_executed",
+            {
+                "success": sukses_total,
+                "steps_planned": len(rencana["steps"]),
+                "steps_executed": len(hasil_langkah),
+            },
+        )
+    return hasil

@@ -17,6 +17,10 @@ class _Ctx:
         self.tools = {"http": http_tool}
 
 
+async def _noop_append_event(*args, **kwargs):
+    return None
+
+
 def test_agent_workflow_requires_prompt():
     http_tool = _FakeHttpTool()
     result = asyncio.run(agent_workflow.run(_Ctx(http_tool), {}))
@@ -70,6 +74,7 @@ def test_agent_workflow_executes_provider_and_mcp_steps(monkeypatch):
     monkeypatch.setattr(agent_workflow, "list_integration_accounts", fake_list_accounts)
     monkeypatch.setattr(agent_workflow, "list_mcp_servers", fake_list_mcp_servers)
     monkeypatch.setattr(agent_workflow, "_rencanakan_aksi_dengan_openai", fake_plan_actions_with_openai)
+    monkeypatch.setattr(agent_workflow, "append_event", _noop_append_event)
 
     http_tool = _FakeHttpTool()
     result = asyncio.run(
@@ -103,9 +108,51 @@ def test_agent_workflow_fails_when_openai_key_missing(monkeypatch):
 
     monkeypatch.setattr(agent_workflow, "list_integration_accounts", fake_list_accounts)
     monkeypatch.setattr(agent_workflow, "list_mcp_servers", fake_list_mcp_servers)
+    monkeypatch.setattr(agent_workflow, "append_event", _noop_append_event)
     monkeypatch.setenv("OPENAI_API_KEY", "")
 
     http_tool = _FakeHttpTool()
     result = asyncio.run(agent_workflow.run(_Ctx(http_tool), {"prompt": "cek github"}))
     assert result["success"] is False
-    assert "OpenAI API key" in result["error"]
+    assert result.get("requires_approval") is True
+    assert len(result.get("approval_requests", [])) == 1
+    assert result["approval_requests"][0]["provider"] == "openai"
+
+
+def test_agent_workflow_requests_approval_when_provider_or_mcp_missing(monkeypatch):
+    async def fake_list_accounts(include_secret: bool = False):
+        return [
+            {
+                "provider": "openai",
+                "account_id": "default",
+                "enabled": True,
+                "secret": "sk-openai",
+                "config": {"model_id": "gpt-4o-mini"},
+            }
+        ]
+
+    async def fake_list_mcp_servers(include_secret: bool = False):
+        return []
+
+    async def fake_plan_actions_with_openai(prompt, model_id, api_key, provider_catalog, mcp_catalog):
+        return {
+            "summary": "Rencana cek provider dan mcp",
+            "steps": [
+                {"kind": "provider_http", "provider": "github", "account_id": "default", "method": "GET", "path": "/user"},
+                {"kind": "mcp_http", "server_id": "mcp_main", "method": "GET", "path": "/health"},
+            ],
+            "final_message": "ok",
+        }
+
+    monkeypatch.setattr(agent_workflow, "list_integration_accounts", fake_list_accounts)
+    monkeypatch.setattr(agent_workflow, "list_mcp_servers", fake_list_mcp_servers)
+    monkeypatch.setattr(agent_workflow, "_rencanakan_aksi_dengan_openai", fake_plan_actions_with_openai)
+    monkeypatch.setattr(agent_workflow, "append_event", _noop_append_event)
+
+    http_tool = _FakeHttpTool()
+    result = asyncio.run(agent_workflow.run(_Ctx(http_tool), {"prompt": "cek github dan mcp"}))
+
+    assert result["success"] is False
+    assert result.get("requires_approval") is True
+    assert len(result.get("approval_requests", [])) == 2
+    assert http_tool.calls == []

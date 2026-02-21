@@ -188,6 +188,13 @@ export interface SystemMetrics {
   api_online: boolean;
 }
 
+export interface SystemEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
 export interface PlannerExecutionResult {
   job_id: string;
   type: string;
@@ -466,6 +473,18 @@ export const getSystemMetrics = async (): Promise<SystemMetrics> => {
     redis_online: health.systemReady,
     api_online: health.apiHealthy,
   };
+};
+
+export const getEvents = async (params?: { since?: string; limit?: number }): Promise<SystemEvent[]> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params?.since) queryParams.append("since", params.since);
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    const path = `/events${queryParams.size ? `?${queryParams.toString()}` : ""}`;
+    return await getJson<SystemEvent[]>(path);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat update skill", []);
+  }
 };
 
 export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse> => {
