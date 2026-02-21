@@ -236,10 +236,6 @@ export const getSystemMetrics = async (): Promise<SystemMetrics> => {
   };
 };
 
-export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse | undefined> => {
-  try {
-    return await send<PlannerExecuteResponse>("/planner/execute", "POST", payload);
-  } catch (error) {
-    return handleApiError(error, "Gagal mengeksekusi prompt", undefined);
-  }
+export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse> => {
+  return await send<PlannerExecuteResponse>("/planner/execute", "POST", payload);
 };

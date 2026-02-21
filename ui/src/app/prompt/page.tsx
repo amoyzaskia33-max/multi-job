@@ -20,6 +20,13 @@ const contohPrompt = [
   "Buat laporan harian jam 07:30 dan backup harian jam 01:30.",
 ];
 
+const clampWaitSeconds = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(30, Math.floor(value)));
+};
+
 export default function PromptPage() {
   const queryClient = useQueryClient();
 
@@ -29,7 +36,7 @@ export default function PromptPage() {
   const [runImmediately, setRunImmediately] = useState(true);
   const [waitSeconds, setWaitSeconds] = useState(2);
   const [timezone, setTimezone] = useState("Asia/Jakarta");
-  const [result, setResult] = useState<PlannerExecuteResponse | undefined>(undefined);
+  const [result, setResult] = useState<PlannerExecuteResponse | null>(null);
 
   const executeMutation = useMutation({
     mutationFn: executePlannerPrompt,
@@ -39,9 +46,12 @@ export default function PromptPage() {
       queryClient.invalidateQueries({ queryKey: ["runs"] });
       toast.success("Prompt berhasil dieksekusi.");
     },
+    onError: () => {
+      toast.error("Gagal mengeksekusi prompt.");
+    },
   });
 
-  const onSubmit = async (event: React.FormEvent) => {
+  const onSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     const cleanedPrompt = prompt.trim();
     if (!cleanedPrompt) {
@@ -49,12 +59,12 @@ export default function PromptPage() {
       return;
     }
 
-    await executeMutation.mutateAsync({
+    executeMutation.mutate({
       prompt: cleanedPrompt,
       use_ai: useAi,
       force_rule_based: useAi ? forceRuleBased : false,
       run_immediately: runImmediately,
-      wait_seconds: waitSeconds,
+      wait_seconds: runImmediately ? clampWaitSeconds(waitSeconds) : 0,
       timezone,
     });
   };
@@ -120,7 +130,15 @@ export default function PromptPage() {
                     <Label>Jalankan Langsung</Label>
                     <p className="text-sm text-muted-foreground">Antrikan run setelah job dibuat.</p>
                   </div>
-                  <Switch checked={runImmediately} onCheckedChange={setRunImmediately} />
+                  <Switch
+                    checked={runImmediately}
+                    onCheckedChange={(checked) => {
+                      setRunImmediately(checked);
+                      if (!checked) {
+                        setWaitSeconds(0);
+                      }
+                    }}
+                  />
                 </div>
               </div>
               <div className="rounded-xl border border-border/70 bg-background/60 p-4">
@@ -131,7 +149,8 @@ export default function PromptPage() {
                   min={0}
                   max={30}
                   value={waitSeconds}
-                  onChange={(event) => setWaitSeconds(Number(event.target.value))}
+                  onChange={(event) => setWaitSeconds(clampWaitSeconds(Number(event.target.value)))}
+                  disabled={!runImmediately}
                 />
               </div>
             </div>

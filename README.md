@@ -157,6 +157,15 @@ One-call execute example:
 }
 ```
 
+One-call execute helper script (PowerShell):
+```powershell
+powershell -ExecutionPolicy Bypass -File .\planner-execute.ps1 `
+  -Prompt "Pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00" `
+  -UseAi `
+  -ForceRuleBased `
+  -WaitSeconds 2
+```
+
 ## Job Specification Example
 
 ```json
