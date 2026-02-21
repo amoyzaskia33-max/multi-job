@@ -20,13 +20,13 @@ from app.services.api.planner import build_plan_from_prompt
 from app.services.api.planner_ai import PlannerAiRequest, build_plan_with_ai
 
 
-def _model_dump(model: Any) -> Dict[str, Any]:
+def _serialisasi_model(model: Any) -> Dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump(mode="json")
     return model.dict()
 
 
-def _now_iso() -> str:
+def _sekarang_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -55,37 +55,37 @@ class PlannerExecuteResponse(BaseModel):
     results: List[PlannerExecutionResult] = Field(default_factory=list)
 
 
-async def _enqueue_run_from_spec(job_id: str, spec: Dict[str, Any]) -> Dict[str, str]:
+async def _antrikan_run_dari_spesifikasi(job_id: str, spesifikasi: Dict[str, Any]) -> Dict[str, str]:
     run_id = f"run_{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:8]}"
     trace_id = f"trace_{uuid.uuid4().hex}"
 
-    run = Run(
+    data_run = Run(
         run_id=run_id,
         job_id=job_id,
         status=RunStatus.QUEUED,
         attempt=0,
         scheduled_at=datetime.now(timezone.utc),
-        inputs=spec.get("inputs", {}),
+        inputs=spesifikasi.get("inputs", {}),
         trace_id=trace_id,
     )
-    await save_run(run)
+    await save_run(data_run)
     await add_run_to_job_history(job_id, run_id)
 
-    event = QueueEvent(
+    event_antrean = QueueEvent(
         run_id=run_id,
         job_id=job_id,
-        type=spec["type"],
-        inputs=spec.get("inputs", {}),
+        type=spesifikasi["type"],
+        inputs=spesifikasi.get("inputs", {}),
         attempt=0,
-        scheduled_at=_now_iso(),
-        timeout_ms=int(spec.get("timeout_ms", 30000)),
+        scheduled_at=_sekarang_iso(),
+        timeout_ms=int(spesifikasi.get("timeout_ms", 30000)),
         trace_id=trace_id,
     )
-    await enqueue_job(event)
+    await enqueue_job(event_antrean)
 
     await append_event(
         "run.queued",
-        {"run_id": run_id, "job_id": job_id, "job_type": spec["type"], "source": "planner_execute"},
+        {"run_id": run_id, "job_id": job_id, "job_type": spesifikasi["type"], "source": "planner_execute"},
     )
 
     return {"run_id": run_id, "status": "queued"}
@@ -93,68 +93,70 @@ async def _enqueue_run_from_spec(job_id: str, spec: Dict[str, Any]) -> Dict[str,
 
 async def execute_prompt_plan(request: PlannerExecuteRequest) -> PlannerExecuteResponse:
     if request.use_ai:
-        plan = build_plan_with_ai(request)
+        rencana = build_plan_with_ai(request)
     else:
-        plan = build_plan_from_prompt(request)
+        rencana = build_plan_from_prompt(request)
 
-    results: List[PlannerExecutionResult] = []
+    daftar_hasil: List[PlannerExecutionResult] = []
 
-    for planned in plan.jobs:
-        spec_model = planned.job_spec
-        spec = _model_dump(spec_model)
-        job_id = spec["job_id"]
-        job_type = spec["type"]
+    for rencana_job in rencana.jobs:
+        model_spesifikasi = rencana_job.job_spec
+        spesifikasi = _serialisasi_model(model_spesifikasi)
+        job_id = spesifikasi["job_id"]
+        tipe_job = spesifikasi["type"]
 
         try:
-            existed = await get_job_spec(job_id) is not None
-            await save_job_spec(job_id, spec)
+            sudah_ada = await get_job_spec(job_id) is not None
+            await save_job_spec(job_id, spesifikasi)
             await enable_job(job_id)
 
             await append_event(
-                "job.created" if not existed else "job.updated",
+                "job.created" if not sudah_ada else "job.updated",
                 {
                     "job_id": job_id,
-                    "job_type": job_type,
+                    "job_type": tipe_job,
                     "message": "Job saved from planner execute",
-                    "planner_source": plan.planner_source,
+                    "planner_source": rencana.planner_source,
                 },
             )
 
-            result = PlannerExecutionResult(
+            hasil = PlannerExecutionResult(
                 job_id=job_id,
-                type=job_type,
-                create_status="updated" if existed else "created",
+                type=tipe_job,
+                create_status="updated" if sudah_ada else "created",
             )
 
             if request.run_immediately:
-                run_resp = await _enqueue_run_from_spec(job_id, spec)
-                result.run_id = run_resp["run_id"]
-                result.queue_status = run_resp["status"]
+                respons_run = await _antrikan_run_dari_spesifikasi(job_id, spesifikasi)
+                hasil.run_id = respons_run["run_id"]
+                hasil.queue_status = respons_run["status"]
 
                 if request.wait_seconds > 0:
                     await asyncio.sleep(request.wait_seconds)
-                    run = await get_run(run_resp["run_id"])
-                    if run:
-                        result.run_status = run.status.value if hasattr(run.status, "value") else str(run.status)
-                        if run.result:
-                            result.result_success = run.result.success
-                            result.result_error = run.result.error
+                    data_run = await get_run(respons_run["run_id"])
+                    if data_run:
+                        hasil.run_status = (
+                            data_run.status.value if hasattr(data_run.status, "value") else str(data_run.status)
+                        )
+                        if data_run.result:
+                            hasil.result_success = data_run.result.success
+                            hasil.result_error = data_run.result.error
 
-            results.append(result)
-        except Exception as exc:
-            results.append(
+            daftar_hasil.append(hasil)
+        except Exception as error:
+            daftar_hasil.append(
                 PlannerExecutionResult(
                     job_id=job_id,
-                    type=job_type,
+                    type=tipe_job,
                     create_status="error",
-                    result_error=str(exc),
+                    result_error=str(error),
                 )
             )
 
     return PlannerExecuteResponse(
-        planner_source=plan.planner_source,
-        summary=plan.summary,
-        assumptions=plan.assumptions,
-        warnings=plan.warnings,
-        results=results,
+        planner_source=rencana.planner_source,
+        summary=rencana.summary,
+        assumptions=rencana.assumptions,
+        warnings=rencana.warnings,
+        results=daftar_hasil,
     )

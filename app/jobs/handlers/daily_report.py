@@ -8,69 +8,69 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
     """Generate daily report from recent job runs"""
     try:
         # Get recent runs (last 24 hours)
-        now = datetime.now(timezone.utc)
-        twenty_four_hours_ago = now.timestamp() - 86400  # 24 hours in seconds
-        
+        sekarang = datetime.now(timezone.utc)
+        batas_24_jam_lalu = sekarang.timestamp() - 86400  # 24 hours in seconds
+
         # Get all enabled jobs
-        job_ids = await list_enabled_job_ids()
-        
-        report_data = {
-            "generated_at": now.isoformat(),
+        daftar_id_job = await list_enabled_job_ids()
+
+        data_laporan = {
+            "generated_at": sekarang.isoformat(),
             "period": "last_24_hours",
             "jobs_summary": [],
             "total_runs": 0,
             "successful_runs": 0,
-            "failed_runs": 0
+            "failed_runs": 0,
         }
-        
-        for job_id in job_ids:
+
+        for job_id in daftar_id_job:
             # Get recent runs for this job
-            run_ids = await get_job_run_ids(job_id, 10)
-            
-            job_summary = {
-                "job_id": job_id,
-                "runs": []
-            }
-            
-            for run_id in run_ids:
-                run_data = await get_run(run_id)
-                if not run_data:
+            daftar_id_run = await get_job_run_ids(job_id, 10)
+
+            ringkasan_job = {"job_id": job_id, "runs": []}
+
+            for run_id in daftar_id_run:
+                data_run = await get_run(run_id)
+                if not data_run:
                     continue
 
                 # Check if run is within last 24 hours
-                if run_data.scheduled_at.timestamp() < twenty_four_hours_ago:
+                if data_run.scheduled_at.timestamp() < batas_24_jam_lalu:
                     continue
 
-                status = run_data.status.value if hasattr(run_data.status, "value") else str(run_data.status)
-                job_summary["runs"].append(
+                status_run = data_run.status.value if hasattr(data_run.status, "value") else str(data_run.status)
+                ringkasan_job["runs"].append(
                     {
                         "run_id": run_id,
-                        "status": status,
-                        "started_at": run_data.started_at.isoformat() if run_data.started_at else None,
-                        "finished_at": run_data.finished_at.isoformat() if run_data.finished_at else None,
+                        "status": status_run,
+                        "started_at": data_run.started_at.isoformat() if data_run.started_at else None,
+                        "finished_at": data_run.finished_at.isoformat() if data_run.finished_at else None,
                     }
                 )
 
-                report_data["total_runs"] += 1
-                if status == "success":
-                    report_data["successful_runs"] += 1
-                elif status == "failed":
-                    report_data["failed_runs"] += 1
-            
-            if job_summary["runs"]:
-                report_data["jobs_summary"].append(job_summary)
-        
+                data_laporan["total_runs"] += 1
+                if status_run == "success":
+                    data_laporan["successful_runs"] += 1
+                elif status_run == "failed":
+                    data_laporan["failed_runs"] += 1
+
+            if ringkasan_job["runs"]:
+                data_laporan["jobs_summary"].append(ringkasan_job)
+
         # Emit metrics
         ctx.metrics.increment("report_generated_total", tags={"type": "daily"})
-        
-        logger.info("Daily report generated", extra={
-            "total_runs": report_data["total_runs"],
-            "successful_runs": report_data["successful_runs"],
-            "failed_runs": report_data["failed_runs"]
-        })
-        
-        return report_data
-        
+
+        logger.info(
+            "Daily report generated",
+            extra={
+                "total_runs": data_laporan["total_runs"],
+                "successful_runs": data_laporan["successful_runs"],
+                "failed_runs": data_laporan["failed_runs"],
+            },
+        )
+
+        return data_laporan
+
     except Exception as e:
         logger.error(f"Daily report generation failed: {e}")
         return {"success": False, "error": str(e)}

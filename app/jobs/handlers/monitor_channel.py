@@ -4,53 +4,46 @@ from app.core.redis_client import redis_client
 
 async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
     """Monitor channel health and metrics"""
-    channel = inputs.get("channel")
-    account_id = inputs.get("account_id")
-    
-    if not channel or not account_id:
+    kanal = inputs.get("channel")
+    id_akun = inputs.get("account_id")
+
+    if not kanal or not id_akun:
         return {"success": False, "error": "channel and account_id are required"}
-    
+
     # Simulate monitoring logic
     try:
         # Check connector heartbeat
-        heartbeat_key = f"hb:connector:{channel}:{account_id}"
-        status = await redis_client.get(heartbeat_key)
-        
+        kunci_heartbeat = f"hb:connector:{kanal}:{id_akun}"
+        status = await redis_client.get(kunci_heartbeat)
+
         # Emit metrics
-        ctx.metrics.increment("connector_up", tags={"channel": channel, "account": account_id})
-        
+        ctx.metrics.increment("connector_up", tags={"channel": kanal, "account": id_akun})
+
         if status == "connected":
             # Update metrics
-            ctx.metrics.increment("connector_reconnect_total", tags={"channel": channel, "account": account_id})
-            
+            ctx.metrics.increment("connector_reconnect_total", tags={"channel": kanal, "account": id_akun})
+
             # Log success
-            logger.info("Channel monitoring successful", extra={
-                "channel": channel,
-                "account_id": account_id,
-                "status": status
-            })
-            
+            logger.info(
+                "Channel monitoring successful",
+                extra={"channel": kanal, "account_id": id_akun, "status": status},
+            )
+
             return {
                 "status": "healthy",
-                "channel": channel,
-                "account_id": account_id,
-                "heartbeat_status": status
+                "channel": kanal,
+                "account_id": id_akun,
+                "heartbeat_status": status,
             }
         else:
-            logger.warning("Channel heartbeat missing", extra={
-                "channel": channel,
-                "account_id": account_id
-            })
+            logger.warning("Channel heartbeat missing", extra={"channel": kanal, "account_id": id_akun})
             return {
                 "status": "unhealthy",
-                "channel": channel,
-                "account_id": account_id,
-                "heartbeat_status": status
+                "channel": kanal,
+                "account_id": id_akun,
+                "heartbeat_status": status,
             }
-            
+
     except Exception as e:
-        logger.error(f"Channel monitoring failed: {e}", extra={
-            "channel": channel,
-            "account_id": account_id
-        })
+        logger.error(f"Channel monitoring failed: {e}", extra={"channel": kanal, "account_id": id_akun})
         return {"success": False, "error": str(e)}

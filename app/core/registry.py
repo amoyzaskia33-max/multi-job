@@ -5,10 +5,10 @@ class Tool:
     def __init__(self, name: str, version: str, run_func: Callable):
         self.name = name
         self.version = version
-        self.run_func = run_func
-    
+        self.fungsi_jalankan = run_func
+
     async def run(self, input_data: dict, ctx):
-        return await self.run_func(input_data, ctx)
+        return await self.fungsi_jalankan(input_data, ctx)
 
 class ToolRegistry:
     def __init__(self):
@@ -27,15 +27,15 @@ class PolicyManager:
     def __init__(self):
         self.allowlists: Dict[str, List[str]] = {}
         self.denylists: Dict[str, List[str]] = {}
-    
+
     def set_allowlist(self, job_type: str, tools: List[str]):
         """Set allowed tools for a job type"""
         self.allowlists[job_type] = tools
-    
+
     def set_denylist(self, job_type: str, tools: List[str]):
         """Set denied tools for a job type"""
         self.denylists[job_type] = tools
-    
+
     def is_tool_allowed(self, job_type: str, tool_name: str) -> bool:
         """Check if a tool is allowed for a job type"""
         # Check denylist first

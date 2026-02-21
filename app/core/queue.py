@@ -40,27 +40,27 @@ _fallback_job_runs: Dict[str, List[str]] = defaultdict(list)
 _fallback_events: List[Dict[str, Any]] = []
 
 
-def _now_iso() -> str:
+def _sekarang_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _clone(value: Any) -> Any:
+def _salin_nilai(value: Any) -> Any:
     return json.loads(json.dumps(value))
 
 
-def _model_dump(model: Any) -> Dict[str, Any]:
+def _serialisasi_model(model: Any) -> Dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump(mode="json")
     return model.dict()
 
 
-def _to_event_dict(event: Union[QueueEvent, Dict[str, Any]]) -> Dict[str, Any]:
+def _ke_dict_event(event: Union[QueueEvent, Dict[str, Any]]) -> Dict[str, Any]:
     if isinstance(event, QueueEvent):
-        return _model_dump(event)
+        return _serialisasi_model(event)
     return dict(event)
 
 
-def _to_timestamp(value: Any) -> float:
+def _ke_timestamp(value: Any) -> float:
     if isinstance(value, datetime):
         return value.timestamp()
     if isinstance(value, str):
@@ -71,7 +71,7 @@ def _to_timestamp(value: Any) -> float:
     return time.time()
 
 
-def _fallback_next_message_id() -> str:
+def _id_pesan_fallback_berikutnya() -> str:
     global _fallback_stream_seq
     _fallback_stream_seq += 1
     return f"{int(time.time() * 1000)}-{_fallback_stream_seq}"
@@ -91,13 +91,13 @@ async def init_queue():
 
 async def enqueue_job(event: Union[QueueEvent, Dict[str, Any]]) -> str:
     """Enqueue a job to the stream."""
-    event_data = _to_event_dict(event)
-    event_data["enqueued_at"] = _now_iso()
+    event_data = _ke_dict_event(event)
+    event_data["enqueued_at"] = _sekarang_iso()
     try:
         return await redis_client.xadd(STREAM_JOBS, {"data": json.dumps(event_data)})
     except RedisError:
-        message_id = _fallback_next_message_id()
-        _fallback_stream.append({"id": message_id, "data": _clone(event_data)})
+        message_id = _id_pesan_fallback_berikutnya()
+        _fallback_stream.append({"id": message_id, "data": _salin_nilai(event_data)})
         return message_id
 
 
@@ -126,13 +126,13 @@ async def dequeue_job(worker_id: str) -> Optional[Dict[str, Any]]:
         if not _fallback_stream:
             return None
         item = _fallback_stream.pop(0)
-        return {"message_id": item["id"], "data": _clone(item["data"])}
+        return {"message_id": item["id"], "data": _salin_nilai(item["data"])}
 
 
 async def schedule_delayed_job(event: Union[QueueEvent, Dict[str, Any]], delay_seconds: int):
     """Schedule a job to be processed after a delay."""
     score = int(time.time()) + max(0, delay_seconds)
-    payload = json.dumps(_to_event_dict(event))
+    payload = json.dumps(_ke_dict_event(event))
     try:
         await redis_client.zadd(ZSET_DELAYED, {payload: score})
     except RedisError:
@@ -168,7 +168,7 @@ async def save_job_spec(job_id: str, spec: Dict[str, Any]):
         await redis_client.set(f"{JOB_SPEC_PREFIX}{job_id}", json.dumps(spec))
         await redis_client.sadd(JOB_ALL_SET, job_id)
     except RedisError:
-        _fallback_job_specs[job_id] = _clone(spec)
+        _fallback_job_specs[job_id] = _salin_nilai(spec)
         _fallback_job_all.add(job_id)
 
 
@@ -181,7 +181,7 @@ async def get_job_spec(job_id: str) -> Optional[Dict[str, Any]]:
         return json.loads(payload)
     except RedisError:
         spec = _fallback_job_specs.get(job_id)
-        return _clone(spec) if spec else None
+        return _salin_nilai(spec) if spec else None
 
 
 async def list_job_specs() -> List[Dict[str, Any]]:
@@ -233,13 +233,13 @@ async def list_enabled_job_ids() -> List[str]:
 
 async def save_run(run: Run):
     """Save run status to Redis."""
-    run_data = _model_dump(run)
-    score = _to_timestamp(run_data.get("scheduled_at"))
+    run_data = _serialisasi_model(run)
+    score = _ke_timestamp(run_data.get("scheduled_at"))
     try:
         await redis_client.set(f"{RUN_PREFIX}{run.run_id}", json.dumps(run_data))
         await redis_client.zadd(ZSET_RUNS, {run.run_id: score})
     except RedisError:
-        _fallback_runs[run.run_id] = _clone(run_data)
+        _fallback_runs[run.run_id] = _salin_nilai(run_data)
         _fallback_run_scores[run.run_id] = score
 
 
@@ -254,7 +254,7 @@ async def get_run(run_id: str) -> Optional[Run]:
         payload = _fallback_runs.get(run_id)
         if not payload:
             return None
-        return Run(**_clone(payload))
+        return Run(**_salin_nilai(payload))
 
 
 async def list_runs(limit: int = 50, job_id: Optional[str] = None, status: Optional[str] = None) -> List[Run]:
@@ -317,14 +317,14 @@ async def append_event(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
     event = {
         "id": str(uuid.uuid4()),
         "type": event_type,
-        "timestamp": _now_iso(),
+        "timestamp": _sekarang_iso(),
         "data": data,
     }
     try:
         await redis_client.lpush(EVENTS_LOG, json.dumps(event))
         await redis_client.ltrim(EVENTS_LOG, 0, EVENTS_MAX - 1)
     except RedisError:
-        _fallback_events.insert(0, _clone(event))
+        _fallback_events.insert(0, _salin_nilai(event))
         del _fallback_events[EVENTS_MAX:]
     return event
 
@@ -335,7 +335,7 @@ async def get_events(limit: int = 200, since: Optional[str] = None) -> List[Dict
         rows = await redis_client.lrange(EVENTS_LOG, 0, max(limit - 1, 0))
         events = [json.loads(row) for row in rows]
     except RedisError:
-        events = [_clone(row) for row in _fallback_events[: max(limit, 0)]]
+        events = [_salin_nilai(row) for row in _fallback_events[: max(limit, 0)]]
 
     events.reverse()
 
@@ -347,7 +347,7 @@ async def get_events(limit: int = 200, since: Optional[str] = None) -> List[Dict
             events = [
                 event
                 for event in events
-                if datetime.fromisoformat(event.get("timestamp", _now_iso()).replace("Z", "+00:00")).astimezone(timezone.utc)
+                if datetime.fromisoformat(event.get("timestamp", _sekarang_iso()).replace("Z", "+00:00")).astimezone(timezone.utc)
                 > since_dt.astimezone(timezone.utc)
             ]
         except ValueError:

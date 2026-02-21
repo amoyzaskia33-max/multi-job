@@ -13,33 +13,33 @@ logging.basicConfig(
 class StructuredLogger:
     def __init__(self, name: str):
         self.logger = logging.getLogger(name)
-    
+
     def info(self, message: str, extra: Optional[Dict[str, Any]] = None):
         self.logger.info(message, extra=extra)
-    
+
     def warning(self, message: str, extra: Optional[Dict[str, Any]] = None):
         self.logger.warning(message, extra=extra)
-    
+
     def error(self, message: str, extra: Optional[Dict[str, Any]] = None):
         self.logger.error(message, extra=extra)
-    
+
     def debug(self, message: str, extra: Optional[Dict[str, Any]] = None):
         self.logger.debug(message, extra=extra)
 
 class MetricsCollector:
     def __init__(self):
         self.metrics = {}
-    
+
     def increment(self, name: str, tags: Optional[Dict[str, str]] = None):
-        key = f"{name}:{json.dumps(tags or {})}"
-        self.metrics[key] = self.metrics.get(key, 0) + 1
-    
+        kunci = f"{name}:{json.dumps(tags or {})}"
+        self.metrics[kunci] = self.metrics.get(kunci, 0) + 1
+
     def observe(self, name: str, value: float, tags: Optional[Dict[str, str]] = None):
-        key = f"{name}:{json.dumps(tags or {})}"
-        if key not in self.metrics:
-            self.metrics[key] = []
-        self.metrics[key].append(value)
-    
+        kunci = f"{name}:{json.dumps(tags or {})}"
+        if kunci not in self.metrics:
+            self.metrics[kunci] = []
+        self.metrics[kunci].append(value)
+
     def get_metrics(self) -> Dict[str, Any]:
         return self.metrics
 
@@ -50,21 +50,21 @@ metrics_collector = MetricsCollector()
 # Prometheus-style metrics exporter
 def expose_metrics() -> str:
     """Return metrics in Prometheus text format"""
-    lines = ["# HELP job_runs_total Total number of job runs"]
-    lines.append("# TYPE job_runs_total counter")
-    
-    for key, value in metrics_collector.metrics.items():
-        if key.startswith("job_runs_total:"):
+    daftar_baris = ["# HELP job_runs_total Total number of job runs"]
+    daftar_baris.append("# TYPE job_runs_total counter")
+
+    for kunci, nilai in metrics_collector.metrics.items():
+        if kunci.startswith("job_runs_total:"):
             # Parse tags
-            parts = key.split(":", 1)
-            if len(parts) == 2:
-                metric_name = parts[0]
-                tags_str = parts[1]
+            bagian = kunci.split(":", 1)
+            if len(bagian) == 2:
+                metric_name = bagian[0]
+                tags_str = bagian[1]
                 try:
-                    tags = json.loads(tags_str)
-                    label_str = ",".join([f'{k}="{v}"' for k, v in tags.items()])
-                    lines.append(f'job_runs_total{{{label_str}}} {value}')
+                    tag_data = json.loads(tags_str)
+                    label_str = ",".join([f'{k}="{v}"' for k, v in tag_data.items()])
+                    daftar_baris.append(f'job_runs_total{{{label_str}}} {nilai}')
                 except:
-                    lines.append(f'job_runs_total {value}')
-    
-    return "\n".join(lines)
+                    daftar_baris.append(f'job_runs_total {nilai}')
+
+    return "\n".join(daftar_baris)

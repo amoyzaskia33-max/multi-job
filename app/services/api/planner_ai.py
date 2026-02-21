@@ -38,16 +38,16 @@ DEFAULT_RETRY: Dict[str, RetryPolicy] = {
 }
 
 
-def _normalize_text(text: str) -> str:
+def _normalisasi_teks(text: str) -> str:
     return " ".join(text.lower().strip().split())
 
 
-def _slugify(value: str) -> str:
+def _buat_slug(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-").lower()
     return slug or "job"
 
 
-def _ensure_unique_job_id(base_id: str, used_ids: Set[str]) -> str:
+def _pastikan_id_job_unik(base_id: str, used_ids: Set[str]) -> str:
     candidate = base_id
     suffix = 2
     while candidate in used_ids:
@@ -57,7 +57,7 @@ def _ensure_unique_job_id(base_id: str, used_ids: Set[str]) -> str:
     return candidate
 
 
-def _dedupe(items: List[str]) -> List[str]:
+def _hapus_duplikat(items: List[str]) -> List[str]:
     seen: Set[str] = set()
     output: List[str] = []
     for item in items:
@@ -71,7 +71,7 @@ def _dedupe(items: List[str]) -> List[str]:
     return output
 
 
-def _extract_json_text(raw: Any) -> Optional[str]:
+def _ekstrak_teks_json(raw: Any) -> Optional[str]:
     if raw is None:
         return None
 
@@ -94,7 +94,7 @@ def _extract_json_text(raw: Any) -> Optional[str]:
     return text[start : end + 1]
 
 
-def _build_smolagents_prompt(request: PlannerAiRequest) -> str:
+def _bangun_prompt_smolagents(request: PlannerAiRequest) -> str:
     return (
         "Kamu adalah planner sistem job backend Python.\n"
         "Ubah prompt user menjadi rencana job terstruktur dalam JSON valid.\n"
@@ -130,7 +130,7 @@ def _build_smolagents_prompt(request: PlannerAiRequest) -> str:
     )
 
 
-def _instantiate_litellm_model(model_class: Any, model_id: str, api_key: Optional[str]) -> Any:
+def _inisialisasi_model_litellm(model_class: Any, model_id: str, api_key: Optional[str]) -> Any:
     attempts: List[Dict[str, Any]] = [
         {"model_id": model_id, "api_key": api_key},
         {"model_id": model_id},
@@ -149,7 +149,7 @@ def _instantiate_litellm_model(model_class: Any, model_id: str, api_key: Optiona
     raise RuntimeError("Gagal inisialisasi LiteLLMModel: " + " | ".join(errors))
 
 
-def _create_code_agent(code_agent_class: Any, model: Any, max_steps: int) -> Any:
+def _buat_code_agent(code_agent_class: Any, model: Any, max_steps: int) -> Any:
     kwargs: Dict[str, Any] = {"tools": [], "model": model}
 
     try:
@@ -164,7 +164,7 @@ def _create_code_agent(code_agent_class: Any, model: Any, max_steps: int) -> Any
     return code_agent_class(**kwargs)
 
 
-def _run_smolagents(request: PlannerAiRequest) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+def _jalankan_smolagents(request: PlannerAiRequest) -> Tuple[Optional[Dict[str, Any]], List[str]]:
     warnings: List[str] = []
 
     try:
@@ -185,17 +185,17 @@ def _run_smolagents(request: PlannerAiRequest) -> Tuple[Optional[Dict[str, Any]]
         return None, ["OPENAI_API_KEY belum di-set. Planner AI fallback ke rule-based."]
 
     try:
-        model = _instantiate_litellm_model(model_class, model_id=model_id, api_key=api_key)
+        model = _inisialisasi_model_litellm(model_class, model_id=model_id, api_key=api_key)
     except Exception as exc:
         return None, [f"Gagal inisialisasi model AI: {exc}"]
 
     try:
-        agent = _create_code_agent(code_agent_class, model=model, max_steps=request.max_steps)
-        raw_output = agent.run(_build_smolagents_prompt(request))
+        agent = _buat_code_agent(code_agent_class, model=model, max_steps=request.max_steps)
+        raw_output = agent.run(_bangun_prompt_smolagents(request))
     except Exception as exc:
         return None, [f"Eksekusi smolagents gagal: {exc}"]
 
-    json_text = _extract_json_text(raw_output)
+    json_text = _ekstrak_teks_json(raw_output)
     if not json_text:
         return None, ["Output AI tidak berbentuk JSON yang valid."]
 
@@ -210,7 +210,7 @@ def _run_smolagents(request: PlannerAiRequest) -> Tuple[Optional[Dict[str, Any]]
     return payload, warnings
 
 
-def _coerce_schedule(raw: Any, warnings: List[str], index: int) -> Optional[Schedule]:
+def _paksa_jadwal(raw: Any, warnings: List[str], index: int) -> Optional[Schedule]:
     if not isinstance(raw, dict):
         warnings.append(f"Job #{index + 1}: schedule tidak valid, pakai default.")
         return None
@@ -235,7 +235,7 @@ def _coerce_schedule(raw: Any, warnings: List[str], index: int) -> Optional[Sche
         return None
 
 
-def _default_schedule_for_job(job_type: str) -> Optional[Schedule]:
+def _jadwal_default_per_job(job_type: str) -> Optional[Schedule]:
     if job_type == "monitor.channel":
         return Schedule(interval_sec=30)
     if job_type == "report.daily":
@@ -245,13 +245,13 @@ def _default_schedule_for_job(job_type: str) -> Optional[Schedule]:
     return Schedule(cron="0 2 * * *")
 
 
-def _default_retry_policy(job_type: str) -> RetryPolicy:
+def _retry_default(job_type: str) -> RetryPolicy:
     source = DEFAULT_RETRY[job_type]
     return RetryPolicy(max_retry=source.max_retry, backoff_sec=list(source.backoff_sec))
 
 
 def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any]) -> PlannerResponse:
-    normalized_prompt = _normalize_text(request.prompt)
+    normalized_prompt = _normalisasi_teks(request.prompt)
     assumptions: List[str] = []
     warnings: List[str] = []
     jobs: List[PlannerJob] = []
@@ -282,7 +282,7 @@ def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any
         if job_type == "agent.workflow":
             schedule = None
         else:
-            schedule = _coerce_schedule(item.get("schedule"), warnings, index) or _default_schedule_for_job(job_type)
+            schedule = _paksa_jadwal(item.get("schedule"), warnings, index) or _jadwal_default_per_job(job_type)
 
         retry_raw = item.get("retry_policy")
         retry_policy: RetryPolicy
@@ -293,10 +293,10 @@ def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any
                     backoff_sec=list(retry_raw.get("backoff_sec", DEFAULT_RETRY[job_type].backoff_sec)),
                 )
             except Exception:
-                retry_policy = _default_retry_policy(job_type)
+                retry_policy = _retry_default(job_type)
                 warnings.append(f"Job #{index + 1}: retry_policy tidak valid, pakai default.")
         else:
-            retry_policy = _default_retry_policy(job_type)
+            retry_policy = _retry_default(job_type)
 
         timeout_ms = item.get("timeout_ms", DEFAULT_TIMEOUT_MS[job_type])
         try:
@@ -322,8 +322,8 @@ def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any
             inputs.setdefault("timezone", request.timezone)
         inputs.setdefault("source", "planner_ai")
 
-        base_id = str(item.get("job_id") or _slugify(f"{job_type}-{index + 1}"))
-        job_id = _ensure_unique_job_id(_slugify(base_id), used_ids)
+        base_id = str(item.get("job_id") or _buat_slug(f"{job_type}-{index + 1}"))
+        job_id = _pastikan_id_job_unik(_buat_slug(base_id), used_ids)
 
         try:
             job_spec = JobSpec(
@@ -351,8 +351,8 @@ def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any
         assumptions.extend(job.assumptions)
         warnings.extend(job.warnings)
 
-    assumptions = _dedupe(assumptions)
-    warnings = _dedupe(warnings)
+    assumptions = _hapus_duplikat(assumptions)
+    warnings = _hapus_duplikat(warnings)
 
     summary = str(payload.get("summary") or f"Planner AI menghasilkan {len(jobs)} rencana tugas.")
     if not jobs:
@@ -373,14 +373,14 @@ def build_plan_with_ai(request: PlannerAiRequest) -> PlannerResponse:
     fallback_plan = build_plan_from_prompt(request)
 
     if request.force_rule_based:
-        fallback_plan.warnings = _dedupe(
+        fallback_plan.warnings = _hapus_duplikat(
             [*fallback_plan.warnings, "force_rule_based aktif: planner AI dilewati."]
         )
         return fallback_plan
 
-    payload, ai_warnings = _run_smolagents(request)
+    payload, ai_warnings = _jalankan_smolagents(request)
     if payload is None:
-        fallback_plan.warnings = _dedupe(
+        fallback_plan.warnings = _hapus_duplikat(
             [
                 *fallback_plan.warnings,
                 *ai_warnings,
@@ -391,7 +391,7 @@ def build_plan_with_ai(request: PlannerAiRequest) -> PlannerResponse:
 
     ai_plan = build_plan_from_ai_payload(request, payload)
     if not ai_plan.jobs:
-        fallback_plan.warnings = _dedupe(
+        fallback_plan.warnings = _hapus_duplikat(
             [
                 *fallback_plan.warnings,
                 *ai_warnings,
@@ -401,5 +401,5 @@ def build_plan_with_ai(request: PlannerAiRequest) -> PlannerResponse:
         )
         return fallback_plan
 
-    ai_plan.warnings = _dedupe([*ai_plan.warnings, *ai_warnings])
+    ai_plan.warnings = _hapus_duplikat([*ai_plan.warnings, *ai_warnings])
     return ai_plan

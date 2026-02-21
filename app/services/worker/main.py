@@ -54,54 +54,54 @@ async def worker_main():
     while True:
         try:
             await update_heartbeat(worker_id)
-            job_data = await dequeue_job(worker_id)
-            if not job_data:
+            data_job = await dequeue_job(worker_id)
+            if not data_job:
                 continue
 
-            event_data = job_data["data"]
-            job_type = event_data.get("type")
-            handler = get_handler(job_type)
+            data_event = data_job["data"]
+            tipe_job = data_event.get("type")
+            handler = get_handler(tipe_job)
             if not handler:
                 logger.error(
-                    f"No handler found for job type: {job_type}",
-                    extra={"run_id": event_data.get("run_id"), "job_id": event_data.get("job_id")},
+                    f"No handler found for job type: {tipe_job}",
+                    extra={"run_id": data_event.get("run_id"), "job_id": data_event.get("job_id")},
                 )
                 await append_event(
                     "run.failed",
                     {
-                        "run_id": event_data.get("run_id"),
-                        "job_id": event_data.get("job_id"),
-                        "job_type": job_type,
-                        "error": f"No handler for {job_type}",
+                        "run_id": data_event.get("run_id"),
+                        "job_id": data_event.get("job_id"),
+                        "job_type": tipe_job,
+                        "error": f"No handler for {tipe_job}",
                     },
                 )
                 continue
 
-            success = await process_job_event(
-                event_data,
+            berhasil = await process_job_event(
+                data_event,
                 worker_id,
-                {job_type: handler},
+                {tipe_job: handler},
                 tool_registry.tools,
                 logger,
                 metrics_collector,
             )
-            if success:
+            if berhasil:
                 continue
 
             # If failed, schedule retry when possible.
-            job_id = event_data.get("job_id")
-            run_id = event_data.get("run_id")
-            attempt = int(event_data.get("attempt", 0))
-            spec = await get_job_spec(job_id) if job_id else None
-            if not spec:
+            job_id = data_event.get("job_id")
+            run_id = data_event.get("run_id")
+            attempt = int(data_event.get("attempt", 0))
+            spesifikasi = await get_job_spec(job_id) if job_id else None
+            if not spesifikasi:
                 continue
 
-            retry_policy = spec.get("retry_policy", {"max_retry": 0, "backoff_sec": [1, 2, 5]})
+            kebijakan_retry = spesifikasi.get("retry_policy", {"max_retry": 0, "backoff_sec": [1, 2, 5]})
             await handle_retry(
                 job_id=job_id,
                 run_id=run_id,
                 attempt=attempt,
-                retry_policy=retry_policy,
+                retry_policy=kebijakan_retry,
                 scheduled_at=datetime.now(timezone.utc),
             )
 

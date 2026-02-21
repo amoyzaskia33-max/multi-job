@@ -15,19 +15,19 @@ _fallback_accounts: Dict[str, Dict[str, Any]] = {}
 _fallback_last_update: Dict[str, int] = {}
 
 
-def _now_iso() -> str:
+def _sekarang_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _account_key(account_id: str) -> str:
+def _kunci_akun(account_id: str) -> str:
     return f"{TELEGRAM_ACCOUNT_PREFIX}{account_id}"
 
 
-def _last_update_key(account_id: str) -> str:
+def _kunci_last_update(account_id: str) -> str:
     return f"{TELEGRAM_STATE_PREFIX}{account_id}:last_update_id"
 
 
-def _mask_token(token: Optional[str]) -> Optional[str]:
+def _masking_token(token: Optional[str]) -> Optional[str]:
     if not token:
         return None
     if len(token) <= 8:
@@ -35,7 +35,7 @@ def _mask_token(token: Optional[str]) -> Optional[str]:
     return f"{token[:4]}...{token[-4:]}"
 
 
-def _normalize_chat_ids(values: Optional[List[Any]]) -> List[str]:
+def _normalisasi_chat_ids(values: Optional[List[Any]]) -> List[str]:
     if not values:
         return []
 
@@ -50,11 +50,11 @@ def _normalize_chat_ids(values: Optional[List[Any]]) -> List[str]:
     return output
 
 
-def _view_payload(data: Dict[str, Any], include_secret: bool = False) -> Dict[str, Any]:
+def _payload_tampilan(data: Dict[str, Any], include_secret: bool = False) -> Dict[str, Any]:
     row = dict(data)
     token = row.get("bot_token")
     row["has_bot_token"] = bool(token)
-    row["bot_token_masked"] = _mask_token(token)
+    row["bot_token_masked"] = _masking_token(token)
 
     if not include_secret:
         row.pop("bot_token", None)
@@ -62,9 +62,9 @@ def _view_payload(data: Dict[str, Any], include_secret: bool = False) -> Dict[st
     return row
 
 
-async def _get_account_raw(account_id: str) -> Optional[Dict[str, Any]]:
+async def _ambil_akun_raw(account_id: str) -> Optional[Dict[str, Any]]:
     try:
-        payload = await redis_client.get(_account_key(account_id))
+        payload = await redis_client.get(_kunci_akun(account_id))
         if not payload:
             return None
         return json.loads(payload)
@@ -81,21 +81,21 @@ async def list_telegram_accounts(include_secret: bool = False) -> List[Dict[str,
 
     rows: List[Dict[str, Any]] = []
     for account_id in account_ids:
-        row = await _get_account_raw(account_id)
+        row = await _ambil_akun_raw(account_id)
         if row:
-            rows.append(_view_payload(row, include_secret=include_secret))
+            rows.append(_payload_tampilan(row, include_secret=include_secret))
     return rows
 
 
 async def get_telegram_account(account_id: str, include_secret: bool = False) -> Optional[Dict[str, Any]]:
-    row = await _get_account_raw(account_id)
+    row = await _ambil_akun_raw(account_id)
     if not row:
         return None
-    return _view_payload(row, include_secret=include_secret)
+    return _payload_tampilan(row, include_secret=include_secret)
 
 
 async def upsert_telegram_account(account_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    existing = await _get_account_raw(account_id) or {}
+    existing = await _ambil_akun_raw(account_id) or {}
 
     token_input = str(payload.get("bot_token") or "").strip()
     bot_token = token_input or existing.get("bot_token")
@@ -118,12 +118,12 @@ async def upsert_telegram_account(account_id: str, payload: Dict[str, Any]) -> D
     default_account_id = str(payload.get("default_account_id", existing.get("default_account_id", "default")) or "").strip()
     default_account_id = default_account_id or "default"
 
-    now = _now_iso()
+    now = _sekarang_iso()
     row = {
         "account_id": account_id,
         "enabled": bool(payload.get("enabled", existing.get("enabled", True))),
         "bot_token": bot_token,
-        "allowed_chat_ids": _normalize_chat_ids(payload.get("allowed_chat_ids", existing.get("allowed_chat_ids", []))),
+        "allowed_chat_ids": _normalisasi_chat_ids(payload.get("allowed_chat_ids", existing.get("allowed_chat_ids", []))),
         "use_ai": bool(payload.get("use_ai", existing.get("use_ai", True))),
         "force_rule_based": bool(payload.get("force_rule_based", existing.get("force_rule_based", False))),
         "run_immediately": bool(payload.get("run_immediately", existing.get("run_immediately", True))),
@@ -136,22 +136,22 @@ async def upsert_telegram_account(account_id: str, payload: Dict[str, Any]) -> D
     }
 
     try:
-        await redis_client.set(_account_key(account_id), json.dumps(row))
+        await redis_client.set(_kunci_akun(account_id), json.dumps(row))
         await redis_client.sadd(TELEGRAM_ACCOUNTS_SET, account_id)
     except RedisError:
         _fallback_accounts[account_id] = dict(row)
 
-    return _view_payload(row, include_secret=False)
+    return _payload_tampilan(row, include_secret=False)
 
 
 async def delete_telegram_account(account_id: str) -> bool:
-    key = _account_key(account_id)
+    key = _kunci_akun(account_id)
     removed = False
 
     try:
         deleted = await redis_client.delete(key)
         await redis_client.srem(TELEGRAM_ACCOUNTS_SET, account_id)
-        await redis_client.delete(_last_update_key(account_id))
+        await redis_client.delete(_kunci_last_update(account_id))
         removed = bool(deleted)
     except RedisError:
         removed = account_id in _fallback_accounts
@@ -162,7 +162,7 @@ async def delete_telegram_account(account_id: str) -> bool:
 
 
 async def get_telegram_last_update_id(account_id: str) -> int:
-    key = _last_update_key(account_id)
+    key = _kunci_last_update(account_id)
     try:
         value = await redis_client.get(key)
         if value is None:
@@ -175,7 +175,7 @@ async def get_telegram_last_update_id(account_id: str) -> int:
 
 
 async def set_telegram_last_update_id(account_id: str, update_id: int) -> None:
-    key = _last_update_key(account_id)
+    key = _kunci_last_update(account_id)
     update_int = int(update_id)
     try:
         await redis_client.set(key, str(update_int))

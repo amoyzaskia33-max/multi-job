@@ -21,11 +21,12 @@ redis_client = redis.Redis(
 async def get_redis():
     return redis_client
 
+
 async def close_redis():
-    close_async = getattr(redis_client, "aclose", None)
-    if callable(close_async):
-        await close_async()
+    fungsi_tutup_async = getattr(redis_client, "aclose", None)
+    if callable(fungsi_tutup_async):
+        await fungsi_tutup_async()
         return
-    close_result = redis_client.close()
-    if inspect.isawaitable(close_result):
-        await close_result
+    hasil_tutup = redis_client.close()
+    if inspect.isawaitable(hasil_tutup):
+        await hasil_tutup

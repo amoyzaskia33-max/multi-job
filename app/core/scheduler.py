@@ -27,13 +27,13 @@ class Scheduler:
 
     async def load_jobs(self):
         """Load all enabled jobs from Redis."""
-        job_ids = await list_enabled_job_ids()
-        fresh_jobs: Dict[str, JobSpec] = {}
-        for job_id in job_ids:
-            spec_dict = await get_job_spec(job_id)
-            if spec_dict:
-                fresh_jobs[job_id] = JobSpec(**spec_dict)
-        self.jobs = fresh_jobs
+        daftar_id_job = await list_enabled_job_ids()
+        job_terbaru: Dict[str, JobSpec] = {}
+        for job_id in daftar_id_job:
+            spesifikasi = await get_job_spec(job_id)
+            if spesifikasi:
+                job_terbaru[job_id] = JobSpec(**spesifikasi)
+        self.jobs = job_terbaru
 
     async def heartbeat(self):
         try:
@@ -50,14 +50,14 @@ class Scheduler:
         """Start the scheduler loop."""
         self.running = True
         await self.load_jobs()
-        tick = 0
+        putaran = 0
         while self.running:
             await self.heartbeat()
-            if tick % 5 == 0:
+            if putaran % 5 == 0:
                 await self.load_jobs()
             await self.process_interval_jobs()
             await self.process_due_jobs()
-            tick += 1
+            putaran += 1
             await asyncio.sleep(1)  # Check every second
 
     async def stop(self):
@@ -66,41 +66,41 @@ class Scheduler:
 
     async def process_interval_jobs(self):
         """Process jobs with interval scheduling."""
-        now = datetime.now(timezone.utc)
-        now_ts = time.time()
+        sekarang = datetime.now(timezone.utc)
+        waktu_sekarang_ts = time.time()
 
-        for job_id, spec in self.jobs.items():
-            if not spec.schedule or not spec.schedule.interval_sec:
+        for job_id, spesifikasi in self.jobs.items():
+            if not spesifikasi.schedule or not spesifikasi.schedule.interval_sec:
                 continue
 
-            interval = max(1, int(spec.schedule.interval_sec))
-            last_ts = self.last_dispatch.get(job_id, 0)
-            if now_ts - last_ts < interval:
+            interval_detik = max(1, int(spesifikasi.schedule.interval_sec))
+            waktu_dispatch_terakhir = self.last_dispatch.get(job_id, 0)
+            if waktu_sekarang_ts - waktu_dispatch_terakhir < interval_detik:
                 continue
 
-            run_id = f"run_{int(now_ts)}_{uuid.uuid4().hex[:8]}"
-            event = QueueEvent(
+            run_id = f"run_{int(waktu_sekarang_ts)}_{uuid.uuid4().hex[:8]}"
+            event_antrean = QueueEvent(
                 run_id=run_id,
                 job_id=job_id,
-                type=spec.type,
-                inputs=spec.inputs,
+                type=spesifikasi.type,
+                inputs=spesifikasi.inputs,
                 attempt=0,
-                scheduled_at=now.isoformat(),
-                timeout_ms=spec.timeout_ms,
+                scheduled_at=sekarang.isoformat(),
+                timeout_ms=spesifikasi.timeout_ms,
                 trace_id=f"trace_{uuid.uuid4().hex}",
             )
 
-            await enqueue_job(event)
+            await enqueue_job(event_antrean)
             await append_event(
                 "run.queued",
-                {"run_id": run_id, "job_id": job_id, "job_type": spec.type, "source": "scheduler"},
+                {"run_id": run_id, "job_id": job_id, "job_type": spesifikasi.type, "source": "scheduler"},
             )
-            self.last_dispatch[job_id] = now_ts
+            self.last_dispatch[job_id] = waktu_sekarang_ts
 
     async def process_due_jobs(self):
         """Move delayed jobs into stream when due."""
-        due_jobs = await get_due_jobs()
-        for job in due_jobs:
+        job_jatuh_tempo = await get_due_jobs()
+        for job in job_jatuh_tempo:
             await enqueue_job(job)
             await append_event(
                 "run.queued",

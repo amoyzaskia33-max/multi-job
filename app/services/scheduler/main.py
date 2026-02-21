@@ -6,15 +6,15 @@ from app.core.scheduler import Scheduler
 
 async def scheduler_main():
     """Main scheduler loop"""
-    scheduler = Scheduler()
+    penjadwal = Scheduler()
     logger.info("Scheduler started")
     await append_event("system.scheduler_started", {"message": "Scheduler started"})
-    
+
     try:
-        await scheduler.start()
+        await penjadwal.start()
     except KeyboardInterrupt:
         logger.info("Scheduler shutting down")
-        await scheduler.stop()
+        await penjadwal.stop()
 
 if __name__ == "__main__":
     asyncio.run(scheduler_main())

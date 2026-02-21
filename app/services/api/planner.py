@@ -40,25 +40,25 @@ CHANNEL_ALIASES: Dict[str, List[str]] = {
 }
 
 
-def _normalize_text(text: str) -> str:
+def _normalisasi_teks(text: str) -> str:
     return " ".join(text.lower().strip().split())
 
 
-def _slugify(value: str) -> str:
+def _buat_slug(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-").lower()
     return slug or "job"
 
 
-def _contains_any(text: str, keywords: List[str]) -> bool:
+def _memuat_salah_satu(text: str, keywords: List[str]) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
-def _contains_daily_keyword(text: str) -> bool:
-    return _contains_any(text, ["harian", "setiap hari", "daily"])
+def _memuat_kata_harian(text: str) -> bool:
+    return _memuat_salah_satu(text, ["harian", "setiap hari", "daily"])
 
 
-def _contains_agent_keyword(text: str) -> bool:
-    return _contains_any(
+def _memuat_kata_agen(text: str) -> bool:
+    return _memuat_salah_satu(
         text,
         [
             "agent",
@@ -78,7 +78,7 @@ def _contains_agent_keyword(text: str) -> bool:
     )
 
 
-def _extract_interval_seconds(text: str) -> Optional[int]:
+def _ekstrak_interval_detik(text: str) -> Optional[int]:
     match = re.search(r"(?:tiap|setiap|per)\s+(\d+)\s*(detik|menit|jam)", text)
     if not match:
         return None
@@ -95,7 +95,7 @@ def _extract_interval_seconds(text: str) -> Optional[int]:
     return value * 3600
 
 
-def _extract_daily_cron(text: str) -> Optional[str]:
+def _ekstrak_cron_harian(text: str) -> Optional[str]:
     time_match = re.search(r"(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?", text)
     if not time_match:
         return None
@@ -119,7 +119,7 @@ def _extract_daily_cron(text: str) -> Optional[str]:
     return f"{minute} {hour} * * *"
 
 
-def _detect_channel(text: str, default_channel: str) -> Tuple[str, Optional[str]]:
+def _deteksi_kanal(text: str, default_channel: str) -> Tuple[str, Optional[str]]:
     for channel, aliases in CHANNEL_ALIASES.items():
         for alias in aliases:
             if re.search(rf"\b{re.escape(alias)}\b", text):
@@ -128,7 +128,7 @@ def _detect_channel(text: str, default_channel: str) -> Tuple[str, Optional[str]
     return default_channel, f"Kanal tidak disebutkan, pakai default '{default_channel}'."
 
 
-def _detect_account_id(text: str, default_account_id: str) -> Tuple[str, Optional[str]]:
+def _deteksi_id_akun(text: str, default_account_id: str) -> Tuple[str, Optional[str]]:
     pattern = r"(?:account[_\s-]?id|akun|account|id akun)\s*[:=]?\s*([a-zA-Z0-9_.:-]+)"
     match = re.search(pattern, text)
     if match:
@@ -137,7 +137,7 @@ def _detect_account_id(text: str, default_account_id: str) -> Tuple[str, Optiona
     return default_account_id, f"ID akun tidak disebutkan, pakai default '{default_account_id}'."
 
 
-def _ensure_unique_job_id(base_id: str, used_ids: Set[str]) -> str:
+def _pastikan_id_job_unik(base_id: str, used_ids: Set[str]) -> str:
     candidate = base_id
     suffix = 2
     while candidate in used_ids:
@@ -147,7 +147,7 @@ def _ensure_unique_job_id(base_id: str, used_ids: Set[str]) -> str:
     return candidate
 
 
-def _build_monitor_job(
+def _bangun_job_monitor(
     text: str,
     request: PlannerRequest,
     used_ids: Set[str],
@@ -155,23 +155,23 @@ def _build_monitor_job(
     assumptions: List[str] = []
     warnings: List[str] = []
 
-    channel, channel_assumption = _detect_channel(text, request.default_channel)
+    channel, channel_assumption = _deteksi_kanal(text, request.default_channel)
     if channel_assumption:
         assumptions.append(channel_assumption)
 
-    account_id, account_assumption = _detect_account_id(text, request.default_account_id)
+    account_id, account_assumption = _deteksi_id_akun(text, request.default_account_id)
     if account_assumption:
         assumptions.append(account_assumption)
 
-    interval_sec = _extract_interval_seconds(text)
+    interval_sec = _ekstrak_interval_detik(text)
     if interval_sec:
         schedule = Schedule(interval_sec=interval_sec)
     else:
         schedule = Schedule(interval_sec=30)
         assumptions.append("Interval tidak disebutkan, pakai default 30 detik.")
 
-    base_id = _slugify(f"monitor-{channel}-{account_id}")
-    job_id = _ensure_unique_job_id(base_id, used_ids)
+    base_id = _buat_slug(f"monitor-{channel}-{account_id}")
+    job_id = _pastikan_id_job_unik(base_id, used_ids)
 
     job_spec = JobSpec(
         job_id=job_id,
@@ -194,7 +194,7 @@ def _build_monitor_job(
     )
 
 
-def _build_report_job(
+def _bangun_job_laporan(
     text: str,
     request: PlannerRequest,
     used_ids: Set[str],
@@ -202,17 +202,17 @@ def _build_report_job(
     assumptions: List[str] = []
     warnings: List[str] = []
 
-    cron = _extract_daily_cron(text)
+    cron = _ekstrak_cron_harian(text)
     if cron:
         schedule = Schedule(cron=cron)
         minute, hour, _, _, _ = cron.split(" ")
         schedule_tag = f"harian-{hour.zfill(2)}{minute.zfill(2)}"
-    elif _contains_daily_keyword(text):
+    elif _memuat_kata_harian(text):
         schedule = Schedule(cron="0 7 * * *")
         schedule_tag = "harian-0700"
         assumptions.append("Waktu laporan tidak disebutkan, pakai default 07:00.")
     else:
-        interval_sec = _extract_interval_seconds(text)
+        interval_sec = _ekstrak_interval_detik(text)
         if interval_sec:
             schedule = Schedule(interval_sec=interval_sec)
             schedule_tag = f"interval-{interval_sec}s"
@@ -221,8 +221,8 @@ def _build_report_job(
             schedule_tag = "harian-0700"
             assumptions.append("Jadwal laporan tidak disebutkan, pakai default harian jam 07:00.")
 
-    base_id = _slugify(f"report-daily-{schedule_tag}")
-    job_id = _ensure_unique_job_id(base_id, used_ids)
+    base_id = _buat_slug(f"report-daily-{schedule_tag}")
+    job_id = _pastikan_id_job_unik(base_id, used_ids)
 
     job_spec = JobSpec(
         job_id=job_id,
@@ -244,7 +244,7 @@ def _build_report_job(
     )
 
 
-def _build_backup_job(
+def _bangun_job_backup(
     text: str,
     request: PlannerRequest,
     used_ids: Set[str],
@@ -252,7 +252,7 @@ def _build_backup_job(
     assumptions: List[str] = []
     warnings: List[str] = []
 
-    cron = _extract_daily_cron(text)
+    cron = _ekstrak_cron_harian(text)
     if cron:
         schedule = Schedule(cron=cron)
         minute, hour, _, _, _ = cron.split(" ")
@@ -265,8 +265,8 @@ def _build_backup_job(
     date_stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     output_path = f"backup-{date_stamp}.json"
 
-    base_id = _slugify(f"backup-export-{schedule_tag}")
-    job_id = _ensure_unique_job_id(base_id, used_ids)
+    base_id = _buat_slug(f"backup-export-{schedule_tag}")
+    job_id = _pastikan_id_job_unik(base_id, used_ids)
 
     job_spec = JobSpec(
         job_id=job_id,
@@ -289,7 +289,7 @@ def _build_backup_job(
     )
 
 
-def _build_agent_workflow_job(
+def _bangun_job_alur_agen(
     request: PlannerRequest,
     used_ids: Set[str],
     fallback_mode: bool = False,
@@ -300,8 +300,8 @@ def _build_agent_workflow_job(
     if fallback_mode:
         assumptions.append("Intent spesifik monitor/laporan/backup tidak terdeteksi. Prompt dialihkan ke agent workflow.")
 
-    base_id = _slugify("agent-workflow")
-    job_id = _ensure_unique_job_id(base_id, used_ids)
+    base_id = _buat_slug("agent-workflow")
+    job_id = _pastikan_id_job_unik(base_id, used_ids)
 
     job_spec = JobSpec(
         job_id=job_id,
@@ -326,38 +326,38 @@ def _build_agent_workflow_job(
 
 
 def build_plan_from_prompt(request: PlannerRequest) -> PlannerResponse:
-    text = _normalize_text(request.prompt)
+    text = _normalisasi_teks(request.prompt)
     used_ids: Set[str] = set()
 
     assumptions: List[str] = []
     warnings: List[str] = []
     jobs: List[PlannerJob] = []
 
-    wants_monitor = _contains_any(
+    wants_monitor = _memuat_salah_satu(
         text,
         ["monitor", "pantau", "cek", "status", "heartbeat", "koneksi"],
     )
-    wants_report = _contains_any(
+    wants_report = _memuat_salah_satu(
         text,
         ["laporan", "report", "ringkasan", "rekap"],
     )
-    wants_backup = _contains_any(
+    wants_backup = _memuat_salah_satu(
         text,
         ["backup", "cadangan", "ekspor", "export"],
     )
-    wants_agent_workflow = _contains_agent_keyword(text)
+    wants_agent_workflow = _memuat_kata_agen(text)
 
     if wants_monitor:
-        jobs.append(_build_monitor_job(text, request, used_ids))
+        jobs.append(_bangun_job_monitor(text, request, used_ids))
     if wants_report:
-        jobs.append(_build_report_job(text, request, used_ids))
+        jobs.append(_bangun_job_laporan(text, request, used_ids))
     if wants_backup:
-        jobs.append(_build_backup_job(text, request, used_ids))
+        jobs.append(_bangun_job_backup(text, request, used_ids))
     if wants_agent_workflow:
-        jobs.append(_build_agent_workflow_job(request, used_ids))
+        jobs.append(_bangun_job_alur_agen(request, used_ids))
 
     if not jobs:
-        jobs.append(_build_agent_workflow_job(request, used_ids, fallback_mode=True))
+        jobs.append(_bangun_job_alur_agen(request, used_ids, fallback_mode=True))
         warnings.append("Planner memakai mode agent workflow generik karena intent spesifik tidak terdeteksi.")
 
     for job in jobs:

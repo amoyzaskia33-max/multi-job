@@ -24,24 +24,24 @@ POLL_LOOP_SLEEP_SEC = 1
 IDLE_SLEEP_SEC = 2
 
 
-async def connector_heartbeat(channel: str, account_id: str, status: str = "online"):
+async def kirim_heartbeat_konektor(channel: str, account_id: str, status: str = "online"):
     """Update connector heartbeat in Redis."""
     key = f"{CONNECTOR_PREFIX}:{channel}:{account_id}"
     await redis_client.setex(key, HEARTBEAT_TTL, status)
 
 
-async def monitor_connectors():
+async def pantau_konektor():
     """Monitor connector heartbeats and log when one goes stale."""
     while True:
         try:
-            keys = await redis_client.keys(f"{CONNECTOR_PREFIX}:*")
+            daftar_kunci = await redis_client.keys(f"{CONNECTOR_PREFIX}:*")
 
-            for key in keys:
-                parts = key.split(":")
-                if len(parts) < 4:
+            for key in daftar_kunci:
+                bagian = key.split(":")
+                if len(bagian) < 4:
                     continue
-                channel = parts[2]
-                account_id = parts[3]
+                channel = bagian[2]
+                account_id = bagian[3]
                 status = await redis_client.get(key)
                 if not status:
                     logger.warning(
@@ -55,14 +55,14 @@ async def monitor_connectors():
             await asyncio.sleep(5)
 
 
-def _is_chat_allowed(chat_id: Any, allowed_chat_ids: List[str]) -> bool:
+def _chat_diizinkan(chat_id: Any, allowed_chat_ids: List[str]) -> bool:
     if not allowed_chat_ids:
         return True
     chat_id_str = str(chat_id).strip()
     return chat_id_str in {str(value).strip() for value in allowed_chat_ids if str(value).strip()}
 
 
-def _extract_prompt_from_text(text: str) -> str:
+def _ekstrak_prompt_dari_teks(text: str) -> str:
     cleaned = (text or "").strip()
     if not cleaned:
         return ""
@@ -73,19 +73,19 @@ def _extract_prompt_from_text(text: str) -> str:
     return cleaned
 
 
-def _format_execution_reply(execution: Any) -> str:
-    created = sum(1 for row in execution.results if row.create_status == "created")
-    updated = sum(1 for row in execution.results if row.create_status == "updated")
-    errors = sum(1 for row in execution.results if row.create_status == "error")
-    run_success = sum(1 for row in execution.results if row.run_status == "success")
-    run_failed = sum(1 for row in execution.results if row.run_status == "failed")
+def _format_balasan_eksekusi(execution: Any) -> str:
+    jumlah_dibuat = sum(1 for row in execution.results if row.create_status == "created")
+    jumlah_diperbarui = sum(1 for row in execution.results if row.create_status == "updated")
+    jumlah_error = sum(1 for row in execution.results if row.create_status == "error")
+    run_berhasil = sum(1 for row in execution.results if row.run_status == "success")
+    run_gagal = sum(1 for row in execution.results if row.run_status == "failed")
 
     lines = [
         "Siap, perintah sudah diproses.",
         f"Planner: {execution.planner_source}",
         execution.summary,
-        f"Job: {len(execution.results)} (created {created}, updated {updated}, error {errors})",
-        f"Run: success {run_success}, failed {run_failed}",
+        f"Job: {len(execution.results)} (created {jumlah_dibuat}, updated {jumlah_diperbarui}, error {jumlah_error})",
+        f"Run: success {run_berhasil}, failed {run_gagal}",
     ]
 
     for row in execution.results[:5]:
@@ -101,41 +101,41 @@ def _format_execution_reply(execution: Any) -> str:
     return text
 
 
-async def _telegram_api_call(
+async def _panggil_api_telegram(
     session: aiohttp.ClientSession,
     bot_token: str,
     method: str,
     payload: Dict[str, Any],
 ) -> Optional[Any]:
-    url = f"{TELEGRAM_API_BASE}/bot{bot_token}/{method}"
+    url_api = f"{TELEGRAM_API_BASE}/bot{bot_token}/{method}"
     try:
-        async with session.post(url, json=payload) as response:
-            data = await response.json(content_type=None)
+        async with session.post(url_api, json=payload) as response:
+            data_respons = await response.json(content_type=None)
             if response.status >= 400:
                 logger.warning(
                     "Telegram API status error",
-                    extra={"method": method, "status": response.status, "response": data},
+                    extra={"method": method, "status": response.status, "response": data_respons},
                 )
                 return None
-            if not isinstance(data, dict) or not data.get("ok"):
+            if not isinstance(data_respons, dict) or not data_respons.get("ok"):
                 logger.warning(
                     "Telegram API returned non-ok payload",
-                    extra={"method": method, "response": data},
+                    extra={"method": method, "response": data_respons},
                 )
                 return None
-            return data.get("result")
+            return data_respons.get("result")
     except Exception as exc:
         logger.warning("Telegram API call failed", extra={"method": method, "error": str(exc)})
         return None
 
 
-async def _send_telegram_message(
+async def _kirim_pesan_telegram(
     session: aiohttp.ClientSession,
     bot_token: str,
     chat_id: Any,
     text: str,
 ) -> None:
-    await _telegram_api_call(
+    await _panggil_api_telegram(
         session,
         bot_token,
         "sendMessage",
@@ -143,17 +143,17 @@ async def _send_telegram_message(
     )
 
 
-async def _process_telegram_update(
+async def _proses_update_telegram(
     session: aiohttp.ClientSession,
     account: Dict[str, Any],
     update: Dict[str, Any],
 ) -> None:
-    account_id = account["account_id"]
+    id_akun = account["account_id"]
     bot_token = str(account.get("bot_token") or "")
 
-    update_id = int(update.get("update_id") or 0)
-    if update_id > 0:
-        await set_telegram_last_update_id(account_id, update_id)
+    id_update = int(update.get("update_id") or 0)
+    if id_update > 0:
+        await set_telegram_last_update_id(id_akun, id_update)
 
     message = update.get("message") or update.get("edited_message") or {}
     chat = message.get("chat") or {}
@@ -164,7 +164,7 @@ async def _process_telegram_update(
         return
 
     if text.lower() in {"/start", "/help"}:
-        await _send_telegram_message(
+        await _kirim_pesan_telegram(
             session,
             bot_token,
             chat_id,
@@ -172,8 +172,8 @@ async def _process_telegram_update(
         )
         return
 
-    if not _is_chat_allowed(chat_id, account.get("allowed_chat_ids", [])):
-        await _send_telegram_message(
+    if not _chat_diizinkan(chat_id, account.get("allowed_chat_ids", [])):
+        await _kirim_pesan_telegram(
             session,
             bot_token,
             chat_id,
@@ -181,13 +181,13 @@ async def _process_telegram_update(
         )
         await append_event(
             "telegram.command.rejected",
-            {"account_id": account_id, "chat_id": str(chat_id), "reason": "chat_not_allowed"},
+            {"account_id": id_akun, "chat_id": str(chat_id), "reason": "chat_not_allowed"},
         )
         return
 
-    prompt = _extract_prompt_from_text(text)
+    prompt = _ekstrak_prompt_dari_teks(text)
     if not prompt:
-        await _send_telegram_message(
+        await _kirim_pesan_telegram(
             session,
             bot_token,
             chat_id,
@@ -197,7 +197,7 @@ async def _process_telegram_update(
 
     await append_event(
         "telegram.command.received",
-        {"account_id": account_id, "chat_id": str(chat_id), "prompt": prompt[:200]},
+        {"account_id": id_akun, "chat_id": str(chat_id), "prompt": prompt[:200]},
     )
 
     request = PlannerExecuteRequest(
@@ -208,59 +208,59 @@ async def _process_telegram_update(
         wait_seconds=int(account.get("wait_seconds", 2)),
         timezone=str(account.get("timezone", "Asia/Jakarta")),
         default_channel=str(account.get("default_channel", "telegram")),
-        default_account_id=str(account.get("default_account_id", account_id)),
+        default_account_id=str(account.get("default_account_id", id_akun)),
     )
 
     try:
-        execution = await execute_prompt_plan(request)
-        reply_text = _format_execution_reply(execution)
-        await _send_telegram_message(session, bot_token, chat_id, reply_text)
+        hasil_eksekusi = await execute_prompt_plan(request)
+        teks_balasan = _format_balasan_eksekusi(hasil_eksekusi)
+        await _kirim_pesan_telegram(session, bot_token, chat_id, teks_balasan)
 
         await append_event(
             "telegram.command.executed",
             {
-                "account_id": account_id,
+                "account_id": id_akun,
                 "chat_id": str(chat_id),
-                "planner_source": execution.planner_source,
-                "job_count": len(execution.results),
+                "planner_source": hasil_eksekusi.planner_source,
+                "job_count": len(hasil_eksekusi.results),
             },
         )
     except Exception as exc:
-        error_message = f"Gagal menjalankan perintah: {exc}"
-        await _send_telegram_message(session, bot_token, chat_id, error_message)
+        pesan_error = f"Gagal menjalankan perintah: {exc}"
+        await _kirim_pesan_telegram(session, bot_token, chat_id, pesan_error)
         await append_event(
             "telegram.command.failed",
-            {"account_id": account_id, "chat_id": str(chat_id), "error": str(exc)},
+            {"account_id": id_akun, "chat_id": str(chat_id), "error": str(exc)},
         )
 
 
-async def _poll_account(session: aiohttp.ClientSession, account: Dict[str, Any]) -> None:
-    account_id = account["account_id"]
+async def _polling_akun(session: aiohttp.ClientSession, account: Dict[str, Any]) -> None:
+    id_akun = account["account_id"]
     bot_token = str(account.get("bot_token") or "").strip()
-    enabled = bool(account.get("enabled", True))
+    aktif = bool(account.get("enabled", True))
 
-    if not enabled:
-        await connector_heartbeat("telegram", account_id, "offline")
+    if not aktif:
+        await kirim_heartbeat_konektor("telegram", id_akun, "offline")
         return
 
     if not bot_token:
-        await connector_heartbeat("telegram", account_id, "degraded")
+        await kirim_heartbeat_konektor("telegram", id_akun, "degraded")
         return
 
-    await connector_heartbeat("telegram", account_id, "connected")
+    await kirim_heartbeat_konektor("telegram", id_akun, "connected")
 
-    last_update_id = await get_telegram_last_update_id(account_id)
+    id_update_terakhir = await get_telegram_last_update_id(id_akun)
     payload: Dict[str, Any] = {"timeout": POLL_TIMEOUT_SEC}
-    if last_update_id > 0:
-        payload["offset"] = last_update_id + 1
+    if id_update_terakhir > 0:
+        payload["offset"] = id_update_terakhir + 1
 
-    updates = await _telegram_api_call(session, bot_token, "getUpdates", payload)
-    if not updates:
+    daftar_update = await _panggil_api_telegram(session, bot_token, "getUpdates", payload)
+    if not daftar_update:
         return
 
-    for update in updates:
+    for update in daftar_update:
         if isinstance(update, dict):
-            await _process_telegram_update(session, account, update)
+            await _proses_update_telegram(session, account, update)
 
 
 async def telegram_connector():
@@ -271,15 +271,15 @@ async def telegram_connector():
     async with aiohttp.ClientSession(timeout=timeout) as session:
         while True:
             try:
-                accounts = await list_telegram_accounts(include_secret=True)
+                daftar_akun = await list_telegram_accounts(include_secret=True)
                 await redis_client.setex(AGENT_HEARTBEAT_KEY, HEARTBEAT_TTL, "connected")
 
-                if not accounts:
+                if not daftar_akun:
                     await asyncio.sleep(IDLE_SLEEP_SEC)
                     continue
 
-                for account in accounts:
-                    await _poll_account(session, account)
+                for account in daftar_akun:
+                    await _polling_akun(session, account)
 
                 await asyncio.sleep(POLL_LOOP_SLEEP_SEC)
             except Exception as exc:
@@ -290,11 +290,11 @@ async def telegram_connector():
 async def connector_main():
     """Main connector loop."""
     await append_event("system.connector_started", {"message": "Connector service started"})
-    tasks = [
+    daftar_tugas = [
         asyncio.create_task(telegram_connector()),
-        asyncio.create_task(monitor_connectors()),
+        asyncio.create_task(pantau_konektor()),
     ]
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*daftar_tugas)
 
 
 if __name__ == "__main__":

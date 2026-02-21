@@ -20,14 +20,14 @@ DEFAULT_PROVIDER_BASE_URLS: Dict[str, str] = {
 }
 
 
-def _normalize_model_id(model_id: str) -> str:
+def _normalisasi_id_model(model_id: str) -> str:
     cleaned = model_id.strip()
     if cleaned.startswith("openai/"):
         cleaned = cleaned.split("/", 1)[1].strip()
     return cleaned or DEFAULT_OPENAI_MODEL
 
 
-def _extract_json_object(raw_text: str) -> Optional[Dict[str, Any]]:
+def _ekstrak_objek_json(raw_text: str) -> Optional[Dict[str, Any]]:
     text = raw_text.strip()
     if not text:
         return None
@@ -50,7 +50,7 @@ def _extract_json_object(raw_text: str) -> Optional[Dict[str, Any]]:
     return payload if isinstance(payload, dict) else None
 
 
-def _to_string_map(raw: Any) -> Dict[str, str]:
+def _ke_peta_string(raw: Any) -> Dict[str, str]:
     if not isinstance(raw, dict):
         return {}
 
@@ -63,7 +63,7 @@ def _to_string_map(raw: Any) -> Dict[str, str]:
     return output
 
 
-def _sanitize_plan(raw: Dict[str, Any]) -> Dict[str, Any]:
+def _sanitasi_rencana(raw: Dict[str, Any]) -> Dict[str, Any]:
     summary = str(raw.get("summary") or "Agent workflow plan generated.").strip()
     final_message = str(raw.get("final_message") or "").strip()
     raw_steps = raw.get("steps", [])
@@ -89,7 +89,7 @@ def _sanitize_plan(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "account_id": str(row.get("account_id") or "default").strip() or "default",
                 "method": str(row.get("method") or "GET").strip().upper(),
                 "path": str(row.get("path") or "").strip(),
-                "headers": _to_string_map(row.get("headers", {})),
+                "headers": _ke_peta_string(row.get("headers", {})),
                 "body": row.get("body"),
             }
             steps.append(step)
@@ -102,7 +102,7 @@ def _sanitize_plan(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "server_id": server_id,
                 "method": str(row.get("method") or "GET").strip().upper(),
                 "path": str(row.get("path") or "").strip(),
-                "headers": _to_string_map(row.get("headers", {})),
+                "headers": _ke_peta_string(row.get("headers", {})),
                 "body": row.get("body"),
             }
             steps.append(step)
@@ -120,7 +120,7 @@ def _sanitize_plan(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _shorten_text(raw: Any, limit: int = PREVIEW_LIMIT) -> str:
+def _ringkas_teks(raw: Any, limit: int = PREVIEW_LIMIT) -> str:
     if raw is None:
         return ""
     text = str(raw).strip()
@@ -129,7 +129,7 @@ def _shorten_text(raw: Any, limit: int = PREVIEW_LIMIT) -> str:
     return text[: max(0, limit - 3)] + "..."
 
 
-def _resolve_provider_base_url(provider: str, account: Dict[str, Any]) -> str:
+def _tentukan_url_dasar_provider(provider: str, account: Dict[str, Any]) -> str:
     config = account.get("config", {})
     if not isinstance(config, dict):
         config = {}
@@ -139,7 +139,7 @@ def _resolve_provider_base_url(provider: str, account: Dict[str, Any]) -> str:
     return DEFAULT_PROVIDER_BASE_URLS.get(provider, "")
 
 
-def _resolve_url(base_url: str, path: str) -> str:
+def _tentukan_url(base_url: str, path: str) -> str:
     cleaned_path = path.strip()
     if cleaned_path.startswith("http://") or cleaned_path.startswith("https://"):
         return cleaned_path
@@ -150,7 +150,7 @@ def _resolve_url(base_url: str, path: str) -> str:
     return urljoin(base_url.rstrip("/") + "/", cleaned_path.lstrip("/"))
 
 
-def _inject_provider_auth(
+def _sisipkan_auth_provider(
     headers: Dict[str, str],
     provider: str,
     secret: str,
@@ -170,7 +170,7 @@ def _inject_provider_auth(
     return output
 
 
-def _catalog_accounts(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+def _katalog_akun(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
         if not row.get("enabled", True):
@@ -182,7 +182,7 @@ def _catalog_accounts(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, An
     return grouped
 
 
-def _select_account(
+def _pilih_akun(
     grouped: Dict[str, List[Dict[str, Any]]],
     provider: str,
     account_id: str,
@@ -202,7 +202,7 @@ def _select_account(
     return rows[0]
 
 
-def _catalog_mcp(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def _katalog_mcp(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     output: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         if not row.get("enabled", True):
@@ -213,7 +213,7 @@ def _catalog_mcp(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     return output
 
 
-def _build_planner_system_prompt(
+def _bangun_prompt_sistem_planner(
     provider_catalog: Dict[str, List[Dict[str, Any]]],
     mcp_catalog: Dict[str, Dict[str, Any]],
 ) -> str:
@@ -259,7 +259,7 @@ def _build_planner_system_prompt(
     )
 
 
-async def _plan_actions_with_openai(
+async def _rencanakan_aksi_dengan_openai(
     prompt: str,
     model_id: str,
     api_key: str,
@@ -271,7 +271,7 @@ async def _plan_actions_with_openai(
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
         "messages": [
-            {"role": "system", "content": _build_planner_system_prompt(provider_catalog, mcp_catalog)},
+            {"role": "system", "content": _bangun_prompt_sistem_planner(provider_catalog, mcp_catalog)},
             {"role": "user", "content": prompt},
         ],
     }
@@ -286,7 +286,7 @@ async def _plan_actions_with_openai(
         async with session.post(OPENAI_CHAT_COMPLETIONS_URL, json=payload, headers=headers) as response:
             response_text = await response.text()
             if response.status >= 400:
-                raise RuntimeError(f"OpenAI planner failed ({response.status}): {_shorten_text(response_text, 220)}")
+                raise RuntimeError(f"OpenAI planner failed ({response.status}): {_ringkas_teks(response_text, 220)}")
 
     try:
         data = json.loads(response_text)
@@ -305,13 +305,13 @@ async def _plan_actions_with_openai(
             for item in content
         )
 
-    parsed = _extract_json_object(str(content))
+    parsed = _ekstrak_objek_json(str(content))
     if not parsed:
         raise RuntimeError("OpenAI planner did not return valid JSON plan.")
     return parsed
 
 
-def _step_success_from_http_result(result: Dict[str, Any]) -> bool:
+def _langkah_sukses_dari_hasil_http(result: Dict[str, Any]) -> bool:
     if not bool(result.get("success", False)):
         return False
     status_raw = result.get("status")
@@ -322,7 +322,7 @@ def _step_success_from_http_result(result: Dict[str, Any]) -> bool:
     return 200 <= status_code < 400
 
 
-async def _execute_provider_http_step(
+async def _eksekusi_langkah_provider_http(
     ctx,
     step: Dict[str, Any],
     provider_catalog: Dict[str, List[Dict[str, Any]]],
@@ -330,7 +330,7 @@ async def _execute_provider_http_step(
 ) -> Dict[str, Any]:
     provider = str(step.get("provider") or "").strip().lower()
     account_id = str(step.get("account_id") or "default").strip() or "default"
-    account = _select_account(provider_catalog, provider, account_id)
+    account = _pilih_akun(provider_catalog, provider, account_id)
     if not account:
         return {
             "kind": "provider_http",
@@ -341,8 +341,8 @@ async def _execute_provider_http_step(
         }
 
     config = account.get("config", {}) if isinstance(account.get("config", {}), dict) else {}
-    base_url = _resolve_provider_base_url(provider, account)
-    url = _resolve_url(base_url, str(step.get("path") or ""))
+    base_url = _tentukan_url_dasar_provider(provider, account)
+    url = _tentukan_url(base_url, str(step.get("path") or ""))
     if not url:
         return {
             "kind": "provider_http",
@@ -352,10 +352,10 @@ async def _execute_provider_http_step(
             "error": "Cannot resolve URL. Add base_url in integration config or use absolute URL path.",
         }
 
-    headers = _to_string_map(config.get("headers", {}))
-    headers.update(_to_string_map(step.get("headers", {})))
+    headers = _ke_peta_string(config.get("headers", {}))
+    headers.update(_ke_peta_string(step.get("headers", {})))
     secret = str(account.get("secret") or "").strip()
-    headers = _inject_provider_auth(headers, provider, secret, config)
+    headers = _sisipkan_auth_provider(headers, provider, secret, config)
 
     timeout_raw = config.get("timeout_sec", 30)
     try:
@@ -379,13 +379,13 @@ async def _execute_provider_http_step(
         "method": request_payload["method"],
         "url": url,
         "status": result.get("status"),
-        "success": _step_success_from_http_result(result),
-        "response_preview": _shorten_text(result.get("body")),
+        "success": _langkah_sukses_dari_hasil_http(result),
+        "response_preview": _ringkas_teks(result.get("body")),
         "error": result.get("error"),
     }
 
 
-async def _execute_mcp_http_step(
+async def _eksekusi_langkah_mcp_http(
     ctx,
     step: Dict[str, Any],
     mcp_catalog: Dict[str, Dict[str, Any]],
@@ -411,7 +411,7 @@ async def _execute_mcp_http_step(
         }
 
     base_url = str(server.get("url") or "").strip()
-    url = _resolve_url(base_url, str(step.get("path") or ""))
+    url = _tentukan_url(base_url, str(step.get("path") or ""))
     if not url:
         return {
             "kind": "mcp_http",
@@ -420,8 +420,8 @@ async def _execute_mcp_http_step(
             "error": "Cannot resolve MCP URL.",
         }
 
-    headers = _to_string_map(server.get("headers", {}))
-    headers.update(_to_string_map(step.get("headers", {})))
+    headers = _ke_peta_string(server.get("headers", {}))
+    headers.update(_ke_peta_string(step.get("headers", {})))
     auth_token = str(server.get("auth_token") or "").strip()
     if auth_token and "Authorization" not in headers:
         headers["Authorization"] = f"Bearer {auth_token}"
@@ -448,99 +448,99 @@ async def _execute_mcp_http_step(
         "method": request_payload["method"],
         "url": url,
         "status": result.get("status"),
-        "success": _step_success_from_http_result(result),
-        "response_preview": _shorten_text(result.get("body")),
+        "success": _langkah_sukses_dari_hasil_http(result),
+        "response_preview": _ringkas_teks(result.get("body")),
         "error": result.get("error"),
     }
 
 
 async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
-    prompt = str(inputs.get("prompt") or "").strip()
-    if not prompt:
+    prompt_pengguna = str(inputs.get("prompt") or "").strip()
+    if not prompt_pengguna:
         return {"success": False, "error": "prompt is required"}
 
-    http_tool = ctx.tools.get("http")
-    if not http_tool:
+    alat_http = ctx.tools.get("http")
+    if not alat_http:
         return {"success": False, "error": "http tool is not available"}
 
-    integration_rows = await list_integration_accounts(include_secret=True)
-    mcp_rows = await list_mcp_servers(include_secret=True)
+    daftar_integrasi = await list_integration_accounts(include_secret=True)
+    daftar_mcp = await list_mcp_servers(include_secret=True)
 
-    provider_catalog = _catalog_accounts(integration_rows)
-    mcp_catalog = _catalog_mcp(mcp_rows)
+    katalog_provider = _katalog_akun(daftar_integrasi)
+    katalog_mcp = _katalog_mcp(daftar_mcp)
 
-    preferred_openai_account = str(inputs.get("openai_account_id") or "default").strip() or "default"
-    openai_account = _select_account(provider_catalog, "openai", preferred_openai_account)
+    akun_openai_pilihan = str(inputs.get("openai_account_id") or "default").strip() or "default"
+    akun_openai = _pilih_akun(katalog_provider, "openai", akun_openai_pilihan)
 
-    openai_api_key = ""
-    openai_model_id = str(inputs.get("model_id") or "").strip()
-    if openai_account:
-        openai_api_key = str(openai_account.get("secret") or "").strip()
-        if not openai_model_id:
-            config = openai_account.get("config", {})
+    kunci_api_openai = ""
+    id_model_openai = str(inputs.get("model_id") or "").strip()
+    if akun_openai:
+        kunci_api_openai = str(akun_openai.get("secret") or "").strip()
+        if not id_model_openai:
+            config = akun_openai.get("config", {})
             if isinstance(config, dict):
-                openai_model_id = str(config.get("model_id") or "").strip()
+                id_model_openai = str(config.get("model_id") or "").strip()
 
-    if not openai_api_key:
-        openai_api_key = str(os.getenv("OPENAI_API_KEY") or "").strip()
+    if not kunci_api_openai:
+        kunci_api_openai = str(os.getenv("OPENAI_API_KEY") or "").strip()
 
-    if not openai_api_key:
+    if not kunci_api_openai:
         return {
             "success": False,
             "error": "OpenAI API key belum tersedia. Isi provider 'openai' di dashboard atau set OPENAI_API_KEY.",
         }
 
-    model_id = _normalize_model_id(
-        openai_model_id or str(os.getenv("PLANNER_AI_MODEL") or DEFAULT_OPENAI_MODEL)
+    model_id = _normalisasi_id_model(
+        id_model_openai or str(os.getenv("PLANNER_AI_MODEL") or DEFAULT_OPENAI_MODEL)
     )
 
     try:
-        raw_plan = await _plan_actions_with_openai(
-            prompt=prompt,
+        rencana_raw = await _rencanakan_aksi_dengan_openai(
+            prompt=prompt_pengguna,
             model_id=model_id,
-            api_key=openai_api_key,
-            provider_catalog=provider_catalog,
-            mcp_catalog=mcp_catalog,
+            api_key=kunci_api_openai,
+            provider_catalog=katalog_provider,
+            mcp_catalog=katalog_mcp,
         )
-        plan = _sanitize_plan(raw_plan)
+        rencana = _sanitasi_rencana(rencana_raw)
     except Exception as exc:
         return {"success": False, "error": f"Agent planner gagal: {exc}"}
 
-    step_results: List[Dict[str, Any]] = []
-    for step in plan["steps"]:
+    hasil_langkah: List[Dict[str, Any]] = []
+    for step in rencana["steps"]:
         kind = step.get("kind")
         if kind == "note":
-            step_results.append({"kind": "note", "success": True, "text": str(step.get("text") or "")})
+            hasil_langkah.append({"kind": "note", "success": True, "text": str(step.get("text") or "")})
             continue
 
         if kind == "provider_http":
-            result = await _execute_provider_http_step(ctx, step, provider_catalog, http_tool)
-            step_results.append(result)
+            hasil = await _eksekusi_langkah_provider_http(ctx, step, katalog_provider, alat_http)
+            hasil_langkah.append(hasil)
             continue
 
         if kind == "mcp_http":
-            result = await _execute_mcp_http_step(ctx, step, mcp_catalog, http_tool)
-            step_results.append(result)
+            hasil = await _eksekusi_langkah_mcp_http(ctx, step, katalog_mcp, alat_http)
+            hasil_langkah.append(hasil)
             continue
 
-    actionable = [row for row in step_results if row.get("kind") in {"provider_http", "mcp_http"}]
-    overall_success = all(bool(row.get("success")) for row in actionable) if actionable else True
+    langkah_aksi = [row for row in hasil_langkah if row.get("kind") in {"provider_http", "mcp_http"}]
+    sukses_total = all(bool(row.get("success")) for row in langkah_aksi) if langkah_aksi else True
 
-    available_providers = {
+    provider_tersedia = {
         provider: sorted({str(row.get("account_id") or "default") for row in rows})
-        for provider, rows in provider_catalog.items()
+        for provider, rows in katalog_provider.items()
     }
-    available_mcp_servers = sorted(mcp_catalog.keys())
+    server_mcp_tersedia = sorted(katalog_mcp.keys())
 
     return {
-        "success": overall_success,
-        "summary": plan["summary"],
-        "final_message": plan.get("final_message") or "",
+        "success": sukses_total,
+        "summary": rencana["summary"],
+        "final_message": rencana.get("final_message") or "",
         "model_id": model_id,
-        "prompt": prompt,
-        "steps_planned": len(plan["steps"]),
-        "steps_executed": len(step_results),
-        "step_results": step_results,
-        "available_providers": available_providers,
-        "available_mcp_servers": available_mcp_servers,
+        "prompt": prompt_pengguna,
+        "steps_planned": len(rencana["steps"]),
+        "steps_executed": len(hasil_langkah),
+        "step_results": hasil_langkah,
+        "available_providers": provider_tersedia,
+        "available_mcp_servers": server_mcp_tersedia,
     }

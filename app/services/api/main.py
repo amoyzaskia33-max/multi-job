@@ -84,13 +84,13 @@ async def redis_exception_handler(request: Request, exc: Exception):
     )
 
 
-def _model_dump(model: Any) -> Dict[str, Any]:
+def _serialisasi_model(model: Any) -> Dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump(mode="json")
     return model.dict()
 
 
-def _now_iso() -> str:
+def _sekarang_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -116,7 +116,7 @@ async def _is_redis_ready() -> bool:
 
 
 def _local_agents_snapshot() -> List[Dict[str, Any]]:
-    now = _now_iso()
+    sekarang = _sekarang_iso()
     rows: List[Dict[str, Any]] = []
 
     worker_task = getattr(app.state, "local_worker_task", None)
@@ -128,8 +128,8 @@ def _local_agents_snapshot() -> List[Dict[str, Any]]:
                 "id": "local-worker",
                 "type": "worker",
                 "status": "offline" if worker_task.done() else "online",
-                "last_heartbeat": now,
-                "last_heartbeat_at": now,
+                "last_heartbeat": sekarang,
+                "last_heartbeat_at": sekarang,
                 "active_sessions": 1 if not worker_task.done() else 0,
                 "version": "local-fallback",
             }
@@ -141,8 +141,8 @@ def _local_agents_snapshot() -> List[Dict[str, Any]]:
                 "id": "local-scheduler",
                 "type": "scheduler",
                 "status": "offline" if scheduler_task.done() else "online",
-                "last_heartbeat": now,
-                "last_heartbeat_at": now,
+                "last_heartbeat": sekarang,
+                "last_heartbeat_at": sekarang,
                 "active_sessions": 1 if not scheduler_task.done() else 0,
                 "version": "local-fallback",
             }
@@ -353,58 +353,58 @@ async def metrics():
 
 @app.post("/planner/plan", response_model=PlannerResponse)
 async def planner_plan(request: PlannerRequest):
-    plan = build_plan_from_prompt(request)
+    rencana = build_plan_from_prompt(request)
 
     with suppress(Exception):
         await append_event(
             "planner.plan_generated",
             {
                 "message": "Prompt converted into job plan",
-                "job_count": len(plan.jobs),
+                "job_count": len(rencana.jobs),
             },
         )
 
-    return plan
+    return rencana
 
 
 @app.post("/planner/plan-ai", response_model=PlannerResponse)
 async def planner_plan_ai(request: PlannerAiRequest):
-    plan = build_plan_with_ai(request)
+    rencana = build_plan_with_ai(request)
 
     with suppress(Exception):
         await append_event(
             "planner.ai_plan_generated",
             {
                 "message": "Prompt processed with planner AI mode",
-                "job_count": len(plan.jobs),
-                "planner_source": plan.planner_source,
+                "job_count": len(rencana.jobs),
+                "planner_source": rencana.planner_source,
             },
         )
 
-    return plan
+    return rencana
 
 
 @app.post("/planner/execute", response_model=PlannerExecuteResponse)
 async def planner_execute(request: PlannerExecuteRequest):
-    execution = await execute_prompt_plan(request)
+    eksekusi = await execute_prompt_plan(request)
 
     with suppress(Exception):
         await append_event(
             "planner.execute_completed",
             {
                 "message": "Prompt planned and executed",
-                "planner_source": execution.planner_source,
-                "result_count": len(execution.results),
+                "planner_source": eksekusi.planner_source,
+                "result_count": len(eksekusi.results),
             },
         )
 
-    return execution
+    return eksekusi
 
 
 @app.post("/jobs")
 async def create_job(job_spec: JobSpec):
-    spec = _model_dump(job_spec)
-    await save_job_spec(job_spec.job_id, spec)
+    spesifikasi = _serialisasi_model(job_spec)
+    await save_job_spec(job_spec.job_id, spesifikasi)
     await enable_job(job_spec.job_id)
     await append_event(
         "job.created",
@@ -445,39 +445,39 @@ async def disable_job_endpoint(job_id: str):
 
 @app.post("/jobs/{job_id}/run")
 async def trigger_job(job_id: str):
-    spec = await get_job_spec(job_id)
-    if not spec:
+    spesifikasi = await get_job_spec(job_id)
+    if not spesifikasi:
         raise HTTPException(status_code=404, detail="Job not found")
 
     run_id = f"run_{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:8]}"
     trace_id = f"trace_{uuid.uuid4().hex}"
 
-    run = Run(
+    data_run = Run(
         run_id=run_id,
         job_id=job_id,
         status=RunStatus.QUEUED,
         attempt=0,
         scheduled_at=datetime.now(timezone.utc),
-        inputs=spec.get("inputs", {}),
+        inputs=spesifikasi.get("inputs", {}),
         trace_id=trace_id,
     )
-    await save_run(run)
+    await save_run(data_run)
     await add_run_to_job_history(job_id, run_id)
 
-    event = QueueEvent(
+    event_antrean = QueueEvent(
         run_id=run_id,
         job_id=job_id,
-        type=spec["type"],
-        inputs=spec.get("inputs", {}),
+        type=spesifikasi["type"],
+        inputs=spesifikasi.get("inputs", {}),
         attempt=0,
-        scheduled_at=_now_iso(),
-        timeout_ms=int(spec.get("timeout_ms", 30000)),
+        scheduled_at=_sekarang_iso(),
+        timeout_ms=int(spesifikasi.get("timeout_ms", 30000)),
         trace_id=trace_id,
     )
-    await enqueue_job(event)
+    await enqueue_job(event_antrean)
     await append_event(
         "run.queued",
-        {"run_id": run_id, "job_id": job_id, "job_type": spec["type"], "source": "manual"},
+        {"run_id": run_id, "job_id": job_id, "job_type": spesifikasi["type"], "source": "manual"},
     )
 
     return {"run_id": run_id, "job_id": job_id, "status": "queued"}
@@ -491,7 +491,7 @@ async def get_job_runs(job_id: str, limit: int = 20):
         for run_id in run_ids:
             run = await get_run(run_id)
             if run:
-                runs.append(_model_dump(run))
+                runs.append(_serialisasi_model(run))
         return runs
     except RedisError:
         return _fallback_payload("/jobs/{job_id}/runs", [])
@@ -814,7 +814,7 @@ async def connectors():
                     "channel": channel,
                     "account_id": account_id,
                     "status": status,
-                    "last_heartbeat_at": _now_iso(),
+                    "last_heartbeat_at": _sekarang_iso(),
                     "reconnect_count": 0,
                     "last_error": None,
                 }
@@ -845,8 +845,8 @@ async def agents():
                     "id": agent_id,
                     "type": agent_type,
                     "status": status,
-                    "last_heartbeat": heartbeat or _now_iso(),
-                    "last_heartbeat_at": heartbeat or _now_iso(),
+                    "last_heartbeat": heartbeat or _sekarang_iso(),
+                    "last_heartbeat_at": heartbeat or _sekarang_iso(),
                     "active_sessions": 1 if status == "online" else 0,
                     "version": "0.1.0",
                 }
@@ -865,7 +865,7 @@ async def runs(
 ):
     try:
         rows = await list_runs(limit=limit, job_id=job_id, status=status)
-        return [_model_dump(run) for run in rows]
+        return [_serialisasi_model(run) for run in rows]
     except RedisError:
         return _fallback_payload("/runs", [])
 
@@ -875,7 +875,7 @@ async def run_detail(run_id: str):
     run = await get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    return _model_dump(run)
+    return _serialisasi_model(run)
 
 
 @app.get("/events")
