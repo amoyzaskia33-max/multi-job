@@ -57,6 +57,27 @@ def _contains_daily_keyword(text: str) -> bool:
     return _contains_any(text, ["harian", "setiap hari", "daily"])
 
 
+def _contains_agent_keyword(text: str) -> bool:
+    return _contains_any(
+        text,
+        [
+            "agent",
+            "workflow",
+            "otomasi",
+            "otomatis",
+            "integrasi",
+            "mcp",
+            "github",
+            "notion",
+            "linear",
+            "openai",
+            "api",
+            "sinkron",
+            "hubungkan",
+        ],
+    )
+
+
 def _extract_interval_seconds(text: str) -> Optional[int]:
     match = re.search(r"(?:tiap|setiap|per)\s+(\d+)\s*(detik|menit|jam)", text)
     if not match:
@@ -268,6 +289,42 @@ def _build_backup_job(
     )
 
 
+def _build_agent_workflow_job(
+    request: PlannerRequest,
+    used_ids: Set[str],
+    fallback_mode: bool = False,
+) -> PlannerJob:
+    assumptions: List[str] = []
+    warnings: List[str] = []
+
+    if fallback_mode:
+        assumptions.append("Intent spesifik monitor/laporan/backup tidak terdeteksi. Prompt dialihkan ke agent workflow.")
+
+    base_id = _slugify("agent-workflow")
+    job_id = _ensure_unique_job_id(base_id, used_ids)
+
+    job_spec = JobSpec(
+        job_id=job_id,
+        type="agent.workflow",
+        timeout_ms=90000,
+        retry_policy=RetryPolicy(max_retry=1, backoff_sec=[2, 5]),
+        inputs={
+            "prompt": request.prompt.strip(),
+            "timezone": request.timezone,
+            "default_channel": request.default_channel,
+            "default_account_id": request.default_account_id,
+            "source": "planner_prompt",
+        },
+    )
+
+    return PlannerJob(
+        reason="Prompt membutuhkan rangkaian aksi lintas provider/MCP.",
+        assumptions=assumptions,
+        warnings=warnings,
+        job_spec=job_spec,
+    )
+
+
 def build_plan_from_prompt(request: PlannerRequest) -> PlannerResponse:
     text = _normalize_text(request.prompt)
     used_ids: Set[str] = set()
@@ -288,6 +345,7 @@ def build_plan_from_prompt(request: PlannerRequest) -> PlannerResponse:
         text,
         ["backup", "cadangan", "ekspor", "export"],
     )
+    wants_agent_workflow = _contains_agent_keyword(text)
 
     if wants_monitor:
         jobs.append(_build_monitor_job(text, request, used_ids))
@@ -295,11 +353,12 @@ def build_plan_from_prompt(request: PlannerRequest) -> PlannerResponse:
         jobs.append(_build_report_job(text, request, used_ids))
     if wants_backup:
         jobs.append(_build_backup_job(text, request, used_ids))
+    if wants_agent_workflow:
+        jobs.append(_build_agent_workflow_job(request, used_ids))
 
     if not jobs:
-        warnings.append(
-            "Planner belum menemukan intent yang jelas. Gunakan kata kunci seperti monitor, laporan, atau backup."
-        )
+        jobs.append(_build_agent_workflow_job(request, used_ids, fallback_mode=True))
+        warnings.append("Planner memakai mode agent workflow generik karena intent spesifik tidak terdeteksi.")
 
     for job in jobs:
         assumptions.extend(job.assumptions)

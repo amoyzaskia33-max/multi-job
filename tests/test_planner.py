@@ -41,3 +41,16 @@ def test_plan_combined_prompt_generates_three_jobs():
     types = {job.job_spec.type for job in plan.jobs}
     assert len(plan.jobs) == 3
     assert types == {"monitor.channel", "report.daily", "backup.export"}
+
+
+def test_plan_generic_prompt_falls_back_to_agent_workflow():
+    plan = build_plan_from_prompt(
+        PlannerRequest(
+            prompt="Tolong sinkron data github ke notion sekarang",
+        )
+    )
+
+    assert len(plan.jobs) == 1
+    job = plan.jobs[0].job_spec
+    assert job.type == "agent.workflow"
+    assert job.inputs["prompt"] == "Tolong sinkron data github ke notion sekarang"

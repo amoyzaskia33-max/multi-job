@@ -20,18 +20,21 @@ ALLOWED_JOB_TYPES: Set[str] = {
     "monitor.channel",
     "report.daily",
     "backup.export",
+    "agent.workflow",
 }
 
 DEFAULT_TIMEOUT_MS: Dict[str, int] = {
     "monitor.channel": 15000,
     "report.daily": 45000,
     "backup.export": 120000,
+    "agent.workflow": 90000,
 }
 
 DEFAULT_RETRY: Dict[str, RetryPolicy] = {
     "monitor.channel": RetryPolicy(max_retry=5, backoff_sec=[1, 2, 5, 10, 30]),
     "report.daily": RetryPolicy(max_retry=3, backoff_sec=[5, 10, 30]),
     "backup.export": RetryPolicy(max_retry=2, backoff_sec=[10, 30]),
+    "agent.workflow": RetryPolicy(max_retry=1, backoff_sec=[2, 5]),
 }
 
 
@@ -104,14 +107,14 @@ def _build_smolagents_prompt(request: PlannerAiRequest) -> str:
         '  "jobs": [\n'
         "    {\n"
         '      "job_id": "optional-string",\n'
-        '      "type": "monitor.channel|report.daily|backup.export",\n'
+        '      "type": "monitor.channel|report.daily|backup.export|agent.workflow",\n'
         '      "reason": "string",\n'
         '      "assumptions": ["string"],\n'
         '      "warnings": ["string"],\n'
-        '      "schedule": {"interval_sec": 30} atau {"cron": "0 7 * * *"},\n'
+        '      "schedule": {"interval_sec": 30} atau {"cron": "0 7 * * *"} atau null (agent.workflow),\n'
         '      "timeout_ms": 15000,\n'
         '      "retry_policy": {"max_retry": 3, "backoff_sec": [1,2,5]},\n'
-        '      "inputs": {"channel":"telegram","account_id":"bot_a01"}\n'
+        '      "inputs": {"channel":"telegram","account_id":"bot_a01"} atau {"prompt":"instruksi user"}\n'
         "    }\n"
         "  ]\n"
         "}\n\n"
@@ -232,11 +235,13 @@ def _coerce_schedule(raw: Any, warnings: List[str], index: int) -> Optional[Sche
         return None
 
 
-def _default_schedule_for_job(job_type: str) -> Schedule:
+def _default_schedule_for_job(job_type: str) -> Optional[Schedule]:
     if job_type == "monitor.channel":
         return Schedule(interval_sec=30)
     if job_type == "report.daily":
         return Schedule(cron="0 7 * * *")
+    if job_type == "agent.workflow":
+        return None
     return Schedule(cron="0 2 * * *")
 
 
@@ -274,7 +279,10 @@ def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any
         item_assumptions = item.get("assumptions", []) if isinstance(item.get("assumptions"), list) else []
         item_warnings = item.get("warnings", []) if isinstance(item.get("warnings"), list) else []
 
-        schedule = _coerce_schedule(item.get("schedule"), warnings, index) or _default_schedule_for_job(job_type)
+        if job_type == "agent.workflow":
+            schedule = None
+        else:
+            schedule = _coerce_schedule(item.get("schedule"), warnings, index) or _default_schedule_for_job(job_type)
 
         retry_raw = item.get("retry_policy")
         retry_policy: RetryPolicy
@@ -305,6 +313,11 @@ def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any
         if job_type == "monitor.channel":
             inputs.setdefault("channel", request.default_channel)
             inputs.setdefault("account_id", request.default_account_id)
+        if job_type == "agent.workflow":
+            inputs.setdefault("prompt", request.prompt)
+            inputs.setdefault("timezone", request.timezone)
+            inputs.setdefault("default_channel", request.default_channel)
+            inputs.setdefault("default_account_id", request.default_account_id)
         if job_type in {"report.daily", "backup.export"}:
             inputs.setdefault("timezone", request.timezone)
         inputs.setdefault("source", "planner_ai")

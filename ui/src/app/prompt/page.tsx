@@ -27,6 +27,10 @@ const contohPrompt = [
     label: "Laporan + Backup",
     value: "Buat laporan harian jam 07:30 dan backup harian jam 01:30.",
   },
+  {
+    label: "Workflow Integrasi",
+    value: "Sinkron issue terbaru dari github ke notion workspace ops.",
+  },
 ];
 
 const clampWaitSeconds = (value: number) => {
@@ -155,7 +159,7 @@ export default function PromptPage() {
                 disabled={executeMutation.isPending}
               />
               <p className="text-xs text-muted-foreground">
-                Tip: bisa gabung beberapa kebutuhan sekaligus, misalnya monitor + laporan + backup.
+                Tip: bisa gabung beberapa kebutuhan sekaligus, termasuk workflow integrasi provider/MCP.
               </p>
             </div>
 

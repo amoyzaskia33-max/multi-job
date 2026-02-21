@@ -49,3 +49,33 @@ def test_build_plan_with_ai_force_rule_based_always_uses_fallback():
     assert plan.planner_source == "rule_based"
     assert len(plan.jobs) == 1
     assert any("force_rule_based" in warning for warning in plan.warnings)
+
+
+def test_build_plan_from_ai_payload_supports_agent_workflow_type():
+    request = PlannerAiRequest(
+        prompt="Sinkron github ke notion",
+        timezone="Asia/Jakarta",
+        default_channel="telegram",
+        default_account_id="bot_a01",
+    )
+
+    payload = {
+        "summary": "Workflow lintas integrasi",
+        "jobs": [
+            {
+                "job_id": "workflow-utama",
+                "type": "agent.workflow",
+                "reason": "Perlu rangkaian aksi provider",
+                "schedule": None,
+                "inputs": {"prompt": "Sinkron github ke notion"},
+            }
+        ],
+    }
+
+    plan = build_plan_from_ai_payload(request, payload)
+
+    assert len(plan.jobs) == 1
+    job = plan.jobs[0].job_spec
+    assert job.type == "agent.workflow"
+    assert job.schedule is None
+    assert job.inputs["prompt"] == "Sinkron github ke notion"

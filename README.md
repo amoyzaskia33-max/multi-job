@@ -230,7 +230,16 @@ Telegram command bridge flow:
 3. Keep connector service running (`python -m app.services.connector.main`).
 4. Send command to bot chat, for example:
    - `/ai pantau telegram akun bot_a01 tiap 30 detik dan buat laporan harian jam 07:00`
+   - `/ai sinkron issue github terbaru ke notion`
 5. Connector will execute planner 1-call and reply execution summary to the same chat.
+
+Agent workflow notes:
+- If prompt does not match monitor/report/backup intent, planner will fallback to `agent.workflow`.
+- `agent.workflow` reads enabled integration accounts + MCP servers from dashboard storage.
+- Provider auth token is taken from integration account secret (`/integrations/accounts/...`).
+- OpenAI planner key is resolved from:
+  1) `openai/default` (or selected account in job input), then
+  2) `OPENAI_API_KEY` environment variable.
 
 ## Job Specification Example
 
@@ -250,6 +259,7 @@ Telegram command bridge flow:
 - `monitor.channel` - Check connector health and emit metrics
 - `report.daily` - Generate daily summary report
 - `backup.export` - Export job registry and run history
+- `agent.workflow` - Plan and execute provider/MCP HTTP steps from a natural-language prompt
 
 ## Tool System
 

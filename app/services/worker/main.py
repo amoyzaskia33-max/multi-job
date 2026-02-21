@@ -28,6 +28,7 @@ tool_registry.register_tool("metrics", "1.0.0", MetricsTool().run)
 policy_manager.set_allowlist("monitor.channel", ["metrics", "messaging"])
 policy_manager.set_allowlist("report.daily", ["metrics", "messaging"])
 policy_manager.set_allowlist("backup.export", ["files", "kv"])
+policy_manager.set_allowlist("agent.workflow", ["http", "kv", "messaging", "files", "metrics"])
 
 
 async def update_heartbeat(worker_id: str):
