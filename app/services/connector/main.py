@@ -9,7 +9,7 @@ from app.core.connector_accounts import (
     set_telegram_last_update_id,
 )
 from app.core.observability import logger
-from app.core.queue import append_event
+from app.core.queue import append_event, is_mode_fallback_redis
 from app.core.redis_client import redis_client
 from app.services.api.planner_execute import PlannerExecuteRequest, execute_prompt_plan
 
@@ -26,6 +26,9 @@ IDLE_SLEEP_SEC = 2
 
 async def kirim_heartbeat_konektor(channel: str, account_id: str, status: str = "online"):
     """Update connector heartbeat in Redis."""
+    if is_mode_fallback_redis():
+        return
+
     key = f"{CONNECTOR_PREFIX}:{channel}:{account_id}"
     await redis_client.setex(key, HEARTBEAT_TTL, status)
 
@@ -34,6 +37,10 @@ async def pantau_konektor():
     """Monitor connector heartbeats and log when one goes stale."""
     while True:
         try:
+            if is_mode_fallback_redis():
+                await asyncio.sleep(10)
+                continue
+
             daftar_kunci = await redis_client.keys(f"{CONNECTOR_PREFIX}:*")
 
             for key in daftar_kunci:
@@ -272,7 +279,8 @@ async def telegram_connector():
         while True:
             try:
                 daftar_akun = await list_telegram_accounts(include_secret=True)
-                await redis_client.setex(AGENT_HEARTBEAT_KEY, HEARTBEAT_TTL, "connected")
+                if not is_mode_fallback_redis():
+                    await redis_client.setex(AGENT_HEARTBEAT_KEY, HEARTBEAT_TTL, "connected")
 
                 if not daftar_akun:
                     await asyncio.sleep(IDLE_SLEEP_SEC)

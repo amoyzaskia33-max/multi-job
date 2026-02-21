@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from app.core.handlers_registry import get_handler
 from app.core.observability import logger, metrics_collector
-from app.core.queue import append_event, dequeue_job, get_job_spec, init_queue
+from app.core.queue import append_event, dequeue_job, get_job_spec, init_queue, is_mode_fallback_redis
 from app.core.redis_client import redis_client
 from app.core.registry import policy_manager, tool_registry
 from app.core.runner import handle_retry, process_job_event
@@ -32,6 +32,9 @@ policy_manager.set_allowlist("agent.workflow", ["http", "kv", "messaging", "file
 
 
 async def update_heartbeat(worker_id: str):
+    if is_mode_fallback_redis():
+        return
+
     try:
         await redis_client.setex(
             f"hb:agent:worker:{worker_id}",
@@ -56,6 +59,7 @@ async def worker_main():
             await update_heartbeat(worker_id)
             data_job = await dequeue_job(worker_id)
             if not data_job:
+                await asyncio.sleep(0.1)
                 continue
 
             data_event = data_job["data"]

@@ -53,6 +53,7 @@ from app.core.queue import (
     list_runs,
     save_job_spec,
     save_run,
+    set_mode_fallback_redis,
 )
 from app.core.scheduler import Scheduler
 from app.core.redis_client import close_redis, redis_client
@@ -77,6 +78,8 @@ app.add_middleware(
 @app.exception_handler(RedisError)
 @app.exception_handler(RedisTimeoutError)
 async def redis_exception_handler(request: Request, exc: Exception):
+    app.state.redis_ready = False
+    set_mode_fallback_redis(True)
     logger.warning("Redis request failed", extra={"path": request.url.path, "error": str(exc)})
     return JSONResponse(
         status_code=503,
@@ -109,7 +112,7 @@ def _merge_config_defaults(existing: Dict[str, Any], defaults: Dict[str, Any], o
 
 async def _is_redis_ready() -> bool:
     try:
-        await redis_client.ping()
+        await asyncio.wait_for(redis_client.ping(), timeout=0.5)
         return True
     except Exception:
         return False
@@ -317,9 +320,12 @@ async def on_startup():
     app.state.local_worker_task = None
     app.state.local_scheduler_task = None
 
-    await init_queue()
     redis_ready = await _is_redis_ready()
     app.state.redis_ready = redis_ready
+    set_mode_fallback_redis(not redis_ready)
+
+    if redis_ready:
+        await init_queue()
 
     await append_event("system.api_started", {"message": "API service started", "redis_ready": redis_ready})
     if not redis_ready:
@@ -340,7 +346,7 @@ async def healthz():
 @app.get("/readyz")
 async def readyz():
     try:
-        await redis_client.ping()
+        await asyncio.wait_for(redis_client.ping(), timeout=0.5)
         return {"status": "ready"}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Service not ready: {str(e)}")
@@ -797,6 +803,9 @@ async def bootstrap_integrations_catalog(request: IntegrationsBootstrapRequest):
 
 @app.get("/connectors")
 async def connectors():
+    if not getattr(app.state, "redis_ready", True):
+        return _fallback_payload("/connectors", [])
+
     try:
         rows: List[Dict[str, Any]] = []
         keys = sorted(await redis_client.keys("hb:connector:*"))
@@ -826,6 +835,9 @@ async def connectors():
 
 @app.get("/agents")
 async def agents():
+    if not getattr(app.state, "redis_ready", True):
+        return _fallback_payload("/agents", _local_agents_snapshot())
+
     try:
         rows: List[Dict[str, Any]] = []
         keys = sorted(await redis_client.keys("hb:agent:*:*"))

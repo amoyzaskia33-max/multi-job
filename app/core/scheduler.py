@@ -11,6 +11,7 @@ from .queue import (
     get_due_jobs,
     list_enabled_job_ids,
     get_job_spec,
+    is_mode_fallback_redis,
 )
 from .redis_client import redis_client
 
@@ -36,6 +37,9 @@ class Scheduler:
         self.jobs = job_terbaru
 
     async def heartbeat(self):
+        if is_mode_fallback_redis():
+            return
+
         try:
             await redis_client.setex(
                 f"hb:agent:scheduler:{self.scheduler_id}",
