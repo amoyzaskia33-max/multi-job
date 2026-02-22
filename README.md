@@ -166,6 +166,27 @@ set OPENAI_API_KEY=your_key_here
 set PLANNER_AI_MODEL=openai/gpt-4o-mini
 ```
 
+Optional setup for Auth + RBAC (API):
+```bash
+set AUTH_ENABLED=true
+set AUTH_API_KEYS=viewer_token:viewer,operator_token:operator,admin_token:admin
+set AUTH_TOKEN_HEADER=Authorization
+set AUTH_TOKEN_SCHEME=Bearer
+```
+Notes:
+- Public endpoints without auth: `/healthz`, `/readyz`, `/metrics`.
+- Read-only endpoints require `viewer` (or higher).
+- Write endpoints require `operator` (or higher).
+- Security-sensitive writes (`/approvals/*/approve|reject`, integrations writes, bootstrap catalog, delete agent memory) require `admin`.
+
+Optional setup for UI auth header forwarding:
+```bash
+set NEXT_PUBLIC_API_AUTH_HEADER=Authorization
+set NEXT_PUBLIC_API_AUTH_SCHEME=Bearer
+set NEXT_PUBLIC_API_TOKEN=viewer_token
+```
+UI can also store token at runtime via `localStorage` key `spio_api_token`.
+
 One-call execute example:
 ```json
 {

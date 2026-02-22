@@ -11,14 +11,17 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   bootstrapIntegrationsCatalog,
+  clearApiAuthToken,
   deleteIntegrationAccount,
   deleteMcpIntegrationServer,
   deleteTelegramConnectorAccount,
+  getApiAuthToken,
   getEvents,
   getIntegrationsCatalog,
   getIntegrationAccounts,
   getMcpIntegrationServers,
   getTelegramConnectorAccounts,
+  setApiAuthToken,
   type SystemEvent,
   upsertIntegrationAccount,
   upsertMcpIntegrationServer,
@@ -46,7 +49,7 @@ const parseMasukanObjek = (raw: string, fieldName: string): Record<string, unkno
   try {
     const parsed = JSON.parse(trimmed);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      toast.error(`${fieldName} harus object JSON.`);
+      toast.error(`${fieldName} harus objek JSON.`);
       return null;
     }
     return parsed as Record<string, unknown>;
@@ -96,12 +99,12 @@ const formatRingkasanEvent = (event: SystemEvent) => {
   if (event.type === "integration.mcp_server_upserted") {
     const serverId = String(data.server_id || "-");
     const transport = String(data.transport || "-");
-    return `MCP server ${serverId} diperbarui (${transport}).`;
+    return `Server MCP ${serverId} diperbarui (${transport}).`;
   }
   if (event.type === "integration.catalog_bootstrap") {
     const providerCreated = Number(data.providers_created || 0);
     const mcpCreated = Number(data.mcp_created || 0);
-    return `Template baru ditambahkan: provider +${providerCreated}, MCP +${mcpCreated}.`;
+    return `Template baru ditambahkan: penyedia +${providerCreated}, MCP +${mcpCreated}.`;
   }
   if (event.type === "connector.telegram.account_upserted") {
     const accountId = String(data.account_id || "-");
@@ -115,26 +118,27 @@ const formatRingkasanEvent = (event: SystemEvent) => {
   }
   if (event.type === "approval.request_created") {
     const count = Number(data.request_count || 0);
-    return `Approval queue bertambah: ${count} request baru siap direview.`;
+    return `Antrean persetujuan bertambah: ${count} permintaan baru siap ditinjau.`;
   }
   if (event.type === "approval.request_approved") {
     const id = String(data.approval_id || "-");
-    return `Approval ${id} sudah disetujui.`;
+    return `Persetujuan ${id} sudah disetujui.`;
   }
   if (event.type === "approval.request_rejected") {
     const id = String(data.approval_id || "-");
-    return `Approval ${id} ditolak.`;
+    return `Persetujuan ${id} ditolak.`;
   }
   if (event.type === "automation.agent_workflow_saved") {
     const jobId = String(data.job_id || "-");
-    return `Job otomatis '${jobId}' disimpan/diupdate.`;
+    return `Tugas otomatis '${jobId}' disimpan/diperbarui.`;
   }
 
-  return "Update sistem terbaru.";
+  return "Pembaruan sistem terbaru.";
 };
 
 export default function SettingsPage() {
   const [urlDasarApi, setUrlDasarApi] = useState(process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000");
+  const [tokenApi, setTokenApi] = useState("");
   const [jedaPembaruan, setJedaPembaruan] = useState(5);
   const [refreshOtomatis, setRefreshOtomatis] = useState(true);
 
@@ -279,6 +283,8 @@ export default function SettingsPage() {
     } catch {
       window.localStorage.removeItem(KUNCI_PENGATURAN);
     }
+
+    setTokenApi(getApiAuthToken());
   }, []);
 
   const simpanPengaturanUi = () => {
@@ -288,7 +294,14 @@ export default function SettingsPage() {
       autoRefresh: refreshOtomatis,
     };
     window.localStorage.setItem(KUNCI_PENGATURAN, JSON.stringify(payload));
-    toast.success("Setelan dashboard tersimpan.");
+    setApiAuthToken(tokenApi);
+    toast.success("Setelan dasbor tersimpan.");
+  };
+
+  const hapusTokenApi = () => {
+    setTokenApi("");
+    clearApiAuthToken();
+    toast.success("Token API dihapus dari browser.");
   };
 
   const pakaiAkunTelegram = (targetAccountId: string) => {
@@ -371,14 +384,14 @@ export default function SettingsPage() {
   const simpanServerMcp = async () => {
     const normalizedServerId = mcpServerId.trim();
     if (!normalizedServerId) {
-      toast.error("Server ID MCP wajib diisi.");
+      toast.error("ID server MCP wajib diisi.");
       return;
     }
 
-    const parsedHeaders = parseMasukanObjek(mcpHeadersText, "Headers MCP");
+    const parsedHeaders = parseMasukanObjek(mcpHeadersText, "Header MCP");
     if (!parsedHeaders) return;
 
-    const parsedEnv = parseMasukanObjek(mcpEnvText, "Environment MCP");
+    const parsedEnv = parseMasukanObjek(mcpEnvText, "Lingkungan MCP");
     if (!parsedEnv) return;
 
     const payload: McpIntegrationServerUpsertRequest = {
@@ -401,18 +414,18 @@ export default function SettingsPage() {
     if (!saved) return;
 
     setMcpAuthToken("");
-    toast.success(`MCP server '${saved.server_id}' tersimpan.`);
+    toast.success(`Server MCP '${saved.server_id}' tersimpan.`);
     await muatUlangServerMcp();
   };
 
   const hapusServerMcp = async (serverId: string) => {
-    const confirmed = window.confirm(`Hapus MCP server '${serverId}'?`);
+    const confirmed = window.confirm(`Hapus server MCP '${serverId}'?`);
     if (!confirmed) return;
 
     const deleted = await deleteMcpIntegrationServer(serverId);
     if (!deleted) return;
 
-    toast.success(`MCP server '${serverId}' dihapus.`);
+    toast.success(`Server MCP '${serverId}' dihapus.`);
     await muatUlangServerMcp();
   };
 
@@ -434,15 +447,15 @@ export default function SettingsPage() {
     const accountIdValue = integrationAccountId.trim();
 
     if (!provider) {
-      toast.error("Provider integrasi wajib diisi.");
+      toast.error("Penyedia integrasi wajib diisi.");
       return;
     }
     if (!accountIdValue) {
-      toast.error("Account ID integrasi wajib diisi.");
+      toast.error("ID akun integrasi wajib diisi.");
       return;
     }
 
-    const parsedConfig = parseMasukanObjek(integrationConfigText, "Config akun integrasi");
+    const parsedConfig = parseMasukanObjek(integrationConfigText, "Konfigurasi akun integrasi");
     if (!parsedConfig) return;
 
     const saved = await upsertIntegrationAccount(provider, accountIdValue, {
@@ -473,14 +486,14 @@ export default function SettingsPage() {
     if (!response) return;
 
     toast.success(
-      `Template masuk: provider +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
+      `Template masuk: penyedia +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
     );
     await Promise.all([muatUlangAkunIntegrasi(), muatUlangServerMcp()]);
   };
 
   const bootstrapTemplateKurang = async () => {
     if (idTemplateProviderKurang.length === 0 && idTemplateMcpKurang.length === 0) {
-      toast.message("Semua template sudah masuk di dashboard.");
+      toast.message("Semua template sudah masuk di dasbor.");
       return;
     }
 
@@ -493,7 +506,7 @@ export default function SettingsPage() {
     if (!response) return;
 
     toast.success(
-      `Template yang kurang sudah ditambahkan. Provider +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
+      `Template yang kurang sudah ditambahkan. Penyedia +${response.providers_created.length}, MCP +${response.mcp_created.length}.`,
     );
     await Promise.all([muatUlangAkunIntegrasi(), muatUlangServerMcp()]);
   };
@@ -508,9 +521,9 @@ export default function SettingsPage() {
     if (!response) return;
 
     if (response.providers_created.length > 0 || response.providers_updated.length > 0) {
-      toast.success(`Template provider '${provider}' ditambahkan.`);
+      toast.success(`Template penyedia '${provider}' ditambahkan.`);
     } else {
-      toast.message(`Template provider '${provider}' sudah ada.`);
+      toast.message(`Template penyedia '${provider}' sudah ada.`);
     }
     await muatUlangAkunIntegrasi();
   };
@@ -565,19 +578,19 @@ export default function SettingsPage() {
       <section className="rounded-2xl border border-border bg-card p-6">
         <h1 className="text-3xl font-bold text-foreground">Setelan Integrasi</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Semua koneksi disimpan di sini: API dashboard, Telegram bridge, MCP server, dan akun provider/tool lainnya.
+          Semua koneksi disimpan di sini: API dasbor, jembatan Telegram, server MCP, dan akun penyedia/alat lainnya.
         </p>
       </section>
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Update Skill & Puzzle Terbaru</CardTitle>
+          <CardTitle>Pembaruan Skill & Puzzle Terbaru</CardTitle>
         </CardHeader>
         <CardContent>
           {sedangMemuatEventSkill ? (
-            <div className="text-sm text-muted-foreground">Lagi ambil update terbaru...</div>
+            <div className="text-sm text-muted-foreground">Lagi ambil pembaruan terbaru...</div>
           ) : daftarUpdateSkill.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Belum ada update skill/puzzle baru.</div>
+            <div className="text-sm text-muted-foreground">Belum ada pembaruan skill/puzzle baru.</div>
           ) : (
             <div className="space-y-2">
               {daftarUpdateSkill.map((event) => (
@@ -599,7 +612,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Klik sekali untuk menampilkan konektor populer di dashboard. Setelah muncul, tinggal isi token atau config.
+            Klik sekali untuk menampilkan konektor populer di dasbor. Setelah muncul, tinggal isi token atau konfigurasi.
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -615,9 +628,9 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="space-y-2">
-              <Label>Provider Integrasi</Label>
+              <Label>Penyedia Integrasi</Label>
               {sedangMemuatKatalog ? (
-                <div className="text-sm text-muted-foreground">Lagi ambil katalog provider...</div>
+                <div className="text-sm text-muted-foreground">Lagi ambil katalog penyedia...</div>
               ) : (
                 <div className="space-y-2">
                   {(katalogIntegrasi?.providers || []).map((row) => {
@@ -631,7 +644,7 @@ export default function SettingsPage() {
                           <p className="text-sm font-semibold text-foreground">{row.label}</p>
                           <p className="text-xs text-muted-foreground">{row.description}</p>
                           <p className="text-xs text-muted-foreground">
-                            Auth: {row.auth_hint} | Account: {row.default_account_id}
+                            Otorisasi: {row.auth_hint} | ID Akun: {row.default_account_id}
                           </p>
                         </div>
                         <div className="flex gap-2">
@@ -659,7 +672,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Template MCP Server</Label>
+              <Label>Template Server MCP</Label>
               {sedangMemuatKatalog ? (
                 <div className="text-sm text-muted-foreground">Lagi ambil katalog MCP...</div>
               ) : (
@@ -675,7 +688,7 @@ export default function SettingsPage() {
                           <p className="text-sm font-semibold text-foreground">{row.label}</p>
                           <p className="text-xs text-muted-foreground">{row.description}</p>
                           <p className="text-xs text-muted-foreground">
-                            {row.transport.toUpperCase()} | Server ID: {row.server_id}
+                            {row.transport.toUpperCase()} | ID Server: {row.server_id}
                           </p>
                         </div>
                         <div className="flex gap-2">
@@ -707,23 +720,23 @@ export default function SettingsPage() {
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Status Kesiapan Dashboard</CardTitle>
+          <CardTitle>Status Kesiapan Dasbor</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl border border-border bg-muted p-4">
-              <p className="text-xs text-muted-foreground">Telegram Bridge</p>
+              <p className="text-xs text-muted-foreground">Jembatan Telegram</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
                 {statistikKesiapan.telegramReady ? "Siap" : "Belum Siap"}
               </p>
             </div>
             <div className="rounded-xl border border-border bg-muted p-4">
-              <p className="text-xs text-muted-foreground">Provider Tersimpan</p>
+              <p className="text-xs text-muted-foreground">Penyedia Tersimpan</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
                 {statistikKesiapan.providerConfigured}/{statistikKesiapan.providerTotal}
               </p>
               <p className="text-xs text-muted-foreground">
-                Enabled {statistikKesiapan.providerEnabled}, token siap {statistikKesiapan.providerReady}
+                Aktif {statistikKesiapan.providerEnabled}, token siap {statistikKesiapan.providerReady}
               </p>
             </div>
             <div className="rounded-xl border border-border bg-muted p-4">
@@ -731,18 +744,18 @@ export default function SettingsPage() {
               <p className="mt-1 text-sm font-semibold text-foreground">
                 {statistikKesiapan.mcpConfigured}/{statistikKesiapan.mcpTotal}
               </p>
-              <p className="text-xs text-muted-foreground">Enabled {statistikKesiapan.mcpEnabled}</p>
+              <p className="text-xs text-muted-foreground">Aktif {statistikKesiapan.mcpEnabled}</p>
             </div>
             <div className="rounded-xl border border-border bg-muted p-4">
               <p className="text-xs text-muted-foreground">Template Belum Masuk</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
-                Provider {idTemplateProviderKurang.length}, MCP {idTemplateMcpKurang.length}
+                Penyedia {idTemplateProviderKurang.length}, MCP {idTemplateMcpKurang.length}
               </p>
             </div>
           </div>
 
           <div className="rounded-xl border border-border bg-muted p-4 text-sm text-muted-foreground">
-            Untuk operasional penuh: 1) Telegram siap, 2) provider utama (minimal openai) sudah ada token, 3) MCP yang dipakai
+            Untuk operasional penuh: 1) Telegram siap, 2) penyedia utama (minimal openai) sudah ada token, 3) MCP yang dipakai
             sudah ditambahkan.
           </div>
         </CardContent>
@@ -750,7 +763,7 @@ export default function SettingsPage() {
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Koneksi API Dashboard</CardTitle>
+          <CardTitle>Koneksi API Dasbor</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -764,10 +777,24 @@ export default function SettingsPage() {
             <p className="mt-1 text-sm text-muted-foreground">Isi dengan alamat backend yang bisa diakses browser.</p>
           </div>
 
+          <div>
+            <Label htmlFor="api-auth-token">Token API (viewer/operator/admin)</Label>
+            <Input
+              id="api-auth-token"
+              type="password"
+              value={tokenApi}
+              onChange={(event) => setTokenApi(event.target.value)}
+              placeholder="Isi token untuk header Authorization / X-API-Key"
+            />
+            <p className="mt-1 text-sm text-muted-foreground">
+              Token disimpan lokal di browser (`localStorage`) dan dipakai otomatis ke semua request UI.
+            </p>
+          </div>
+
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted p-4">
             <div>
-              <Label>Auto Refresh</Label>
-              <p className="text-sm text-muted-foreground">Kalau aktif, dashboard update otomatis tanpa reload manual.</p>
+              <Label>Pembaruan Otomatis</Label>
+              <p className="text-sm text-muted-foreground">Kalau aktif, dasbor diperbarui otomatis tanpa muat ulang manual.</p>
             </div>
             <Switch checked={refreshOtomatis} onCheckedChange={setRefreshOtomatis} />
           </div>
@@ -784,13 +811,18 @@ export default function SettingsPage() {
             />
           </div>
 
-          <Button onClick={simpanPengaturanUi}>Simpan Setelan Dashboard</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={simpanPengaturanUi}>Simpan Setelan Dasbor</Button>
+            <Button variant="outline" onClick={hapusTokenApi}>
+              Hapus Token API
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Telegram Bridge (Perintah Dari Chat)</CardTitle>
+          <CardTitle>Jembatan Telegram (Perintah dari Chat)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -816,7 +848,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="lg:col-span-2">
-              <Label htmlFor="telegram-allowed-chat-ids">Allowed Chat IDs (pisahkan koma)</Label>
+              <Label htmlFor="telegram-allowed-chat-ids">ID Chat yang Diizinkan (pisahkan koma)</Label>
               <Input
                 id="telegram-allowed-chat-ids"
                 value={allowedChatIdsText}
@@ -837,16 +869,16 @@ export default function SettingsPage() {
 
             <div className="flex items-center justify-between rounded-xl border border-border bg-muted p-4">
               <div>
-                <Label>Gunakan AI Planner</Label>
-                <p className="text-sm text-muted-foreground">Aktifkan kalau mau planner dibantu AI.</p>
+                <Label>Gunakan Perencana AI</Label>
+                <p className="text-sm text-muted-foreground">Aktifkan kalau mau perencana dibantu AI.</p>
               </div>
               <Switch checked={useAi} onCheckedChange={setUseAi} />
             </div>
 
             <div className="flex items-center justify-between rounded-xl border border-border bg-muted p-4">
               <div>
-                <Label>Paksa Rule-Based</Label>
-                <p className="text-sm text-muted-foreground">Jika aktif, planner AI dilewati.</p>
+                <Label>Paksa Berbasis Aturan</Label>
+                <p className="text-sm text-muted-foreground">Jika aktif, perencana AI dilewati.</p>
               </div>
               <Switch checked={forceRuleBased} disabled={!useAi} onCheckedChange={setForceRuleBased} />
             </div>
@@ -854,7 +886,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between rounded-xl border border-border bg-muted p-4">
               <div>
                 <Label>Jalankan Langsung</Label>
-                <p className="text-sm text-muted-foreground">Setelah plan jadi, run langsung masuk antrean.</p>
+                <p className="text-sm text-muted-foreground">Setelah rencana jadi, eksekusi langsung masuk antrean.</p>
               </div>
               <Switch checked={runImmediately} onCheckedChange={setRunImmediately} />
             </div>
@@ -862,7 +894,7 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
             <div>
-              <Label htmlFor="telegram-wait-seconds">Wait (detik)</Label>
+              <Label htmlFor="telegram-wait-seconds">Tunggu (detik)</Label>
               <Input
                 id="telegram-wait-seconds"
                 type="number"
@@ -874,11 +906,11 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="telegram-timezone">Timezone</Label>
+              <Label htmlFor="telegram-timezone">Zona Waktu</Label>
               <Input id="telegram-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
             </div>
             <div>
-              <Label htmlFor="telegram-default-channel">Default Channel</Label>
+              <Label htmlFor="telegram-default-channel">Kanal Bawaan</Label>
               <Input
                 id="telegram-default-channel"
                 value={defaultChannel}
@@ -886,7 +918,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="telegram-default-account-id">Default Account ID</Label>
+              <Label htmlFor="telegram-default-account-id">ID Akun Bawaan</Label>
               <Input
                 id="telegram-default-account-id"
                 value={defaultAccountId}
@@ -916,7 +948,7 @@ export default function SettingsPage() {
                       {row.has_bot_token ? row.bot_token_masked || "tersimpan" : "belum ada"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Allowed chats: {row.allowed_chat_ids.length ? row.allowed_chat_ids.join(", ") : "semua chat"}
+                      Chat diizinkan: {row.allowed_chat_ids.length ? row.allowed_chat_ids.join(", ") : "semua chat"}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -936,12 +968,12 @@ export default function SettingsPage() {
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>MCP Servers</CardTitle>
+          <CardTitle>Server MCP</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
-              <Label htmlFor="mcp-server-id">Server ID</Label>
+              <Label htmlFor="mcp-server-id">ID Server</Label>
               <Input
                 id="mcp-server-id"
                 value={mcpServerId}
@@ -950,7 +982,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="mcp-transport">Transport</Label>
+              <Label htmlFor="mcp-transport">Mode Transport</Label>
               <select
                 id="mcp-transport"
                 value={mcpTransport}
@@ -982,7 +1014,7 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div>
-              <Label htmlFor="mcp-command">Command (untuk stdio)</Label>
+              <Label htmlFor="mcp-command">Perintah (untuk stdio)</Label>
               <Input
                 id="mcp-command"
                 value={mcpCommand}
@@ -1012,7 +1044,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="mcp-timeout">Timeout (detik)</Label>
+              <Label htmlFor="mcp-timeout">Batas Waktu (detik)</Label>
               <Input
                 id="mcp-timeout"
                 type="number"
@@ -1023,7 +1055,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="mcp-auth-token">Auth Token (opsional)</Label>
+              <Label htmlFor="mcp-auth-token">Token Otorisasi (opsional)</Label>
               <Input
                 id="mcp-auth-token"
                 type="password"
@@ -1036,7 +1068,7 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div>
-              <Label htmlFor="mcp-headers">Headers JSON</Label>
+              <Label htmlFor="mcp-headers">Header JSON</Label>
               <textarea
                 id="mcp-headers"
                 className="min-h-[110px] w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground"
@@ -1046,7 +1078,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="mcp-env">Environment JSON</Label>
+              <Label htmlFor="mcp-env">Variabel Lingkungan JSON</Label>
               <textarea
                 id="mcp-env"
                 className="min-h-[110px] w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground"
@@ -1057,14 +1089,14 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <Button onClick={simpanServerMcp}>Simpan MCP Server</Button>
+          <Button onClick={simpanServerMcp}>Simpan Server MCP</Button>
 
           <div className="space-y-2">
-            <Label>Daftar MCP Server</Label>
+            <Label>Daftar Server MCP</Label>
             {sedangMemuatMcp ? (
-              <div className="text-sm text-muted-foreground">Lagi ambil MCP server...</div>
+              <div className="text-sm text-muted-foreground">Lagi ambil server MCP...</div>
             ) : serverMcp.length === 0 ? (
-              <div className="text-sm text-muted-foreground">Belum ada MCP server tersimpan.</div>
+              <div className="text-sm text-muted-foreground">Belum ada server MCP tersimpan.</div>
             ) : (
               serverMcp.map((row) => (
                 <div
@@ -1077,10 +1109,10 @@ export default function SettingsPage() {
                       {row.transport.toUpperCase()} | Status: {row.enabled ? "aktif" : "nonaktif"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {row.transport === "stdio" ? `Command: ${row.command || "-"}` : `URL: ${row.url || "-"}`}
+                      {row.transport === "stdio" ? `Perintah: ${row.command || "-"}` : `URL: ${row.url || "-"}`}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Auth token: {row.has_auth_token ? row.auth_token_masked || "tersimpan" : "tidak ada"}
+                      Token otorisasi: {row.has_auth_token ? row.auth_token_masked || "tersimpan" : "tidak ada"}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -1105,7 +1137,7 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
-              <Label htmlFor="integration-provider">Provider</Label>
+              <Label htmlFor="integration-provider">Penyedia</Label>
               <Input
                 id="integration-provider"
                 value={integrationProvider}
@@ -1114,7 +1146,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="integration-account-id">Account ID</Label>
+              <Label htmlFor="integration-account-id">ID Akun</Label>
               <Input
                 id="integration-account-id"
                 value={integrationAccountId}
@@ -1131,7 +1163,7 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <Label htmlFor="integration-secret">Secret/Token (opsional jika sudah tersimpan)</Label>
+            <Label htmlFor="integration-secret">Rahasia/Token (opsional jika sudah tersimpan)</Label>
             <Input
               id="integration-secret"
               type="password"
@@ -1142,7 +1174,7 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <Label htmlFor="integration-config">Config JSON</Label>
+            <Label htmlFor="integration-config">Konfigurasi JSON</Label>
             <textarea
               id="integration-config"
               className="min-h-[120px] w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground"
@@ -1150,6 +1182,11 @@ export default function SettingsPage() {
               onChange={(event) => setIntegrationConfigText(event.target.value)}
               placeholder='{"base_url":"...", "workspace":"..."}'
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Untuk planner Spio AI: bisa pakai <code>openai/default</code> atau <code>ollama/default</code>, lalu isi{" "}
+              <code>model_id</code> di JSON (contoh: <code>{"{\"model_id\":\"openai/gpt-4o-mini\"}"}</code> atau{" "}
+              <code>{"{\"model_id\":\"qwen3:8b\"}"}</code> untuk Ollama).
+            </p>
           </div>
 
           <Button onClick={simpanAkunIntegrasi}>Simpan Akun Integrasi</Button>
@@ -1172,12 +1209,12 @@ export default function SettingsPage() {
                       <p className="text-sm font-semibold text-foreground">
                         {template?.label || row.provider} / {row.account_id}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Status: {row.enabled ? "aktif" : "nonaktif"} | Secret:{" "}
+                    <p className="text-xs text-muted-foreground">
+                        Status: {row.enabled ? "aktif" : "nonaktif"} | Rahasia:{" "}
                         {row.has_secret ? row.secret_masked || "tersimpan" : "belum diisi"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Auth hint: {template?.auth_hint || "-"} | Config keys: {Object.keys(row.config || {}).join(", ") || "-"}
+                        Petunjuk otorisasi: {template?.auth_hint || "-"} | Kunci konfigurasi: {Object.keys(row.config || {}).join(", ") || "-"}
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -1202,3 +1239,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+

@@ -12,6 +12,13 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from redis.exceptions import RedisError, TimeoutError as RedisTimeoutError
 
+from app.core.auth import (
+    ROLE_ADMIN,
+    extract_auth_token,
+    load_auth_config,
+    resolve_required_role,
+    role_memenuhi,
+)
 from app.core.connector_accounts import (
     delete_telegram_account,
     get_telegram_account,
@@ -117,6 +124,60 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_AUTH_CONFIG = load_auth_config()
+
+
+@app.middleware("http")
+async def auth_rbac_middleware(request: Request, call_next):
+    required_role = resolve_required_role(path=request.url.path, method=request.method)
+    if not required_role:
+        return await call_next(request)
+
+    if not _AUTH_CONFIG.enabled:
+        request.state.auth = {
+            "enabled": False,
+            "role": ROLE_ADMIN,
+            "subject": "auth-disabled",
+        }
+        return await call_next(request)
+
+    token = extract_auth_token(dict(request.headers), _AUTH_CONFIG.header_name, _AUTH_CONFIG.scheme)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "detail": "Unauthorized: missing auth token.",
+                "required_role": required_role,
+            },
+        )
+
+    role = _AUTH_CONFIG.token_roles.get(token, "")
+    if not role:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "detail": "Unauthorized: invalid auth token.",
+                "required_role": required_role,
+            },
+        )
+
+    if not role_memenuhi(required_role, role):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "Forbidden: role is not allowed for this endpoint.",
+                "required_role": required_role,
+                "role": role,
+            },
+        )
+
+    request.state.auth = {
+        "enabled": True,
+        "role": role,
+        "subject": token[:6] + "***",
+    }
+    return await call_next(request)
 
 
 @app.exception_handler(RedisError)
@@ -489,6 +550,14 @@ async def readyz():
 @app.get("/metrics")
 async def metrics():
     return PlainTextResponse(expose_metrics(), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/auth/me")
+async def auth_me(request: Request):
+    auth_ctx = getattr(request.state, "auth", None)
+    if not isinstance(auth_ctx, dict):
+        return {"enabled": False, "role": "unknown", "subject": "n/a"}
+    return auth_ctx
 
 
 @app.post("/planner/plan", response_model=PlannerResponse)

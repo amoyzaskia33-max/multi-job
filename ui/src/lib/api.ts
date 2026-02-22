@@ -1,6 +1,10 @@
 import { toast } from "sonner";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const API_AUTH_STORAGE_KEY = "spio_api_token";
+const API_AUTH_HEADER = process.env.NEXT_PUBLIC_API_AUTH_HEADER || "Authorization";
+const API_AUTH_SCHEME = process.env.NEXT_PUBLIC_API_AUTH_SCHEME || "Bearer";
+const API_AUTH_TOKEN_ENV = process.env.NEXT_PUBLIC_API_TOKEN || "";
 
 export interface JobSpec {
   job_id: string;
@@ -311,8 +315,80 @@ const handleApiError = <T>(error: unknown, message: string, fallback: T): T => {
   return fallback;
 };
 
+const getStoredApiToken = (): string => {
+  if (typeof window === "undefined") return "";
+  try {
+    return (window.localStorage.getItem(API_AUTH_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+};
+
+const resolveApiToken = (): string => {
+  const token = getStoredApiToken();
+  if (token) return token;
+  return String(API_AUTH_TOKEN_ENV || "").trim();
+};
+
+const buildAuthHeaders = (): HeadersInit => {
+  const token = resolveApiToken();
+  if (!token) return {};
+
+  if (API_AUTH_HEADER.toLowerCase() === "authorization") {
+    const scheme = String(API_AUTH_SCHEME || "").trim();
+    return {
+      [API_AUTH_HEADER]: scheme ? `${scheme} ${token}` : token,
+    };
+  }
+
+  return {
+    [API_AUTH_HEADER]: token,
+  };
+};
+
+const buildHeaders = (withJsonContentType: boolean): HeadersInit => {
+  const headers: Record<string, string> = {};
+  if (withJsonContentType) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const authHeaders = buildAuthHeaders() as Record<string, string>;
+  for (const [key, value] of Object.entries(authHeaders)) {
+    headers[key] = value;
+  }
+
+  return headers;
+};
+
+export const setApiAuthToken = (token: string): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const value = String(token || "").trim();
+    if (!value) {
+      window.localStorage.removeItem(API_AUTH_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(API_AUTH_STORAGE_KEY, value);
+  } catch {
+    // no-op
+  }
+};
+
+export const clearApiAuthToken = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(API_AUTH_STORAGE_KEY);
+  } catch {
+    // no-op
+  }
+};
+
+export const getApiAuthToken = (): string => resolveApiToken();
+
 const getJson = async <T>(path: string): Promise<T> => {
-  const response = await fetch(`${API_BASE}${path}`);
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: buildHeaders(false),
+  });
   if (!response.ok) {
     throw new Error(`${response.status} ${response.statusText}`);
   }
@@ -322,7 +398,7 @@ const getJson = async <T>(path: string): Promise<T> => {
 const send = async <T>(path: string, method: "POST" | "PUT" | "DELETE", body?: unknown): Promise<T> => {
   const response = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: buildHeaders(Boolean(body)),
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
