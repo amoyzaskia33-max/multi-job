@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import uuid
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -16,6 +17,11 @@ from app.core.connector_accounts import (
     get_telegram_account,
     list_telegram_accounts,
     upsert_telegram_account,
+)
+from app.core.agent_memory import (
+    build_agent_memory_context,
+    delete_agent_memory as hapus_agent_memory,
+    list_agent_memories,
 )
 from app.core.approval_queue import (
     decide_approval_request,
@@ -64,10 +70,41 @@ from app.core.queue import (
 )
 from app.core.scheduler import Scheduler
 from app.core.redis_client import close_redis, redis_client
+from app.core.tools.command import PREFIX_PERINTAH_BAWAAN, normalisasi_daftar_prefix_perintah
 from app.services.api.planner import PlannerRequest, PlannerResponse, build_plan_from_prompt
-from app.services.api.planner_ai import PlannerAiRequest, build_plan_with_ai
+from app.services.api.planner_ai import PlannerAiRequest, build_plan_with_ai_dari_dashboard
 from app.services.api.planner_execute import PlannerExecuteRequest, PlannerExecuteResponse, execute_prompt_plan
 from app.services.worker.main import worker_main
+
+
+def _load_cors_allowed_origins() -> List[str]:
+    default_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
+
+    raw = str(os.getenv("CORS_ALLOW_ORIGINS") or "").strip()
+    if not raw:
+        return default_origins
+    if raw == "*":
+        return ["*"]
+
+    origins: List[str] = []
+    sudah = set()
+    for item in raw.split(","):
+        origin = str(item or "").strip().rstrip("/")
+        if not origin:
+            continue
+        key = origin.lower()
+        if key in sudah:
+            continue
+        sudah.add(key)
+        origins.append(origin)
+
+    return origins or default_origins
+
 
 app = FastAPI(
     title="Multi-Job Platform API",
@@ -76,7 +113,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_load_cors_allowed_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -305,6 +342,8 @@ class AgentWorkflowAutomationRequest(BaseModel):
     failure_cooldown_sec: int = Field(default=120, ge=10, le=86400)
     failure_cooldown_max_sec: int = Field(default=3600, ge=10, le=604800)
     failure_memory_enabled: bool = True
+    command_allow_prefixes: List[str] = Field(default_factory=lambda: list(PREFIX_PERINTAH_BAWAAN))
+    allow_sensitive_commands: bool = False
     timeout_ms: int = Field(default=90000, ge=5000, le=300000)
     max_retry: int = Field(default=1, ge=0, le=10)
     backoff_sec: List[int] = Field(default_factory=lambda: [2, 5])
@@ -323,6 +362,8 @@ class ApprovalRequestView(BaseModel):
     approval_requests: List[Dict[str, Any]] = Field(default_factory=list)
     available_providers: Dict[str, Any] = Field(default_factory=dict)
     available_mcp_servers: List[Any] = Field(default_factory=list)
+    command_allow_prefixes_requested: List[str] = Field(default_factory=list)
+    command_allow_prefixes_rejected: List[str] = Field(default_factory=list)
     created_at: str
     updated_at: str
     decided_at: Optional[str] = None
@@ -344,6 +385,32 @@ class JobMemoryView(BaseModel):
     last_failure_at: Optional[str] = None
     last_success_at: Optional[str] = None
     updated_at: str
+
+
+class AgentMemoryFailureView(BaseModel):
+    at: str
+    signature: str
+    error: str
+
+
+class AgentMemoryView(BaseModel):
+    agent_key: str
+    total_runs: int
+    success_runs: int
+    failed_runs: int
+    success_rate: float
+    last_error: str
+    last_summary: str
+    avoid_signatures: List[str] = Field(default_factory=list)
+    top_failure_signatures: List[str] = Field(default_factory=list)
+    recent_failures: List[AgentMemoryFailureView] = Field(default_factory=list)
+    updated_at: str
+
+
+class AgentMemoryResetView(BaseModel):
+    agent_key: str
+    deleted: bool
+    status: str
 
 
 async def _start_local_runtime():
@@ -442,7 +509,7 @@ async def planner_plan(request: PlannerRequest):
 
 @app.post("/planner/plan-ai", response_model=PlannerResponse)
 async def planner_plan_ai(request: PlannerAiRequest):
-    rencana = build_plan_with_ai(request)
+    rencana = await build_plan_with_ai_dari_dashboard(request)
 
     with suppress(Exception):
         await append_event(
@@ -648,6 +715,9 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
     jadwal = Schedule(cron=cron, interval_sec=interval_sec)
     retry_policy = RetryPolicy(max_retry=request.max_retry, backoff_sec=list(request.backoff_sec))
     flow_group = request.flow_group.strip() or "default"
+    command_allow_prefixes = normalisasi_daftar_prefix_perintah(request.command_allow_prefixes)
+    if not command_allow_prefixes:
+        command_allow_prefixes = list(PREFIX_PERINTAH_BAWAAN)
     spesifikasi = JobSpec(
         job_id=job_id,
         type="agent.workflow",
@@ -669,6 +739,8 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
             "failure_cooldown_sec": request.failure_cooldown_sec,
             "failure_cooldown_max_sec": request.failure_cooldown_max_sec,
             "failure_memory_enabled": request.failure_memory_enabled,
+            "command_allow_prefixes": command_allow_prefixes,
+            "allow_sensitive_commands": request.allow_sensitive_commands,
         },
     )
 
@@ -1115,6 +1187,37 @@ async def agents():
         return rows
     except RedisError:
         return _fallback_payload("/agents", _local_agents_snapshot())
+
+
+@app.get("/agents/memory", response_model=List[AgentMemoryView])
+async def agents_memory(limit: int = Query(default=100, ge=1, le=500)):
+    try:
+        rows = await list_agent_memories(limit=limit)
+        return [build_agent_memory_context(row) for row in rows]
+    except RedisError:
+        return _fallback_payload("/agents/memory", [])
+
+
+@app.delete("/agents/memory/{agent_key}", response_model=AgentMemoryResetView)
+async def reset_agent_memory(agent_key: str):
+    normalized = str(agent_key or "").strip().lower()[:128]
+    if not normalized:
+        raise HTTPException(status_code=400, detail="agent_key is required")
+
+    deleted = await hapus_agent_memory(normalized)
+    status = "cleared" if deleted else "not_found"
+
+    with suppress(Exception):
+        await append_event(
+            "agent.memory_reset",
+            {"agent_key": normalized, "deleted": deleted},
+        )
+
+    return {
+        "agent_key": normalized,
+        "deleted": deleted,
+        "status": status,
+    }
 
 
 @app.get("/runs")

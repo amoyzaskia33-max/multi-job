@@ -27,6 +27,7 @@ export interface Run {
   scheduled_at: string;
   started_at?: string;
   finished_at?: string;
+  inputs?: Record<string, unknown>;
   result?: {
     success: boolean;
     output?: Record<string, unknown>;
@@ -179,6 +180,32 @@ export interface Agent {
   version?: string;
 }
 
+export interface AgentMemoryFailure {
+  at: string;
+  signature: string;
+  error: string;
+}
+
+export interface AgentMemorySummary {
+  agent_key: string;
+  total_runs: number;
+  success_runs: number;
+  failed_runs: number;
+  success_rate: number;
+  last_error: string;
+  last_summary: string;
+  avoid_signatures: string[];
+  top_failure_signatures: string[];
+  recent_failures: AgentMemoryFailure[];
+  updated_at: string;
+}
+
+export interface AgentMemoryResetResponse {
+  agent_key: string;
+  deleted: boolean;
+  status: "cleared" | "not_found";
+}
+
 export interface SystemMetrics {
   queue_depth: number;
   delayed_count: number;
@@ -218,6 +245,9 @@ export interface PlannerExecuteRequest {
   prompt: string;
   use_ai?: boolean;
   force_rule_based?: boolean;
+  ai_provider?: string;
+  ai_account_id?: string;
+  openai_account_id?: string;
   run_immediately?: boolean;
   wait_seconds?: number;
   timezone?: string;
@@ -242,6 +272,8 @@ export interface AgentWorkflowAutomationRequest {
   failure_cooldown_sec?: number;
   failure_cooldown_max_sec?: number;
   failure_memory_enabled?: boolean;
+  command_allow_prefixes?: string[];
+  allow_sensitive_commands?: boolean;
   timeout_ms?: number;
   max_retry?: number;
   backoff_sec?: number[];
@@ -264,6 +296,8 @@ export interface ApprovalRequest {
   approval_requests: Record<string, unknown>[];
   available_providers: Record<string, unknown>;
   available_mcp_servers: unknown[];
+  command_allow_prefixes_requested: string[];
+  command_allow_prefixes_rejected: string[];
   created_at: string;
   updated_at: string;
   decided_at?: string;
@@ -499,6 +533,23 @@ export const getAgents = async (): Promise<Agent[]> => {
     return await getJson<Agent[]>("/agents");
   } catch (error) {
     return handleApiError(error, "Gagal memuat data agen", []);
+  }
+};
+
+export const getAgentMemories = async (limit = 100): Promise<AgentMemorySummary[]> => {
+  try {
+    const query = new URLSearchParams({ limit: String(limit) });
+    return await getJson<AgentMemorySummary[]>(`/agents/memory?${query.toString()}`);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat memori agen", []);
+  }
+};
+
+export const resetAgentMemory = async (agentKey: string): Promise<AgentMemoryResetResponse | undefined> => {
+  try {
+    return await send<AgentMemoryResetResponse>(`/agents/memory/${encodeURIComponent(agentKey)}`, "DELETE");
+  } catch (error) {
+    return handleApiError(error, "Gagal reset memori agen", undefined);
   }
 };
 

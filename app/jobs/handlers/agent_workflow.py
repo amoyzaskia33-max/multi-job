@@ -1,13 +1,26 @@
 import json
 import os
+import inspect
 from contextlib import suppress
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 import aiohttp
 
+from app.core.agent_memory import (
+    build_agent_memory_context,
+    get_agent_memory,
+    record_agent_workflow_outcome,
+)
+from app.core.approval_queue import list_approval_requests
 from app.core.integration_configs import list_integration_accounts, list_mcp_servers
 from app.core.queue import append_event
+from app.core.tools.command import (
+    PREFIX_PERINTAH_BAWAAN,
+    normalisasi_daftar_prefix_perintah,
+    perintah_diizinkan_oleh_prefix,
+    perintah_termasuk_sensitif,
+)
 
 OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
@@ -20,6 +33,60 @@ DEFAULT_PROVIDER_BASE_URLS: Dict[str, str] = {
     "notion": "https://api.notion.com/v1",
     "linear": "https://api.linear.app/graphql",
 }
+
+
+def _ambil_prefix_perintah_baseline() -> List[str]:
+    raw = os.getenv("AGENT_COMMAND_ALLOW_PREFIXES", "")
+    prefix = normalisasi_daftar_prefix_perintah(raw)
+    if prefix:
+        return prefix
+    return list(PREFIX_PERINTAH_BAWAAN)
+
+
+def _ambil_kebijakan_prefix_perintah(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    baseline = _ambil_prefix_perintah_baseline()
+    requested = normalisasi_daftar_prefix_perintah(inputs.get("command_allow_prefixes"))
+
+    if not requested:
+        return {
+            "baseline": baseline,
+            "requested": [],
+            "effective": baseline,
+            "rejected": [],
+        }
+
+    allowed_subset: List[str] = []
+    rejected: List[str] = []
+    for prefix in requested:
+        if perintah_diizinkan_oleh_prefix(prefix, baseline):
+            allowed_subset.append(prefix)
+        else:
+            rejected.append(prefix)
+
+    effective = allowed_subset if allowed_subset else baseline
+    return {
+        "baseline": baseline,
+        "requested": requested,
+        "effective": effective,
+        "rejected": rejected,
+    }
+
+
+def _buat_request_izin_prefix_perintah(prefixes: List[str]) -> List[Dict[str, Any]]:
+    requests: List[Dict[str, Any]] = []
+    for prefix in prefixes:
+        teks = str(prefix or "").strip()
+        if not teks:
+            continue
+        requests.append(
+            _buat_request_izin(
+                kind="command_prefix",
+                command=teks,
+                reason=f"Prefix command '{teks}' berada di luar baseline allowlist backend.",
+                action_hint="Minta admin menambah prefix via env AGENT_COMMAND_ALLOW_PREFIXES atau policy backend.",
+            )
+        )
+    return _hapus_duplikat_request_izin(requests)
 
 
 def _normalisasi_id_model(model_id: str) -> str:
@@ -108,6 +175,22 @@ def _sanitasi_rencana(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "body": row.get("body"),
             }
             steps.append(step)
+        elif kind == "local_command":
+            perintah = str(row.get("command") or "").strip()
+            if not perintah:
+                continue
+            raw_timeout = row.get("timeout_sec", 180)
+            try:
+                timeout_sec = int(raw_timeout)
+            except Exception:
+                timeout_sec = 180
+            step = {
+                "kind": "local_command",
+                "command": perintah,
+                "workdir": str(row.get("workdir") or "").strip(),
+                "timeout_sec": max(1, min(1800, timeout_sec)),
+            }
+            steps.append(step)
 
         if len(steps) >= MAX_STEPS:
             break
@@ -129,6 +212,101 @@ def _ringkas_teks(raw: Any, limit: int = PREVIEW_LIMIT) -> str:
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 3)] + "..."
+
+
+def _tentukan_agent_key(ctx: Any, inputs: Dict[str, Any]) -> str:
+    kandidat = [
+        str(inputs.get("agent_key") or "").strip(),
+        str(inputs.get("flow_group") or "").strip(),
+    ]
+
+    kanal = str(inputs.get("default_channel") or "").strip().lower()
+    akun = str(inputs.get("default_account_id") or "").strip().lower()
+    if kanal and akun:
+        kandidat.append(f"{kanal}:{akun}")
+
+    job_id = str(getattr(ctx, "job_id", "") or "").strip()
+    if job_id:
+        kandidat.append(f"job:{job_id}")
+
+    for row in kandidat:
+        if row:
+            return row.lower()[:128]
+    return "agent:umum"
+
+
+def _signature_dari_step_rencana(step: Dict[str, Any]) -> str:
+    kind = str(step.get("kind") or "").strip().lower()
+    if kind == "provider_http":
+        provider = str(step.get("provider") or "").strip().lower()
+        method = str(step.get("method") or "GET").strip().upper()
+        path = str(step.get("path") or "").strip().lower()
+        return f"provider_http:{provider}:{method}:{path}"
+    if kind == "mcp_http":
+        server_id = str(step.get("server_id") or "").strip().lower()
+        method = str(step.get("method") or "GET").strip().upper()
+        path = str(step.get("path") or "").strip().lower()
+        return f"mcp_http:{server_id}:{method}:{path}"
+    if kind == "local_command":
+        command = " ".join(str(step.get("command") or "").strip().lower().split())
+        return f"local_command:{command[:120]}"
+    return ""
+
+
+def _terapkan_guardrail_memori(
+    rencana: Dict[str, Any],
+    memory_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    avoid_signatures = {
+        str(item).strip().lower()
+        for item in memory_context.get("avoid_signatures", [])
+        if str(item).strip()
+    }
+    if not avoid_signatures:
+        rencana["memory_guardrail"] = []
+        return rencana
+
+    steps = rencana.get("steps", [])
+    if not isinstance(steps, list):
+        rencana["memory_guardrail"] = []
+        return rencana
+
+    filtered: List[Dict[str, Any]] = []
+    blocked: List[Dict[str, Any]] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        signature = _signature_dari_step_rencana(step)
+        if signature and signature.lower() in avoid_signatures:
+            blocked.append(
+                {
+                    "signature": signature,
+                    "kind": str(step.get("kind") or ""),
+                    "reason": "Diblokir memori karena pola gagal berulang.",
+                }
+            )
+            continue
+        filtered.append(step)
+
+    if not filtered:
+        filtered = [
+            {
+                "kind": "note",
+                "text": "Semua langkah aksi diblokir memori agen karena pola gagal berulang. "
+                "Butuh puzzle alternatif atau approval manual.",
+            }
+        ]
+
+    rencana["steps"] = filtered[:MAX_STEPS]
+    rencana["memory_guardrail"] = blocked[:10]
+    if blocked:
+        summary = str(rencana.get("summary") or "").strip()
+        rencana["summary"] = (
+            f"{summary} Guardrail memori memblokir {len(blocked)} langkah berisiko."
+            if summary
+            else f"Guardrail memori memblokir {len(blocked)} langkah berisiko."
+        )
+    return rencana
 
 
 def _tentukan_url_dasar_provider(provider: str, account: Dict[str, Any]) -> str:
@@ -222,6 +400,7 @@ def _buat_request_izin(
     provider: Optional[str] = None,
     account_id: Optional[str] = None,
     server_id: Optional[str] = None,
+    command: Optional[str] = None,
     action_hint: str = "",
 ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
@@ -235,6 +414,8 @@ def _buat_request_izin(
         payload["account_id"] = account_id.strip()
     if server_id:
         payload["server_id"] = server_id.strip()
+    if command:
+        payload["command"] = command.strip()
     return payload
 
 
@@ -248,6 +429,7 @@ def _hapus_duplikat_request_izin(requests: List[Dict[str, Any]]) -> List[Dict[st
                 "provider": item.get("provider"),
                 "account_id": item.get("account_id"),
                 "server_id": item.get("server_id"),
+                "command": item.get("command"),
                 "reason": item.get("reason"),
             },
             sort_keys=True,
@@ -263,8 +445,13 @@ def _kumpulkan_request_izin_dari_rencana(
     steps: List[Dict[str, Any]],
     provider_catalog: Dict[str, List[Dict[str, Any]]],
     mcp_catalog: Dict[str, Dict[str, Any]],
+    command_allow_prefixes: List[str],
+    allow_sensitive_commands: bool,
+    approved_sensitive_commands: List[str],
 ) -> List[Dict[str, Any]]:
     requests: List[Dict[str, Any]] = []
+
+    perintah_sensitif_disetujui = {str(item or "").strip().lower() for item in approved_sensitive_commands}
 
     for step in steps:
         kind = str(step.get("kind") or "").strip().lower()
@@ -313,6 +500,36 @@ def _kumpulkan_request_izin_dari_rencana(
                     )
                 )
 
+        if kind == "local_command":
+            perintah = str(step.get("command") or "").strip()
+            if not perintah:
+                continue
+
+            if (
+                perintah_termasuk_sensitif(perintah)
+                and not allow_sensitive_commands
+                and perintah.lower() not in perintah_sensitif_disetujui
+            ):
+                requests.append(
+                    _buat_request_izin(
+                        kind="command_sensitive",
+                        command=perintah,
+                        reason=f"Perintah sensitif butuh review manual: {perintah}",
+                        action_hint="Set allow_sensitive_commands=true setelah approval manual.",
+                    )
+                )
+                continue
+
+            if not perintah_diizinkan_oleh_prefix(perintah, command_allow_prefixes):
+                requests.append(
+                    _buat_request_izin(
+                        kind="command_policy",
+                        command=perintah,
+                        reason=f"Perintah tidak ada di allowlist prefix: {perintah}",
+                        action_hint="Minta admin menambah prefix via env AGENT_COMMAND_ALLOW_PREFIXES atau policy backend.",
+                    )
+                )
+
     return _hapus_duplikat_request_izin(requests)
 
 
@@ -324,6 +541,8 @@ def _buat_respons_butuh_izin(
     approval_requests: List[Dict[str, Any]],
     provider_catalog: Dict[str, List[Dict[str, Any]]],
     mcp_catalog: Dict[str, Dict[str, Any]],
+    command_allow_prefixes: List[str],
+    allow_sensitive_commands: bool,
 ) -> Dict[str, Any]:
     provider_tersedia = {
         provider: sorted({str(row.get("account_id") or "default") for row in rows})
@@ -346,12 +565,39 @@ def _buat_respons_butuh_izin(
         "approval_requests": approval_requests,
         "available_providers": provider_tersedia,
         "available_mcp_servers": server_mcp_tersedia,
+        "command_allow_prefixes": command_allow_prefixes,
+        "allow_sensitive_commands": allow_sensitive_commands,
     }
+
+
+async def _muat_perintah_sensitif_disetujui(limit: int = 200) -> List[str]:
+    try:
+        rows = await list_approval_requests(status="approved", limit=limit)
+    except Exception:
+        return []
+
+    hasil = set()
+    for row in rows:
+        daftar_request = row.get("approval_requests", [])
+        if not isinstance(daftar_request, list):
+            continue
+        for item in daftar_request:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("kind") or "").strip().lower() != "command_sensitive":
+                continue
+            perintah = str(item.get("command") or "").strip().lower()
+            if perintah:
+                hasil.add(perintah)
+    return sorted(hasil)
 
 
 def _bangun_prompt_sistem_planner(
     provider_catalog: Dict[str, List[Dict[str, Any]]],
     mcp_catalog: Dict[str, Dict[str, Any]],
+    command_allow_prefixes: List[str],
+    allow_sensitive_commands: bool,
+    agent_memory_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     provider_lines: List[str] = []
     for provider, rows in sorted(provider_catalog.items()):
@@ -368,6 +614,31 @@ def _bangun_prompt_sistem_planner(
     if not mcp_lines:
         mcp_lines = ["- (none)"]
 
+    command_lines = [f"- {row}" for row in command_allow_prefixes] or ["- (none)"]
+
+    memory_ctx = agent_memory_context if isinstance(agent_memory_context, dict) else {}
+    memory_lines: List[str] = []
+    if memory_ctx:
+        memory_lines.append(f"- agent_key: {str(memory_ctx.get('agent_key') or '-')}")
+        memory_lines.append(f"- total_runs: {int(memory_ctx.get('total_runs') or 0)}")
+        memory_lines.append(f"- success_rate: {float(memory_ctx.get('success_rate') or 0.0)}%")
+        avoid_rows = memory_ctx.get("avoid_signatures", [])
+        if isinstance(avoid_rows, list) and avoid_rows:
+            memory_lines.append("- avoid_signatures:")
+            for row in avoid_rows[:8]:
+                memory_lines.append(f"  - {str(row)}")
+        recent_failures = memory_ctx.get("recent_failures", [])
+        if isinstance(recent_failures, list) and recent_failures:
+            memory_lines.append("- recent_failures:")
+            for row in recent_failures[:5]:
+                if not isinstance(row, dict):
+                    continue
+                signature = str(row.get("signature") or "-")
+                error = _ringkas_teks(row.get("error"), 120)
+                memory_lines.append(f"  - {signature} -> {error}")
+    if not memory_lines:
+        memory_lines = ["- (none)"]
+
     return (
         "You are an integration workflow planner.\n"
         "Return ONLY valid JSON object with this schema:\n"
@@ -381,17 +652,25 @@ def _bangun_prompt_sistem_planner(
         '      {"kind":"provider_http","provider":"github","account_id":"default","method":"GET","path":"/user","headers":{},"body":null}\n'
         "    mcp HTTP step:\n"
         '      {"kind":"mcp_http","server_id":"mcp_main","method":"GET","path":"/health","headers":{},"body":null}\n'
+        "    local command step:\n"
+        '      {"kind":"local_command","command":"pytest -q","workdir":"./","timeout_sec":300}\n'
         "  ]\n"
         "}\n"
         "Rules:\n"
         "1) Maximum 5 steps.\n"
         "2) Use only providers and MCP servers from catalog below.\n"
-        "3) Prefer provider_http/mcp_http steps when actionable.\n"
-        "4) If action is unclear, provide a single note step.\n\n"
+        "3) Prefer provider_http/mcp_http/local_command when actionable.\n"
+        "4) Never generate destructive commands (rm -rf, del /f, format, git reset --hard).\n"
+        "5) If action is unclear, provide a single note step.\n\n"
         "Providers:\n"
         + "\n".join(provider_lines)
         + "\n\nMCP servers:\n"
         + "\n".join(mcp_lines)
+        + "\n\nAllowed local command prefixes:\n"
+        + "\n".join(command_lines)
+        + "\n\nAgent memory context (avoid repeating failed patterns):\n"
+        + "\n".join(memory_lines)
+        + f"\n\nallow_sensitive_commands={str(bool(allow_sensitive_commands)).lower()}"
     )
 
 
@@ -401,13 +680,25 @@ async def _rencanakan_aksi_dengan_openai(
     api_key: str,
     provider_catalog: Dict[str, List[Dict[str, Any]]],
     mcp_catalog: Dict[str, Dict[str, Any]],
+    command_allow_prefixes: List[str],
+    allow_sensitive_commands: bool,
+    agent_memory_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     payload = {
         "model": model_id,
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
         "messages": [
-            {"role": "system", "content": _bangun_prompt_sistem_planner(provider_catalog, mcp_catalog)},
+            {
+                "role": "system",
+                "content": _bangun_prompt_sistem_planner(
+                    provider_catalog,
+                    mcp_catalog,
+                    command_allow_prefixes,
+                    allow_sensitive_commands,
+                    agent_memory_context,
+                ),
+            },
             {"role": "user", "content": prompt},
         ],
     }
@@ -445,6 +736,37 @@ async def _rencanakan_aksi_dengan_openai(
     if not parsed:
         raise RuntimeError("OpenAI planner did not return valid JSON plan.")
     return parsed
+
+
+async def _panggil_planner_openai(
+    *,
+    prompt: str,
+    model_id: str,
+    api_key: str,
+    provider_catalog: Dict[str, List[Dict[str, Any]]],
+    mcp_catalog: Dict[str, Dict[str, Any]],
+    command_allow_prefixes: List[str],
+    allow_sensitive_commands: bool,
+    agent_memory_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    kwargs = {
+        "prompt": prompt,
+        "model_id": model_id,
+        "api_key": api_key,
+        "provider_catalog": provider_catalog,
+        "mcp_catalog": mcp_catalog,
+        "command_allow_prefixes": command_allow_prefixes,
+        "allow_sensitive_commands": allow_sensitive_commands,
+    }
+
+    try:
+        signature = inspect.signature(_rencanakan_aksi_dengan_openai)
+        if "agent_memory_context" in signature.parameters:
+            kwargs["agent_memory_context"] = agent_memory_context
+    except Exception:
+        pass
+
+    return await _rencanakan_aksi_dengan_openai(**kwargs)
 
 
 def _langkah_sukses_dari_hasil_http(result: Dict[str, Any]) -> bool:
@@ -590,24 +912,147 @@ async def _eksekusi_langkah_mcp_http(
     }
 
 
+async def _eksekusi_langkah_perintah_lokal(
+    ctx,
+    step: Dict[str, Any],
+    command_tool,
+    command_allow_prefixes: List[str],
+    allow_sensitive_commands: bool,
+    approved_sensitive_commands: List[str],
+) -> Dict[str, Any]:
+    perintah = str(step.get("command") or "").strip()
+    workdir = str(step.get("workdir") or "").strip()
+    timeout_sec = int(step.get("timeout_sec") or 180)
+
+    if not command_tool:
+        return {
+            "kind": "local_command",
+            "command": perintah,
+            "workdir": workdir or ".",
+            "timeout_sec": timeout_sec,
+            "success": False,
+            "error": "command tool is not available",
+        }
+
+    perintah_disetujui = {str(item or "").strip().lower() for item in approved_sensitive_commands}
+    izinkan_sensitif_langkah = allow_sensitive_commands or perintah.lower() in perintah_disetujui
+
+    payload = {
+        "command": perintah,
+        "workdir": workdir,
+        "timeout_sec": timeout_sec,
+        "allow_prefixes": command_allow_prefixes,
+        "allow_sensitive": izinkan_sensitif_langkah,
+    }
+    hasil = await command_tool.run(payload, ctx)
+    return {
+        "kind": "local_command",
+        "command": perintah,
+        "workdir": str(hasil.get("workdir") or workdir or "."),
+        "timeout_sec": timeout_sec,
+        "success": bool(hasil.get("success", False)),
+        "exit_code": hasil.get("exit_code"),
+        "duration_ms": hasil.get("duration_ms"),
+        "stdout_preview": _ringkas_teks(hasil.get("stdout")),
+        "stderr_preview": _ringkas_teks(hasil.get("stderr")),
+        "error": hasil.get("error"),
+    }
+
+
 async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
     prompt_pengguna = str(inputs.get("prompt") or "").strip()
     if not prompt_pengguna:
         return {"success": False, "error": "prompt is required"}
 
+    agent_key = _tentukan_agent_key(ctx, inputs)
+    memori_agent = await get_agent_memory(agent_key)
+    konteks_memori = build_agent_memory_context(memori_agent)
+
+    async def _muat_konteks_memori_terbaru() -> Dict[str, Any]:
+        nonlocal konteks_memori
+        with suppress(Exception):
+            memori_terbaru = await get_agent_memory(agent_key)
+            konteks_memori = build_agent_memory_context(memori_terbaru)
+        return konteks_memori
+
+    async def _catat_memori(
+        *,
+        success: bool,
+        summary: str,
+        final_message: str,
+        step_results: Optional[List[Dict[str, Any]]] = None,
+        error: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with suppress(Exception):
+            await record_agent_workflow_outcome(
+                agent_key=agent_key,
+                prompt=prompt_pengguna,
+                success=success,
+                summary=summary,
+                final_message=final_message,
+                step_results=step_results or [],
+                error=error,
+            )
+        return await _muat_konteks_memori_terbaru()
+
     alat_http = ctx.tools.get("http")
     if not alat_http:
         return {"success": False, "error": "http tool is not available"}
+    alat_command = ctx.tools.get("command")
 
     daftar_integrasi = await list_integration_accounts(include_secret=True)
     daftar_mcp = await list_mcp_servers(include_secret=True)
 
     katalog_provider = _katalog_akun(daftar_integrasi)
     katalog_mcp = _katalog_mcp(daftar_mcp)
+    perlu_izin_saat_kurang = bool(inputs.get("require_approval_for_missing", True))
+    kebijakan_prefix = _ambil_kebijakan_prefix_perintah(inputs)
+    daftar_prefix_perintah = kebijakan_prefix["effective"]
+    prefix_perintah_diminta = kebijakan_prefix["requested"]
+    prefix_perintah_ditolak = kebijakan_prefix["rejected"]
+    izinkan_perintah_sensitif = bool(inputs.get("allow_sensitive_commands", False))
+    perintah_sensitif_disetujui = await _muat_perintah_sensitif_disetujui() if not izinkan_perintah_sensitif else []
+
+    if prefix_perintah_ditolak:
+        requests = _buat_request_izin_prefix_perintah(prefix_perintah_ditolak)
+        if requests and perlu_izin_saat_kurang:
+            with suppress(Exception):
+                await append_event(
+                    "agent.approval_requested",
+                    {
+                        "prompt": prompt_pengguna[:200],
+                        "reason": "command_prefix_extension_requested",
+                        "request_count": len(requests),
+                        "requests": requests,
+                    },
+                )
+
+            konteks_memori_terbaru = await _catat_memori(
+                success=False,
+                summary="Workflow butuh approval untuk memperluas command allowlist.",
+                final_message="",
+                step_results=[],
+                error="requires_approval_for_command_prefix_extension",
+            )
+
+            response_izin = _buat_respons_butuh_izin(
+                prompt=prompt_pengguna,
+                summary="Workflow butuh approval untuk prefix command di luar allowlist backend.",
+                model_id="",
+                approval_requests=requests,
+                provider_catalog=katalog_provider,
+                mcp_catalog=katalog_mcp,
+                command_allow_prefixes=daftar_prefix_perintah,
+                allow_sensitive_commands=izinkan_perintah_sensitif,
+            )
+            response_izin["agent_key"] = agent_key
+            response_izin["memory_context"] = konteks_memori_terbaru
+            response_izin["command_allow_prefixes_requested"] = prefix_perintah_diminta
+            response_izin["command_allow_prefixes_rejected"] = prefix_perintah_ditolak
+            return response_izin
 
     akun_openai_pilihan = str(inputs.get("openai_account_id") or "default").strip() or "default"
     akun_openai = _pilih_akun(katalog_provider, "openai", akun_openai_pilihan)
-    perlu_izin_saat_kurang = bool(inputs.get("require_approval_for_missing", True))
 
     kunci_api_openai = ""
     id_model_openai = str(inputs.get("model_id") or "").strip()
@@ -639,17 +1084,38 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
             approval_requests=requests,
             provider_catalog=katalog_provider,
             mcp_catalog=katalog_mcp,
+            command_allow_prefixes=daftar_prefix_perintah,
+            allow_sensitive_commands=izinkan_perintah_sensitif,
         )
+        with_izin["agent_key"] = agent_key
+        with_izin["command_allow_prefixes_requested"] = prefix_perintah_diminta
+        with_izin["command_allow_prefixes_rejected"] = prefix_perintah_ditolak
         with suppress(Exception):
             await append_event(
                 "agent.approval_requested",
                 {"prompt": prompt_pengguna[:200], "reason": "missing_openai_key", "requests": requests},
             )
+        konteks_memori_terbaru = await _catat_memori(
+            success=False,
+            summary=(
+                "Planner berhenti karena token OpenAI belum tersedia."
+                if perlu_izin_saat_kurang
+                else "Planner gagal karena OpenAI API key belum tersedia."
+            ),
+            final_message="",
+            step_results=[],
+            error="missing_openai_key" if perlu_izin_saat_kurang else "openai_api_key_missing",
+        )
         if perlu_izin_saat_kurang:
+            with_izin["memory_context"] = konteks_memori_terbaru
             return with_izin
 
         return {
             "success": False,
+            "agent_key": agent_key,
+            "memory_context": konteks_memori_terbaru,
+            "command_allow_prefixes_requested": prefix_perintah_diminta,
+            "command_allow_prefixes_rejected": prefix_perintah_ditolak,
             "error": "OpenAI API key belum tersedia. Isi provider 'openai' di dashboard atau set OPENAI_API_KEY.",
         }
 
@@ -658,21 +1124,40 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     try:
-        rencana_raw = await _rencanakan_aksi_dengan_openai(
+        rencana_raw = await _panggil_planner_openai(
             prompt=prompt_pengguna,
             model_id=model_id,
             api_key=kunci_api_openai,
             provider_catalog=katalog_provider,
             mcp_catalog=katalog_mcp,
+            command_allow_prefixes=daftar_prefix_perintah,
+            allow_sensitive_commands=izinkan_perintah_sensitif,
+            agent_memory_context=konteks_memori,
         )
         rencana = _sanitasi_rencana(rencana_raw)
+        rencana = _terapkan_guardrail_memori(rencana, konteks_memori)
     except Exception as exc:
-        return {"success": False, "error": f"Agent planner gagal: {exc}"}
+        konteks_memori_terbaru = await _catat_memori(
+            success=False,
+            summary="Agent planner gagal menyusun langkah.",
+            final_message="",
+            step_results=[],
+            error=str(exc),
+        )
+        return {
+            "success": False,
+            "agent_key": agent_key,
+            "memory_context": konteks_memori_terbaru,
+            "error": f"Agent planner gagal: {exc}",
+        }
 
     request_izin = _kumpulkan_request_izin_dari_rencana(
         rencana["steps"],
         provider_catalog=katalog_provider,
         mcp_catalog=katalog_mcp,
+        command_allow_prefixes=daftar_prefix_perintah,
+        allow_sensitive_commands=izinkan_perintah_sensitif,
+        approved_sensitive_commands=perintah_sensitif_disetujui,
     )
     if request_izin and perlu_izin_saat_kurang:
         with suppress(Exception):
@@ -685,14 +1170,29 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                     "requests": request_izin,
                 },
             )
-        return _buat_respons_butuh_izin(
+        konteks_memori_terbaru = await _catat_memori(
+            success=False,
+            summary="Rencana ada, tapi perlu approval untuk resource/puzzle baru.",
+            final_message="",
+            step_results=[],
+            error="requires_approval_for_missing_resources",
+        )
+        response_izin = _buat_respons_butuh_izin(
             prompt=prompt_pengguna,
             summary="Rencana ada, tapi perlu izin untuk menambah puzzle/skill.",
             model_id=model_id,
             approval_requests=request_izin,
             provider_catalog=katalog_provider,
             mcp_catalog=katalog_mcp,
+            command_allow_prefixes=daftar_prefix_perintah,
+            allow_sensitive_commands=izinkan_perintah_sensitif,
         )
+        response_izin["agent_key"] = agent_key
+        response_izin["memory_context"] = konteks_memori_terbaru
+        response_izin["memory_guardrail"] = rencana.get("memory_guardrail", [])
+        response_izin["command_allow_prefixes_requested"] = prefix_perintah_diminta
+        response_izin["command_allow_prefixes_rejected"] = prefix_perintah_ditolak
+        return response_izin
 
     hasil_langkah: List[Dict[str, Any]] = []
     for step in rencana["steps"]:
@@ -711,7 +1211,19 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
             hasil_langkah.append(hasil)
             continue
 
-    langkah_aksi = [row for row in hasil_langkah if row.get("kind") in {"provider_http", "mcp_http"}]
+        if kind == "local_command":
+            hasil = await _eksekusi_langkah_perintah_lokal(
+                ctx,
+                step,
+                alat_command,
+                daftar_prefix_perintah,
+                izinkan_perintah_sensitif,
+                perintah_sensitif_disetujui,
+            )
+            hasil_langkah.append(hasil)
+            continue
+
+    langkah_aksi = [row for row in hasil_langkah if row.get("kind") in {"provider_http", "mcp_http", "local_command"}]
     sukses_total = all(bool(row.get("success")) for row in langkah_aksi) if langkah_aksi else True
 
     provider_tersedia = {
@@ -722,6 +1234,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
 
     hasil = {
         "success": sukses_total,
+        "agent_key": agent_key,
         "summary": rencana["summary"],
         "final_message": rencana.get("final_message") or "",
         "model_id": model_id,
@@ -729,8 +1242,14 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         "steps_planned": len(rencana["steps"]),
         "steps_executed": len(hasil_langkah),
         "step_results": hasil_langkah,
+        "memory_context": konteks_memori,
+        "memory_guardrail": rencana.get("memory_guardrail", []),
         "available_providers": provider_tersedia,
         "available_mcp_servers": server_mcp_tersedia,
+        "command_allow_prefixes": daftar_prefix_perintah,
+        "allow_sensitive_commands": izinkan_perintah_sensitif,
+        "command_allow_prefixes_requested": prefix_perintah_diminta,
+        "command_allow_prefixes_rejected": prefix_perintah_ditolak,
     }
     with suppress(Exception):
         await append_event(
@@ -741,4 +1260,12 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 "steps_executed": len(hasil_langkah),
             },
         )
+    konteks_memori_terbaru = await _catat_memori(
+        success=sukses_total,
+        summary=str(rencana.get("summary") or ""),
+        final_message=str(rencana.get("final_message") or ""),
+        step_results=hasil_langkah,
+        error=None if sukses_total else "workflow_steps_failed",
+    )
+    hasil["memory_context"] = konteks_memori_terbaru
     return hasil
