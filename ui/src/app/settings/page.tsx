@@ -56,6 +56,23 @@ type BulkProviderMeta = {
   job_prefix: string;
 };
 
+type BulkProviderGroupMeta = {
+  id: string;
+  label: string;
+  provider_ids: string[];
+};
+
+type BulkRoutinePreset = {
+  id: string;
+  label: string;
+  post_hour: number;
+  post_minute: number;
+  post_stagger_minute: number;
+  report_hour: number;
+  report_minute: number;
+  reply_interval_sec: number;
+};
+
 const BULK_PROVIDER_META: BulkProviderMeta[] = [
   {
     provider: "instagram_graph",
@@ -196,6 +213,57 @@ const BULK_PROVIDER_META: BulkProviderMeta[] = [
     user_id_label: "Channel ID",
     default_channel: "discord",
     job_prefix: "dc",
+  },
+];
+
+const BULK_PROVIDER_GROUP_META: BulkProviderGroupMeta[] = [
+  {
+    id: "social_media",
+    label: "Social Media",
+    provider_ids: ["instagram_graph", "facebook_graph", "tiktok_open", "x_twitter", "youtube_data", "linkedin"],
+  },
+  {
+    id: "marketplace",
+    label: "Marketplace",
+    provider_ids: ["shopee", "tokopedia", "tiktok_shop", "lazada"],
+  },
+  {
+    id: "messaging",
+    label: "Messaging",
+    provider_ids: ["whatsapp_api", "telegram_api", "slack", "discord"],
+  },
+];
+
+const BULK_ROUTINE_PRESETS: BulkRoutinePreset[] = [
+  {
+    id: "harian_0800",
+    label: "Harian 08:00",
+    post_hour: 8,
+    post_minute: 0,
+    post_stagger_minute: 2,
+    report_hour: 21,
+    report_minute: 0,
+    reply_interval_sec: 60,
+  },
+  {
+    id: "padat_0700",
+    label: "Padat 07:00",
+    post_hour: 7,
+    post_minute: 0,
+    post_stagger_minute: 1,
+    report_hour: 22,
+    report_minute: 0,
+    reply_interval_sec: 30,
+  },
+  {
+    id: "hemat_1000",
+    label: "Hemat 10:00",
+    post_hour: 10,
+    post_minute: 0,
+    post_stagger_minute: 5,
+    report_hour: 20,
+    report_minute: 30,
+    reply_interval_sec: 120,
   },
 ];
 
@@ -383,6 +451,9 @@ export default function SettingsPage() {
   const [instagramJedaPostingMenit, setInstagramJedaPostingMenit] = useState(2);
   const [instagramJamReport, setInstagramJamReport] = useState(21);
   const [instagramMenitReport, setInstagramMenitReport] = useState(0);
+  const [instagramPresetRutinId, setInstagramPresetRutinId] = useState(
+    BULK_ROUTINE_PRESETS[0]?.id || "harian_0800",
+  );
 
   const { data: akunTelegram = [], isLoading: sedangMemuatTelegram, refetch: muatUlangAkunTelegram } = useQuery({
     queryKey: ["telegram-accounts"],
@@ -482,6 +553,36 @@ export default function SettingsPage() {
         .sort((a, b) => a.account_id.localeCompare(b.account_id)),
     [akunIntegrasi, instagramProvider],
   );
+
+  const statistikAkunProviderBulk = useMemo(() => {
+    const output = new Map<string, { total: number; enabled: number; ready: number }>();
+    for (const row of akunIntegrasi) {
+      const current = output.get(row.provider) || { total: 0, enabled: 0, ready: 0 };
+      current.total += 1;
+      if (row.enabled) current.enabled += 1;
+      if (row.has_secret) current.ready += 1;
+      output.set(row.provider, current);
+    }
+    return output;
+  }, [akunIntegrasi]);
+
+  const grupProviderBulk = useMemo(() => {
+    const groups = BULK_PROVIDER_GROUP_META.map((group) => ({
+      id: group.id,
+      label: group.label,
+      rows: group.provider_ids
+        .map((providerId) => BULK_PROVIDER_META_BY_ID.get(providerId))
+        .filter((row): row is BulkProviderMeta => Boolean(row)),
+    })).filter((group) => group.rows.length > 0);
+
+    const knownProviderIds = new Set(groups.flatMap((group) => group.rows.map((row) => row.provider)));
+    const providerLainnya = BULK_PROVIDER_META.filter((row) => !knownProviderIds.has(row.provider));
+    if (providerLainnya.length > 0) {
+      groups.push({ id: "lainnya", label: "Lainnya", rows: providerLainnya });
+    }
+
+    return groups;
+  }, []);
 
   const daftarUpdateSkill = useMemo(
     () =>
@@ -805,6 +906,20 @@ export default function SettingsPage() {
 
     setInstagramRows(rows);
     toast.success(`Editor ${instagramProviderMeta.label} diisi dari ${rows.length} akun tersimpan.`);
+  };
+
+  const terapkanPresetRutinInstagram = (presetId: string) => {
+    const preset = BULK_ROUTINE_PRESETS.find((row) => row.id === presetId);
+    if (!preset) return;
+
+    setInstagramPresetRutinId(preset.id);
+    setInstagramIntervalReplyDetik(preset.reply_interval_sec);
+    setInstagramJamPosting(preset.post_hour);
+    setInstagramMenitPostingAwal(preset.post_minute);
+    setInstagramJedaPostingMenit(preset.post_stagger_minute);
+    setInstagramJamReport(preset.report_hour);
+    setInstagramMenitReport(preset.report_minute);
+    toast.success(`Preset rutin '${preset.label}' diterapkan.`);
   };
 
   const simpanSemuaAkunInstagram = async () => {
@@ -1641,9 +1756,52 @@ export default function SettingsPage() {
             <code>{`${instagramProviderMeta.default_prefix}010`}</code>), lalu generate job harian otomatis.
           </p>
 
+          <div className="space-y-3">
+            <Label>Panel Provider (Klik Langsung)</Label>
+            <div className="space-y-3">
+              {grupProviderBulk.map((group) => (
+                <div key={group.id} className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {group.rows.map((row) => {
+                      const aktif = row.provider === instagramProvider;
+                      const stats = statistikAkunProviderBulk.get(row.provider) || {
+                        total: 0,
+                        enabled: 0,
+                        ready: 0,
+                      };
+                      return (
+                        <button
+                          key={row.provider}
+                          type="button"
+                          onClick={() => setInstagramProvider(row.provider)}
+                          className={
+                            aktif
+                              ? "rounded-xl border border-foreground bg-foreground px-3 py-2 text-left text-background transition"
+                              : "rounded-xl border border-border bg-muted px-3 py-2 text-left text-foreground transition hover:border-foreground/40"
+                          }
+                        >
+                          <p className={aktif ? "text-sm font-semibold text-background" : "text-sm font-semibold text-foreground"}>
+                            {row.label}
+                          </p>
+                          <p className={aktif ? "text-[11px] text-background/80" : "text-[11px] text-muted-foreground"}>
+                            {row.provider}
+                          </p>
+                          <p className={aktif ? "mt-1 text-[11px] text-background/80" : "mt-1 text-[11px] text-muted-foreground"}>
+                            aktif {stats.enabled}/{stats.total}, token {stats.ready}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <div>
-              <Label htmlFor="bulk-provider">Provider</Label>
+              <Label htmlFor="bulk-provider">Provider (Manual)</Label>
               <select
                 id="bulk-provider"
                 value={instagramProvider}
@@ -1746,6 +1904,25 @@ export default function SettingsPage() {
                 placeholder="C:\\Users\\user\\Desktop"
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Preset Workflow Harian</Label>
+            <div className="flex flex-wrap gap-2">
+              {BULK_ROUTINE_PRESETS.map((preset) => (
+                <Button
+                  key={preset.id}
+                  variant={instagramPresetRutinId === preset.id ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => terapkanPresetRutinInstagram(preset.id)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Preset mengatur interval reply, jam posting, jeda antar akun, dan jam report malam.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
