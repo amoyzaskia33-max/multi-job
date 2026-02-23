@@ -649,6 +649,50 @@ export default function SettingsPage() {
     return groups;
   }, []);
 
+  const statistikProviderTerpilih = useMemo(
+    () => statistikAkunProviderBulk.get(instagramProvider) || { total: 0, enabled: 0, ready: 0 },
+    [statistikAkunProviderBulk, instagramProvider],
+  );
+
+  const jumlahBarisEditorAktif = useMemo(
+    () =>
+      instagramRows.filter((row) => row.account_id.trim().length > 0 && row.enabled).length,
+    [instagramRows],
+  );
+
+  const targetAkunBulkPreview = useMemo(() => {
+    const dariEditor = instagramRows
+      .map((row) => ({ account_id: row.account_id.trim(), enabled: row.enabled }))
+      .filter((row) => row.account_id.length > 0 && row.enabled)
+      .map((row) => ({ account_id: row.account_id }));
+
+    if (dariEditor.length > 0) {
+      return dariEditor.slice().sort((a, b) => a.account_id.localeCompare(b.account_id));
+    }
+
+    return akunInstagramTersimpan
+      .filter((row) => row.enabled)
+      .map((row) => ({ account_id: row.account_id.trim() }))
+      .filter((row) => row.account_id.length > 0)
+      .slice()
+      .sort((a, b) => a.account_id.localeCompare(b.account_id));
+  }, [instagramRows, akunInstagramTersimpan]);
+
+  const previewJadwalPosting = useMemo(() => {
+    const jamPosting = batasiAngka(instagramJamPosting, 0, 23, 8);
+    const menitPostingAwal = batasiAngka(instagramMenitPostingAwal, 0, 59, 0);
+    const jedaPostingMenit = batasiAngka(instagramJedaPostingMenit, 0, 120, 2);
+    return targetAkunBulkPreview.slice(0, 6).map((row, index) => ({
+      account_id: row.account_id,
+      cron: bangunCronHarianDenganOffset(jamPosting, menitPostingAwal, index * jedaPostingMenit),
+    }));
+  }, [targetAkunBulkPreview, instagramJamPosting, instagramMenitPostingAwal, instagramJedaPostingMenit]);
+
+  const estimasiTotalJobHarian = useMemo(() => {
+    if (targetAkunBulkPreview.length === 0) return 0;
+    return targetAkunBulkPreview.length * 2 + 1;
+  }, [targetAkunBulkPreview.length]);
+
   const daftarUpdateSkill = useMemo(
     () =>
       dataEventSkill
@@ -1814,134 +1858,180 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Bulk Accounts & Job Harian (Multi-Provider)</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           <p className="text-sm text-muted-foreground">
             Pilih provider (Instagram/Facebook/TikTok/X/Shopee/Tokopedia/dll), kelola akun bulk (contoh{" "}
             <code>{`${instagramProviderMeta.default_prefix}001`}</code> s/d{" "}
             <code>{`${instagramProviderMeta.default_prefix}010`}</code>), lalu generate job harian otomatis.
           </p>
 
-          <div className="space-y-3">
-            <Label>Panel Provider (Klik Langsung)</Label>
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-border bg-muted p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Provider Aktif</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{instagramProviderMeta.label}</p>
+              <p className="text-[11px] text-muted-foreground">{instagramProviderMeta.provider}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Akun Tersimpan</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {statistikProviderTerpilih.enabled}/{statistikProviderTerpilih.total} aktif
+              </p>
+              <p className="text-[11px] text-muted-foreground">Token siap: {statistikProviderTerpilih.ready}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Target Generate</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{targetAkunBulkPreview.length} akun aktif</p>
+              <p className="text-[11px] text-muted-foreground">Editor aktif: {jumlahBarisEditorAktif}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimasi Job/Hari</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{estimasiTotalJobHarian}</p>
+              <p className="text-[11px] text-muted-foreground">2 job/akun + 1 report malam</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-border bg-muted/40 p-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Langkah 1. Pilih Provider & Susun Range Akun</p>
+              <p className="text-xs text-muted-foreground">
+                Pilih provider dari panel, set prefix/range akun, lalu isi editor dengan sekali klik.
+              </p>
+            </div>
+
             <div className="space-y-3">
-              {grupProviderBulk.map((group) => (
-                <div key={group.id} className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    {group.rows.map((row) => {
-                      const aktif = row.provider === instagramProvider;
-                      const stats = statistikAkunProviderBulk.get(row.provider) || {
-                        total: 0,
-                        enabled: 0,
-                        ready: 0,
-                      };
-                      return (
-                        <button
-                          key={row.provider}
-                          type="button"
-                          onClick={() => setInstagramProvider(row.provider)}
-                          className={
-                            aktif
-                              ? "rounded-xl border border-foreground bg-foreground px-3 py-2 text-left text-background transition"
-                              : "rounded-xl border border-border bg-muted px-3 py-2 text-left text-foreground transition hover:border-foreground/40"
-                          }
-                        >
-                          <p className={aktif ? "text-sm font-semibold text-background" : "text-sm font-semibold text-foreground"}>
-                            {row.label}
-                          </p>
-                          <p className={aktif ? "text-[11px] text-background/80" : "text-[11px] text-muted-foreground"}>
-                            {row.provider}
-                          </p>
-                          <p className={aktif ? "mt-1 text-[11px] text-background/80" : "mt-1 text-[11px] text-muted-foreground"}>
-                            aktif {stats.enabled}/{stats.total}, token {stats.ready}
-                          </p>
-                        </button>
-                      );
-                    })}
+              <Label>Panel Provider (Klik Langsung)</Label>
+              <div className="space-y-3">
+                {grupProviderBulk.map((group) => (
+                  <div key={group.id} className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      {group.rows.map((row) => {
+                        const aktif = row.provider === instagramProvider;
+                        const stats = statistikAkunProviderBulk.get(row.provider) || {
+                          total: 0,
+                          enabled: 0,
+                          ready: 0,
+                        };
+                        return (
+                          <button
+                            key={row.provider}
+                            type="button"
+                            onClick={() => setInstagramProvider(row.provider)}
+                            className={
+                              aktif
+                                ? "rounded-xl border border-foreground bg-foreground px-3 py-2 text-left text-background transition"
+                                : "rounded-xl border border-border bg-card px-3 py-2 text-left text-foreground transition hover:border-foreground/40"
+                            }
+                          >
+                            <p
+                              className={
+                                aktif ? "text-sm font-semibold text-background" : "text-sm font-semibold text-foreground"
+                              }
+                            >
+                              {row.label}
+                            </p>
+                            <p className={aktif ? "text-[11px] text-background/80" : "text-[11px] text-muted-foreground"}>
+                              {row.provider}
+                            </p>
+                            <p className={aktif ? "mt-1 text-[11px] text-background/80" : "mt-1 text-[11px] text-muted-foreground"}>
+                              aktif {stats.enabled}/{stats.total}, token {stats.ready}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-            <div>
-              <Label htmlFor="bulk-provider">Provider (Manual)</Label>
-              <select
-                id="bulk-provider"
-                value={instagramProvider}
-                onChange={(event) => setInstagramProvider(event.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground"
-              >
-                {BULK_PROVIDER_META.map((row) => (
-                  <option key={row.provider} value={row.provider}>
-                    {row.label} ({row.provider})
-                  </option>
                 ))}
-              </select>
+              </div>
             </div>
-            <div>
-              <Label htmlFor="ig-prefix">Prefix ID Akun</Label>
-              <Input
-                id="ig-prefix"
-                value={instagramPrefixId}
-                onChange={(event) => setInstagramPrefixId(event.target.value)}
-                placeholder={instagramProviderMeta.default_prefix}
-              />
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+              <div>
+                <Label htmlFor="bulk-provider">Provider (Manual)</Label>
+                <select
+                  id="bulk-provider"
+                  value={instagramProvider}
+                  onChange={(event) => setInstagramProvider(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground"
+                >
+                  {BULK_PROVIDER_META.map((row) => (
+                    <option key={row.provider} value={row.provider}>
+                      {row.label} ({row.provider})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="ig-prefix">Prefix ID Akun</Label>
+                <Input
+                  id="ig-prefix"
+                  value={instagramPrefixId}
+                  onChange={(event) => setInstagramPrefixId(event.target.value)}
+                  placeholder={instagramProviderMeta.default_prefix}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-start">Mulai</Label>
+                <Input
+                  id="ig-start"
+                  type="number"
+                  min={1}
+                  value={instagramMulaiDari}
+                  onChange={(event) => setInstagramMulaiDari(batasiAngka(Number(event.target.value), 1, 9999, 1))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-end">Sampai</Label>
+                <Input
+                  id="ig-end"
+                  type="number"
+                  min={1}
+                  value={instagramSampaiKe}
+                  onChange={(event) => setInstagramSampaiKe(batasiAngka(Number(event.target.value), 1, 9999, 10))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-pad">Digit Padding</Label>
+                <Input
+                  id="ig-pad"
+                  type="number"
+                  min={1}
+                  max={6}
+                  value={instagramPadDigit}
+                  onChange={(event) => setInstagramPadDigit(batasiAngka(Number(event.target.value), 1, 6, 3))}
+                />
+              </div>
             </div>
-            <div>
-              <Label htmlFor="ig-start">Mulai</Label>
-              <Input
-                id="ig-start"
-                type="number"
-                min={1}
-                value={instagramMulaiDari}
-                onChange={(event) => setInstagramMulaiDari(batasiAngka(Number(event.target.value), 1, 9999, 1))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ig-end">Sampai</Label>
-              <Input
-                id="ig-end"
-                type="number"
-                min={1}
-                value={instagramSampaiKe}
-                onChange={(event) => setInstagramSampaiKe(batasiAngka(Number(event.target.value), 1, 9999, 10))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ig-pad">Digit Padding</Label>
-              <Input
-                id="ig-pad"
-                type="number"
-                min={1}
-                max={6}
-                value={instagramPadDigit}
-                onChange={(event) => setInstagramPadDigit(batasiAngka(Number(event.target.value), 1, 6, 3))}
-              />
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={buatRangeAkunInstagram}>
+                Buat Range Akun
+              </Button>
+              <Button variant="outline" onClick={muatAkunInstagramTersimpanKeEditor}>
+                Muat dari Akun Tersimpan
+              </Button>
+              <Button variant="outline" onClick={tambahBarisInstagramManual}>
+                Tambah Baris Manual
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setInstagramRows([])}
+                disabled={instagramRows.length === 0}
+              >
+                Kosongkan Editor
+              </Button>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={buatRangeAkunInstagram}>
-              Buat Range Akun
-            </Button>
-            <Button variant="outline" onClick={muatAkunInstagramTersimpanKeEditor}>
-              Muat dari Akun Tersimpan
-            </Button>
-            <Button variant="outline" onClick={tambahBarisInstagramManual}>
-              Tambah Baris Manual
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setInstagramRows([])}
-              disabled={instagramRows.length === 0}
-            >
-              Kosongkan Editor
-            </Button>
-          </div>
+          <div className="space-y-4 rounded-xl border border-border bg-muted/40 p-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Langkah 2. Atur Koneksi & Jadwal Operasional</p>
+              <p className="text-xs text-muted-foreground">
+                Isi koneksi provider, terapkan preset, lalu sesuaikan jadwal posting/reply/report.
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
               <Label htmlFor="ig-base-url">Base URL API</Label>
               <Input
@@ -1971,108 +2061,140 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Preset Workflow Harian</Label>
-            <div className="flex flex-wrap gap-2">
-              {BULK_ROUTINE_PRESETS.map((preset) => (
-                <Button
-                  key={preset.id}
-                  variant={instagramPresetRutinId === preset.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => terapkanPresetRutinInstagram(preset.id)}
-                >
-                  {preset.label}
-                </Button>
-              ))}
+            <div className="space-y-2">
+              <Label>Preset Workflow Harian</Label>
+              <div className="flex flex-wrap gap-2">
+                {BULK_ROUTINE_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.id}
+                    variant={instagramPresetRutinId === preset.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => terapkanPresetRutinInstagram(preset.id)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Preset mengatur interval reply, jam posting, jeda antar akun, dan jam report malam.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Preset mengatur interval reply, jam posting, jeda antar akun, dan jam report malam.
-            </p>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
+              <div>
+                <Label htmlFor="ig-reply-interval">Interval Reply (detik)</Label>
+                <Input
+                  id="ig-reply-interval"
+                  type="number"
+                  min={10}
+                  max={86400}
+                  value={instagramIntervalReplyDetik}
+                  onChange={(event) =>
+                    setInstagramIntervalReplyDetik(batasiAngka(Number(event.target.value), 10, 86400, 60))
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-post-hour">Jam Posting</Label>
+                <Input
+                  id="ig-post-hour"
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={instagramJamPosting}
+                  onChange={(event) => setInstagramJamPosting(batasiAngka(Number(event.target.value), 0, 23, 8))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-post-minute">Menit Awal</Label>
+                <Input
+                  id="ig-post-minute"
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={instagramMenitPostingAwal}
+                  onChange={(event) =>
+                    setInstagramMenitPostingAwal(batasiAngka(Number(event.target.value), 0, 59, 0))
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-post-stagger">Jeda/Akun (menit)</Label>
+                <Input
+                  id="ig-post-stagger"
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={instagramJedaPostingMenit}
+                  onChange={(event) =>
+                    setInstagramJedaPostingMenit(batasiAngka(Number(event.target.value), 0, 120, 2))
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-report-hour">Jam Report</Label>
+                <Input
+                  id="ig-report-hour"
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={instagramJamReport}
+                  onChange={(event) => setInstagramJamReport(batasiAngka(Number(event.target.value), 0, 23, 21))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ig-report-minute">Menit Report</Label>
+                <Input
+                  id="ig-report-minute"
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={instagramMenitReport}
+                  onChange={(event) => setInstagramMenitReport(batasiAngka(Number(event.target.value), 0, 59, 0))}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Preview Cron Posting (6 akun pertama)
+              </p>
+              {previewJadwalPosting.length === 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Belum ada target akun aktif. Isi editor atau aktifkan akun tersimpan.
+                </p>
+              ) : (
+                <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {previewJadwalPosting.map((row) => (
+                    <div key={`preview-${row.account_id}`} className="rounded-lg border border-border bg-muted px-3 py-2">
+                      <p className="text-sm font-medium text-foreground">{row.account_id}</p>
+                      <p className="text-xs text-muted-foreground">
+                        cron: <code>{row.cron}</code> | timezone: <code>{instagramTimezone || "Asia/Jakarta"}</code>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
-            <div>
-              <Label htmlFor="ig-reply-interval">Interval Reply (detik)</Label>
-              <Input
-                id="ig-reply-interval"
-                type="number"
-                min={10}
-                max={86400}
-                value={instagramIntervalReplyDetik}
-                onChange={(event) =>
-                  setInstagramIntervalReplyDetik(batasiAngka(Number(event.target.value), 10, 86400, 60))
-                }
-              />
+          <div className="space-y-4 rounded-xl border border-border bg-muted/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">
+                Langkah 3. Editor Akun {instagramProviderMeta.label}
+              </p>
+              <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+                {instagramRows.length} baris editor
+              </span>
             </div>
-            <div>
-              <Label htmlFor="ig-post-hour">Jam Posting</Label>
-              <Input
-                id="ig-post-hour"
-                type="number"
-                min={0}
-                max={23}
-                value={instagramJamPosting}
-                onChange={(event) => setInstagramJamPosting(batasiAngka(Number(event.target.value), 0, 23, 8))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ig-post-minute">Menit Awal</Label>
-              <Input
-                id="ig-post-minute"
-                type="number"
-                min={0}
-                max={59}
-                value={instagramMenitPostingAwal}
-                onChange={(event) =>
-                  setInstagramMenitPostingAwal(batasiAngka(Number(event.target.value), 0, 59, 0))
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="ig-post-stagger">Jeda/Akun (menit)</Label>
-              <Input
-                id="ig-post-stagger"
-                type="number"
-                min={0}
-                max={120}
-                value={instagramJedaPostingMenit}
-                onChange={(event) =>
-                  setInstagramJedaPostingMenit(batasiAngka(Number(event.target.value), 0, 120, 2))
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="ig-report-hour">Jam Report</Label>
-              <Input
-                id="ig-report-hour"
-                type="number"
-                min={0}
-                max={23}
-                value={instagramJamReport}
-                onChange={(event) => setInstagramJamReport(batasiAngka(Number(event.target.value), 0, 23, 21))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ig-report-minute">Menit Report</Label>
-              <Input
-                id="ig-report-minute"
-                type="number"
-                min={0}
-                max={59}
-                value={instagramMenitReport}
-                onChange={(event) => setInstagramMenitReport(batasiAngka(Number(event.target.value), 0, 59, 0))}
-              />
-            </div>
-          </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={simpanSemuaAkunInstagram}>Simpan Semua Akun {instagramProviderMeta.label}</Button>
-            <Button variant="outline" onClick={generateJobHarianInstagram}>
-              Generate Job Harian {instagramProviderMeta.label}
-            </Button>
-          </div>
+            <div className="rounded-xl border border-border bg-card p-3">
+              <p className="text-xs text-muted-foreground">
+                Tip: biarkan kolom token kosong jika token sudah pernah disimpan sebelumnya.
+              </p>
+            </div>
 
-          <div className="space-y-2">
+            <div className="space-y-2">
             <Label>Editor Akun {instagramProviderMeta.label}</Label>
             {instagramRows.length === 0 ? (
               <div className="text-sm text-muted-foreground">
@@ -2126,9 +2248,9 @@ export default function SettingsPage() {
                 </div>
               ))
             )}
-          </div>
+            </div>
 
-          <div className="space-y-2">
+            <div className="space-y-2">
             <Label>Akun {instagramProviderMeta.label} Tersimpan Saat Ini</Label>
             {sedangMemuatIntegrasi ? (
               <div className="text-sm text-muted-foreground">Lagi ambil akun integrasi...</div>
@@ -2152,6 +2274,22 @@ export default function SettingsPage() {
                 );
               })
             )}
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Langkah 4. Simpan & Generate Workflow</p>
+              <p className="text-xs text-muted-foreground">
+                Simpan data akun dulu, lalu generate job harian (reply + post + report).
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={simpanSemuaAkunInstagram}>Simpan Semua Akun {instagramProviderMeta.label}</Button>
+              <Button variant="outline" onClick={generateJobHarianInstagram}>
+                Generate Job Harian {instagramProviderMeta.label}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
