@@ -1,0 +1,54 @@
+WORKFLOW IG HARIAN (10 AKUN) - ASCII DIAGRAM
+
++---------------------------------------------------------------+
+| 1) SETUP AWAL (SEKALI)                                        |
+| - Simpan akun integrasi: ig_001 ... ig_010 (token + config)  |
+| - Siapkan mapping konten file lokal per akun                  |
+| - Aktifkan job scheduler                                      |
++---------------------------------------------------------------+
+                              |
+                              v
++---------------------------------------------------------------+
+| 2) ORKESTRASI SCHEDULER (BERULANG SETIAP HARI)                |
+| - Lane A: Balas komentar + DM (interval, contoh: 60 detik)    |
+| - Lane B: Posting pagi 08:00 (stagger per akun)               |
+| - Lane C: Report malam (contoh: 21:00)                        |
++---------------------------------------------------------------+
+          |                                |                                |
+          v                                v                                v
++--------------------------------+  +--------------------------------+  +--------------------------------+
+| LANE A - REPLY COMMENT + DM    |  | LANE B - POSTING PAGI          |  | LANE C - REPORT MALAM          |
+| Trigger: tiap 60 detik         |  | Trigger: cron per akun         |  | Trigger: cron 21:00            |
+|                                |  | ig_001 = 08:00                 |  |                                |
+| 1. Ambil comment/DM baru       |  | ig_002 = 08:02                 |  | 1. Ambil data run harian       |
+| 2. Susun balasan (rule/agent)  |  | ig_003 = 08:04                 |  | 2. Rekap sukses/gagal per akun |
+| 3. Kirim balasan ke API IG     |  | ...                            |  | 3. Buat summary + error list   |
+| 4. Simpan status run           |  | ig_010 = 08:18                 |  | 4. Kirim report                |
++--------------------------------+  |                                |  +--------------------------------+
+                                    | 1. Ambil file lokal            |
+                                    |    (contoh: C:\\Desktop\\...)  |
+                                    | 2. Upload jadi URL publik      |
+                                    | 3. Publish ke API IG           |
+                                    | 4. Simpan status run           |
+                                    +--------------------------------+
+          |                                |                                |
+          +----------------------+---------+----------------------+---------+
+                                 |                                |
+                                 v                                v
+                     +------------------------------------------------------+
+                     | KONTROL RELIABILITY + GOVERNANCE                     |
+                     | - Retry/backoff saat gagal                           |
+                     | - Failure cooldown jika gagal beruntun               |
+                     | - Approval queue untuk aksi sensitif                 |
+                     | - Audit log + events timeline                        |
+                     | - Versioning job spec + rollback                     |
+                     +------------------------------------------------------+
+                                                |
+                                                v
+                     +------------------------------------------------------+
+                     | OUTPUT HARIAN                                        |
+                     | - Operasional reply/DM berjalan                      |
+                     | - Post pagi selesai bertahap (tidak barengan)        |
+                     | - Report malam terkirim                              |
+                     +------------------------------------------------------+
+

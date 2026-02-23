@@ -23,6 +23,7 @@ import {
   getTelegramConnectorAccounts,
   setApiAuthToken,
   type SystemEvent,
+  upsertAgentWorkflowAutomation,
   upsertIntegrationAccount,
   upsertMcpIntegrationServer,
   upsertTelegramConnectorAccount,
@@ -37,9 +38,36 @@ type PengaturanUi = {
   autoRefresh: boolean;
 };
 
+type InstagramBulkAccountRow = {
+  account_id: string;
+  instagram_user_id: string;
+  token: string;
+  enabled: boolean;
+};
+
+const INSTAGRAM_PROVIDER = "instagram_graph";
+const INSTAGRAM_BASE_URL_DEFAULT = "https://graph.facebook.com/v20.0";
+
 const batasiDetikTunggu = (value: number) => {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(30, Math.floor(value)));
+};
+
+const batasiAngka = (value: number, minimum: number, maksimum: number, fallback: number) => {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(minimum, Math.min(maksimum, Math.floor(value)));
+};
+
+const bangunCronHarianDenganOffset = (
+  jamAwal: number,
+  menitAwal: number,
+  offsetMenit: number,
+) => {
+  const totalMenit = menitAwal + offsetMenit;
+  const extraJam = Math.floor(totalMenit / 60);
+  const menitFinal = ((totalMenit % 60) + 60) % 60;
+  const jamFinal = ((jamAwal + extraJam) % 24 + 24) % 24;
+  return `${menitFinal} ${jamFinal} * * *`;
 };
 
 const parseMasukanObjek = (raw: string, fieldName: string): Record<string, unknown> | null => {
@@ -172,6 +200,21 @@ export default function SettingsPage() {
   const [integrationSecret, setIntegrationSecret] = useState("");
   const [integrationConfigText, setIntegrationConfigText] = useState("{}");
 
+  const [instagramPrefixId, setInstagramPrefixId] = useState("ig_");
+  const [instagramMulaiDari, setInstagramMulaiDari] = useState(1);
+  const [instagramSampaiKe, setInstagramSampaiKe] = useState(10);
+  const [instagramPadDigit, setInstagramPadDigit] = useState(3);
+  const [instagramRows, setInstagramRows] = useState<InstagramBulkAccountRow[]>([]);
+  const [instagramBaseUrl, setInstagramBaseUrl] = useState(INSTAGRAM_BASE_URL_DEFAULT);
+  const [instagramTimezone, setInstagramTimezone] = useState("Asia/Jakarta");
+  const [instagramFolderKonten, setInstagramFolderKonten] = useState("C:\\Users\\user\\Desktop");
+  const [instagramIntervalReplyDetik, setInstagramIntervalReplyDetik] = useState(60);
+  const [instagramJamPosting, setInstagramJamPosting] = useState(8);
+  const [instagramMenitPostingAwal, setInstagramMenitPostingAwal] = useState(0);
+  const [instagramJedaPostingMenit, setInstagramJedaPostingMenit] = useState(2);
+  const [instagramJamReport, setInstagramJamReport] = useState(21);
+  const [instagramMenitReport, setInstagramMenitReport] = useState(0);
+
   const { data: akunTelegram = [], isLoading: sedangMemuatTelegram, refetch: muatUlangAkunTelegram } = useQuery({
     queryKey: ["telegram-accounts"],
     queryFn: getTelegramConnectorAccounts,
@@ -259,6 +302,15 @@ export default function SettingsPage() {
     petaTemplateProvider,
     akunTelegram,
   ]);
+
+  const akunInstagramTersimpan = useMemo(
+    () =>
+      akunIntegrasi
+        .filter((row) => row.provider === INSTAGRAM_PROVIDER)
+        .slice()
+        .sort((a, b) => a.account_id.localeCompare(b.account_id)),
+    [akunIntegrasi],
+  );
 
   const daftarUpdateSkill = useMemo(
     () =>
@@ -479,6 +531,270 @@ export default function SettingsPage() {
 
     toast.success(`Akun integrasi '${provider}/${accountIdValue}' dihapus.`);
     await muatUlangAkunIntegrasi();
+  };
+
+  const ubahBarisInstagram = (index: number, patch: Partial<InstagramBulkAccountRow>) => {
+    setInstagramRows((current) =>
+      current.map((row, rowIndex) => {
+        if (rowIndex !== index) return row;
+        return { ...row, ...patch };
+      }),
+    );
+  };
+
+  const tambahBarisInstagramManual = () => {
+    const pad = batasiAngka(instagramPadDigit, 1, 6, 3);
+    const prefix = instagramPrefixId.trim() || "ig_";
+    const sudahAda = new Set(instagramRows.map((row) => row.account_id.trim()));
+
+    let nomor = batasiAngka(instagramMulaiDari, 1, 9999, 1);
+    let accountId = `${prefix}${String(nomor).padStart(pad, "0")}`;
+    while (sudahAda.has(accountId)) {
+      nomor += 1;
+      accountId = `${prefix}${String(nomor).padStart(pad, "0")}`;
+    }
+
+    setInstagramRows((current) => [
+      ...current,
+      {
+        account_id: accountId,
+        instagram_user_id: "",
+        token: "",
+        enabled: true,
+      },
+    ]);
+  };
+
+  const hapusBarisInstagram = (index: number) => {
+    setInstagramRows((current) => current.filter((_, rowIndex) => rowIndex !== index));
+  };
+
+  const buatRangeAkunInstagram = () => {
+    const prefix = instagramPrefixId.trim() || "ig_";
+    const mulai = batasiAngka(instagramMulaiDari, 1, 9999, 1);
+    const sampai = batasiAngka(instagramSampaiKe, 1, 9999, 10);
+    const pad = batasiAngka(instagramPadDigit, 1, 6, 3);
+
+    if (sampai < mulai) {
+      toast.error("Rentang akun Instagram tidak valid (akhir < awal).");
+      return;
+    }
+
+    const sekarangById = new Map(instagramRows.map((row) => [row.account_id.trim(), row]));
+    const tersimpanById = new Map(akunInstagramTersimpan.map((row) => [row.account_id.trim(), row]));
+    const generated: InstagramBulkAccountRow[] = [];
+
+    for (let angka = mulai; angka <= sampai; angka += 1) {
+      const accountId = `${prefix}${String(angka).padStart(pad, "0")}`;
+      const draft = sekarangById.get(accountId);
+      const saved = tersimpanById.get(accountId);
+      const savedConfig = saved?.config || {};
+      const rawInstagramUserId = savedConfig["instagram_user_id"];
+      const instagramUserId = typeof rawInstagramUserId === "string" ? rawInstagramUserId : "";
+
+      generated.push({
+        account_id: accountId,
+        instagram_user_id: draft?.instagram_user_id || instagramUserId,
+        token: draft?.token || "",
+        enabled: draft?.enabled ?? saved?.enabled ?? true,
+      });
+    }
+
+    setInstagramRows(generated);
+    toast.success(`Range akun Instagram ${prefix}${String(mulai).padStart(pad, "0")} sampai ${prefix}${String(sampai).padStart(pad, "0")} siap.`);
+  };
+
+  const muatAkunInstagramTersimpanKeEditor = () => {
+    if (akunInstagramTersimpan.length === 0) {
+      toast.message("Belum ada akun Instagram tersimpan.");
+      return;
+    }
+
+    const rows: InstagramBulkAccountRow[] = akunInstagramTersimpan.map((row) => {
+      const config = row.config || {};
+      const rawInstagramUserId = config["instagram_user_id"];
+      const instagramUserId = typeof rawInstagramUserId === "string" ? rawInstagramUserId : "";
+      return {
+        account_id: row.account_id,
+        instagram_user_id: instagramUserId,
+        token: "",
+        enabled: row.enabled,
+      };
+    });
+
+    setInstagramRows(rows);
+    toast.success(`Editor Instagram diisi dari ${rows.length} akun tersimpan.`);
+  };
+
+  const simpanSemuaAkunInstagram = async () => {
+    const rows = instagramRows
+      .map((row) => ({
+        account_id: row.account_id.trim(),
+        instagram_user_id: row.instagram_user_id.trim(),
+        token: row.token.trim(),
+        enabled: row.enabled,
+      }))
+      .filter((row) => row.account_id.length > 0);
+
+    if (rows.length === 0) {
+      toast.error("Belum ada baris akun Instagram untuk disimpan.");
+      return;
+    }
+
+    const baseUrl = instagramBaseUrl.trim() || INSTAGRAM_BASE_URL_DEFAULT;
+    let sukses = 0;
+    const gagal: string[] = [];
+
+    for (const row of rows) {
+      const config: Record<string, unknown> = { base_url: baseUrl };
+      if (row.instagram_user_id) {
+        config.instagram_user_id = row.instagram_user_id;
+      }
+
+      const saved = await upsertIntegrationAccount(INSTAGRAM_PROVIDER, row.account_id, {
+        enabled: row.enabled,
+        secret: row.token || undefined,
+        config,
+      });
+
+      if (saved) {
+        sukses += 1;
+      } else {
+        gagal.push(row.account_id);
+      }
+    }
+
+    setInstagramRows((current) => current.map((row) => ({ ...row, token: "" })));
+    await muatUlangAkunIntegrasi();
+
+    if (sukses > 0) {
+      toast.success(`Akun Instagram tersimpan: ${sukses} dari ${rows.length}.`);
+    }
+    if (gagal.length > 0) {
+      toast.error(`Gagal menyimpan akun: ${gagal.join(", ")}`);
+    }
+  };
+
+  const ambilTargetAkunInstagramAktif = (): Array<{ account_id: string }> => {
+    const dariEditor = instagramRows
+      .map((row) => ({
+        account_id: row.account_id.trim(),
+        enabled: row.enabled,
+      }))
+      .filter((row) => row.account_id.length > 0 && row.enabled)
+      .map((row) => ({ account_id: row.account_id }));
+
+    if (dariEditor.length > 0) {
+      return dariEditor.slice().sort((a, b) => a.account_id.localeCompare(b.account_id));
+    }
+
+    const dariTersimpan = akunInstagramTersimpan
+      .filter((row) => row.enabled)
+      .map((row) => ({ account_id: row.account_id.trim() }))
+      .filter((row) => row.account_id.length > 0);
+
+    return dariTersimpan.slice().sort((a, b) => a.account_id.localeCompare(b.account_id));
+  };
+
+  const generateJobHarianInstagram = async () => {
+    const targetAccounts = ambilTargetAkunInstagramAktif();
+    if (targetAccounts.length === 0) {
+      toast.error("Belum ada akun Instagram aktif untuk dibuatkan job.");
+      return;
+    }
+
+    const timezoneValue = instagramTimezone.trim() || "Asia/Jakarta";
+    const intervalReply = batasiAngka(instagramIntervalReplyDetik, 10, 86400, 60);
+    const jamPosting = batasiAngka(instagramJamPosting, 0, 23, 8);
+    const menitPostingAwal = batasiAngka(instagramMenitPostingAwal, 0, 59, 0);
+    const jedaPostingMenit = batasiAngka(instagramJedaPostingMenit, 0, 120, 2);
+    const jamReport = batasiAngka(instagramJamReport, 0, 23, 21);
+    const menitReport = batasiAngka(instagramMenitReport, 0, 59, 0);
+    const folderKonten = instagramFolderKonten.trim() || "C:\\Users\\user\\Desktop";
+    const akunGabung = targetAccounts.map((row) => row.account_id).join(", ");
+
+    let sukses = 0;
+    const gagal: string[] = [];
+
+    for (let index = 0; index < targetAccounts.length; index += 1) {
+      const row = targetAccounts[index];
+      const accountId = row.account_id;
+      const cronPosting = bangunCronHarianDenganOffset(
+        jamPosting,
+        menitPostingAwal,
+        index * jedaPostingMenit,
+      );
+
+      const replyPayload = {
+        job_id: `ig_reply_${accountId}`,
+        prompt:
+          `Pantau komentar dan DM Instagram akun ${accountId}. ` +
+          "Balas dengan gaya ramah, tandai isu sensitif untuk eskalasi, dan hindari jawaban berulang.",
+        interval_sec: intervalReply,
+        enabled: true,
+        timezone: timezoneValue,
+        default_channel: "instagram",
+        default_account_id: accountId,
+        flow_group: "ig_reply_ops",
+        pressure_priority: "normal" as const,
+      };
+
+      const postPayload = {
+        job_id: `ig_post_${accountId}`,
+        prompt:
+          `Jadwalkan posting Instagram akun ${accountId} menggunakan konten dari folder ${folderKonten}. ` +
+          "Pilih file hari ini, upload media, publish satu konten, lalu catat status hasil.",
+        cron: cronPosting,
+        enabled: true,
+        timezone: timezoneValue,
+        default_channel: "instagram",
+        default_account_id: accountId,
+        flow_group: "ig_post_ops",
+        pressure_priority: "normal" as const,
+      };
+
+      const replySaved = await upsertAgentWorkflowAutomation(replyPayload);
+      if (replySaved) {
+        sukses += 1;
+      } else {
+        gagal.push(`${accountId}:reply`);
+      }
+
+      const postSaved = await upsertAgentWorkflowAutomation(postPayload);
+      if (postSaved) {
+        sukses += 1;
+      } else {
+        gagal.push(`${accountId}:post`);
+      }
+    }
+
+    const reportPayload = {
+      job_id: "ig_report_night",
+      prompt:
+        `Buat laporan operasional Instagram harian untuk akun: ${akunGabung}. ` +
+        "Ringkas total balasan komentar/DM, total posting sukses, error utama, dan rekomendasi tindakan besok.",
+      cron: `${menitReport} ${jamReport} * * *`,
+      enabled: true,
+      timezone: timezoneValue,
+      default_channel: "instagram",
+      default_account_id: targetAccounts[0]?.account_id || "ig_001",
+      flow_group: "ig_report_ops",
+      pressure_priority: "low" as const,
+    };
+
+    const reportSaved = await upsertAgentWorkflowAutomation(reportPayload);
+    if (reportSaved) {
+      sukses += 1;
+    } else {
+      gagal.push("ig_report_night");
+    }
+
+    if (sukses > 0) {
+      toast.success(`Job Instagram berhasil dibuat/diperbarui: ${sukses}.`);
+    }
+    if (gagal.length > 0) {
+      toast.error(`Sebagian job gagal dibuat: ${gagal.join(", ")}`);
+    }
   };
 
   const bootstrapSemuaTemplate = async () => {
@@ -1125,6 +1441,273 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle>Instagram Bulk Accounts & Job Harian</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Kelola akun Instagram (contoh <code>ig_001</code> s/d <code>ig_010</code>) dari satu panel, lalu buat
+            job harian otomatis untuk balas DM/komentar, posting pagi bertahap, dan report malam.
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+            <div>
+              <Label htmlFor="ig-prefix">Prefix ID Akun</Label>
+              <Input
+                id="ig-prefix"
+                value={instagramPrefixId}
+                onChange={(event) => setInstagramPrefixId(event.target.value)}
+                placeholder="ig_"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-start">Mulai</Label>
+              <Input
+                id="ig-start"
+                type="number"
+                min={1}
+                value={instagramMulaiDari}
+                onChange={(event) => setInstagramMulaiDari(batasiAngka(Number(event.target.value), 1, 9999, 1))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-end">Sampai</Label>
+              <Input
+                id="ig-end"
+                type="number"
+                min={1}
+                value={instagramSampaiKe}
+                onChange={(event) => setInstagramSampaiKe(batasiAngka(Number(event.target.value), 1, 9999, 10))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-pad">Digit Padding</Label>
+              <Input
+                id="ig-pad"
+                type="number"
+                min={1}
+                max={6}
+                value={instagramPadDigit}
+                onChange={(event) => setInstagramPadDigit(batasiAngka(Number(event.target.value), 1, 6, 3))}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={buatRangeAkunInstagram}>
+              Buat Range Akun
+            </Button>
+            <Button variant="outline" onClick={muatAkunInstagramTersimpanKeEditor}>
+              Muat dari Akun Tersimpan
+            </Button>
+            <Button variant="outline" onClick={tambahBarisInstagramManual}>
+              Tambah Baris Manual
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setInstagramRows([])}
+              disabled={instagramRows.length === 0}
+            >
+              Kosongkan Editor
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div>
+              <Label htmlFor="ig-base-url">Base URL API</Label>
+              <Input
+                id="ig-base-url"
+                value={instagramBaseUrl}
+                onChange={(event) => setInstagramBaseUrl(event.target.value)}
+                placeholder={INSTAGRAM_BASE_URL_DEFAULT}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-timezone">Zona Waktu Workflow</Label>
+              <Input
+                id="ig-timezone"
+                value={instagramTimezone}
+                onChange={(event) => setInstagramTimezone(event.target.value)}
+                placeholder="Asia/Jakarta"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-folder-konten">Folder Konten Lokal</Label>
+              <Input
+                id="ig-folder-konten"
+                value={instagramFolderKonten}
+                onChange={(event) => setInstagramFolderKonten(event.target.value)}
+                placeholder="C:\\Users\\user\\Desktop"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
+            <div>
+              <Label htmlFor="ig-reply-interval">Interval Reply (detik)</Label>
+              <Input
+                id="ig-reply-interval"
+                type="number"
+                min={10}
+                max={86400}
+                value={instagramIntervalReplyDetik}
+                onChange={(event) =>
+                  setInstagramIntervalReplyDetik(batasiAngka(Number(event.target.value), 10, 86400, 60))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-post-hour">Jam Posting</Label>
+              <Input
+                id="ig-post-hour"
+                type="number"
+                min={0}
+                max={23}
+                value={instagramJamPosting}
+                onChange={(event) => setInstagramJamPosting(batasiAngka(Number(event.target.value), 0, 23, 8))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-post-minute">Menit Awal</Label>
+              <Input
+                id="ig-post-minute"
+                type="number"
+                min={0}
+                max={59}
+                value={instagramMenitPostingAwal}
+                onChange={(event) =>
+                  setInstagramMenitPostingAwal(batasiAngka(Number(event.target.value), 0, 59, 0))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-post-stagger">Jeda/Akun (menit)</Label>
+              <Input
+                id="ig-post-stagger"
+                type="number"
+                min={0}
+                max={120}
+                value={instagramJedaPostingMenit}
+                onChange={(event) =>
+                  setInstagramJedaPostingMenit(batasiAngka(Number(event.target.value), 0, 120, 2))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-report-hour">Jam Report</Label>
+              <Input
+                id="ig-report-hour"
+                type="number"
+                min={0}
+                max={23}
+                value={instagramJamReport}
+                onChange={(event) => setInstagramJamReport(batasiAngka(Number(event.target.value), 0, 23, 21))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ig-report-minute">Menit Report</Label>
+              <Input
+                id="ig-report-minute"
+                type="number"
+                min={0}
+                max={59}
+                value={instagramMenitReport}
+                onChange={(event) => setInstagramMenitReport(batasiAngka(Number(event.target.value), 0, 59, 0))}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={simpanSemuaAkunInstagram}>Simpan Semua Akun Instagram</Button>
+            <Button variant="outline" onClick={generateJobHarianInstagram}>
+              Generate Job Harian Instagram
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Editor Akun Instagram</Label>
+            {instagramRows.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                Belum ada baris akun. Klik <strong>Buat Range Akun</strong> atau <strong>Muat dari Akun Tersimpan</strong>.
+              </div>
+            ) : (
+              instagramRows.map((row, index) => (
+                <div
+                  key={`${row.account_id || "ig-row"}-${index}`}
+                  className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted p-4 lg:grid-cols-12"
+                >
+                  <div className="lg:col-span-2">
+                    <Label>ID Akun</Label>
+                    <Input
+                      value={row.account_id}
+                      onChange={(event) => ubahBarisInstagram(index, { account_id: event.target.value })}
+                      placeholder="ig_001"
+                    />
+                  </div>
+                  <div className="lg:col-span-3">
+                    <Label>Instagram User ID</Label>
+                    <Input
+                      value={row.instagram_user_id}
+                      onChange={(event) => ubahBarisInstagram(index, { instagram_user_id: event.target.value })}
+                      placeholder="1784xxxxxxxxxxxx"
+                    />
+                  </div>
+                  <div className="lg:col-span-4">
+                    <Label>Token (opsional jika sudah tersimpan)</Label>
+                    <Input
+                      type="password"
+                      value={row.token}
+                      onChange={(event) => ubahBarisInstagram(index, { token: event.target.value })}
+                      placeholder="EAAG..."
+                    />
+                  </div>
+                  <div className="lg:col-span-1 flex items-end">
+                    <div className="flex w-full items-center justify-between rounded-md border border-border bg-card px-3 py-2">
+                      <Label className="text-xs">Aktif</Label>
+                      <Switch
+                        checked={row.enabled}
+                        onCheckedChange={(value) => ubahBarisInstagram(index, { enabled: value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="lg:col-span-2 flex items-end">
+                    <Button variant="outline" className="w-full" onClick={() => hapusBarisInstagram(index)}>
+                      Hapus Baris
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Akun Instagram Tersimpan Saat Ini</Label>
+            {sedangMemuatIntegrasi ? (
+              <div className="text-sm text-muted-foreground">Lagi ambil akun integrasi...</div>
+            ) : akunInstagramTersimpan.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Belum ada akun Instagram tersimpan.</div>
+            ) : (
+              akunInstagramTersimpan.map((row) => {
+                const config = row.config || {};
+                const rawInstagramUserId = config["instagram_user_id"];
+                const instagramUserId = typeof rawInstagramUserId === "string" ? rawInstagramUserId : "-";
+                return (
+                  <div
+                    key={`ig-saved-${row.account_id}`}
+                    className="rounded-xl border border-border bg-muted p-3 text-sm text-muted-foreground"
+                  >
+                    <span className="font-semibold text-foreground">{row.account_id}</span>{" "}
+                    | status: {row.enabled ? "aktif" : "nonaktif"} | token:{" "}
+                    {row.has_secret ? row.secret_masked || "tersimpan" : "belum ada"} | user_id: {instagramUserId}
+                  </div>
+                );
+              })
             )}
           </div>
         </CardContent>
