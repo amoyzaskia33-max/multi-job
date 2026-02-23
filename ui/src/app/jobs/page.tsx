@@ -2,7 +2,18 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Eye, History, Pause, Pencil, Play, Plus, RotateCcw, Search } from "lucide-react";
+import {
+  Eye,
+  FilterX,
+  History,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +30,25 @@ import {
   type JobSpecVersion,
 } from "@/lib/api";
 
+type JobScheduleKind = "interval" | "cron" | "none";
+
+const formatWaktu = (value?: string) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("id-ID");
+};
+
+const formatJadwal = (intervalDetik?: number, cron?: string) => {
+  if (intervalDetik && intervalDetik > 0) {
+    return { kind: "interval" as JobScheduleKind, label: `Setiap ${intervalDetik} detik` };
+  }
+  if (cron) {
+    return { kind: "cron" as JobScheduleKind, label: cron };
+  }
+  return { kind: "none" as JobScheduleKind, label: "Tanpa Jadwal" };
+};
+
 export default function JobsPage() {
   const [kataCari, setKataCari] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -29,19 +59,24 @@ export default function JobsPage() {
   const [sedangMemuatVersiJobId, setSedangMemuatVersiJobId] = useState("");
   const [sedangRollbackVersionId, setSedangRollbackVersionId] = useState("");
 
-  const { data: dataTugas, isLoading: sedangMemuatTugas, refetch } = useQuery({
+  const {
+    data: dataTugas,
+    isLoading: sedangMemuatTugas,
+    isFetching: sedangMenyegarkan,
+    refetch,
+  } = useQuery({
     queryKey: ["jobs"],
     queryFn: getJobs,
     refetchInterval: 10000,
   });
 
   const daftarTugas = dataTugas ?? [];
+  const queryCari = kataCari.trim().toLowerCase();
 
   const tugasTersaring = useMemo(() => {
     return daftarTugas.filter((tugas) => {
       const cocokKataCari =
-        tugas.job_id.toLowerCase().includes(kataCari.toLowerCase()) ||
-        tugas.type.toLowerCase().includes(kataCari.toLowerCase());
+        tugas.job_id.toLowerCase().includes(queryCari) || tugas.type.toLowerCase().includes(queryCari);
 
       const cocokStatus =
         statusFilter === "all" ||
@@ -50,29 +85,51 @@ export default function JobsPage() {
 
       return cocokKataCari && cocokStatus;
     });
-  }, [daftarTugas, kataCari, statusFilter]);
+  }, [daftarTugas, queryCari, statusFilter]);
 
-  const totalTugas = daftarTugas.length;
-  const tugasAktif = daftarTugas.filter((tugas) => tugas.enabled).length;
-  const tugasNonaktif = totalTugas - tugasAktif;
+  const statistik = useMemo(() => {
+    let aktif = 0;
+    let interval = 0;
+    let cron = 0;
+    let tanpaJadwal = 0;
 
-  const formatJadwal = (intervalDetik?: number, cron?: string) => {
-    if (intervalDetik) return `Setiap ${intervalDetik} detik`;
-    if (cron) return `Jadwal Cron: ${cron}`;
-    return "Tanpa Jadwal";
-  };
+    for (const tugas of daftarTugas) {
+      if (tugas.enabled) aktif += 1;
+      const jadwal = formatJadwal(tugas.schedule?.interval_sec, tugas.schedule?.cron);
+      if (jadwal.kind === "interval") interval += 1;
+      else if (jadwal.kind === "cron") cron += 1;
+      else tanpaJadwal += 1;
+    }
 
-  const formatWaktu = (value?: string) => {
-    if (!value) return "-";
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return value;
-    return parsed.toLocaleString("id-ID");
+    const total = daftarTugas.length;
+    return {
+      total,
+      aktif,
+      nonaktif: total - aktif,
+      interval,
+      cron,
+      tanpaJadwal,
+      ditampilkan: tugasTersaring.length,
+    };
+  }, [daftarTugas, tugasTersaring.length]);
+
+  const totalVersiTermuat = useMemo(
+    () => Object.values(versiPerJob).reduce((acc, rows) => acc + rows.length, 0),
+    [versiPerJob],
+  );
+
+  const adaFilterAktif = queryCari.length > 0 || statusFilter !== "all";
+
+  const resetFilter = () => {
+    setKataCari("");
+    setStatusFilter("all");
   };
 
   const jalankanAksi = async (aksi: () => Promise<boolean>) => {
     setSedangMemprosesAksi(true);
     try {
-      await aksi();
+      const berhasil = await aksi();
+      if (!berhasil) return;
       await refetch();
     } finally {
       setSedangMemprosesAksi(false);
@@ -153,36 +210,56 @@ export default function JobsPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-border bg-card p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Daftar Tugas</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Kamu bisa cari, nyalain, matiin, atau langsung jalanin tugas dari sini.
+              Kelola job operasional: filter cepat, jalankan manual, aktif/nonaktif, dan rollback versi.
             </p>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-[1fr_170px_auto_auto_auto]">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Cari tugas (ID atau tipe)..."
+                placeholder="Cari job (job_id / type)..."
                 value={kataCari}
                 onChange={(event) => setKataCari(event.target.value)}
-                className="w-full pl-10 sm:w-72"
+                className="pl-10"
               />
             </div>
 
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
-              className="rounded-md border border-input bg-card px-3 py-2 text-sm"
+              className="h-10 rounded-md border border-input bg-card px-3 text-sm text-foreground"
             >
               <option value="all">Semua Status</option>
               <option value="enabled">Aktif</option>
               <option value="disabled">Nonaktif</option>
             </select>
 
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Button
+              variant="outline"
+              onClick={() => {
+                void refetch();
+              }}
+              disabled={sedangMenyegarkan}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${sedangMenyegarkan ? "animate-spin" : ""}`} />
+              Muat Ulang
+            </Button>
+
+            <Button variant="outline" onClick={resetFilter} disabled={!adaFilterAktif}>
+              <FilterX className="mr-2 h-4 w-4" />
+              Reset Filter
+            </Button>
+
+            <Button
+              onClick={() => {
+                toast.message("Pembuatan job manual belum disiapkan di halaman ini. Gunakan Automation/Settings.");
+              }}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Buat Tugas
             </Button>
@@ -190,231 +267,290 @@ export default function JobsPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Tugas</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{totalTugas}</p>
+            <p className="text-2xl font-bold">{statistik.total}</p>
           </CardContent>
         </Card>
         <Card className="border-emerald-800/40 bg-emerald-950/20">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Tugas Aktif</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-emerald-300">Aktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-emerald-400">{tugasAktif}</p>
+            <p className="text-2xl font-bold text-emerald-400">{statistik.aktif}</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/60 bg-slate-800/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Tugas Nonaktif</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-slate-300">Nonaktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-400">{tugasNonaktif}</p>
+            <p className="text-2xl font-bold text-slate-300">{statistik.nonaktif}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Interval</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{statistik.interval}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Cron</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{statistik.cron}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Ditampilkan</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{statistik.ditampilkan}</p>
           </CardContent>
         </Card>
       </div>
 
       <Card className="bg-card">
-        <CardHeader>
+        <CardHeader className="space-y-2">
           <CardTitle>Daftar Tugas</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Menampilkan {statistik.ditampilkan} dari {statistik.total} job. Versi termuat saat ini: {totalVersiTermuat}.
+          </p>
         </CardHeader>
         <CardContent>
           {sedangMemuatTugas ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil daftar tugas...</div>
           ) : tugasTersaring.length === 0 ? (
             <div className="py-12 text-center">
-              <div className="mb-2 text-muted-foreground">Belum ada tugas yang cocok.</div>
-              <p className="text-sm text-muted-foreground">Coba ubah kata kunci atau bikin tugas baru.</p>
+              <div className="mb-2 text-muted-foreground">Belum ada job yang cocok.</div>
+              <p className="text-sm text-muted-foreground">Coba ubah filter atau kata kunci pencarian.</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID Tugas</TableHead>
-                  <TableHead>Tipe</TableHead>
-                  <TableHead>Jadwal</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Terakhir Jalan</TableHead>
-                  <TableHead>Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tugasTersaring.map((tugas) => {
-                  const panelVersiTerbuka = jobPanelVersiAktif === tugas.job_id;
-                  const daftarVersi = versiPerJob[tugas.job_id] ?? [];
-                  const versiDetailAktif = versiDetailAktifPerJob[tugas.job_id] ?? "";
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID Tugas</TableHead>
+                    <TableHead>Tipe</TableHead>
+                    <TableHead>Jadwal</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Terakhir Jalan</TableHead>
+                    <TableHead>Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tugasTersaring.map((tugas) => {
+                    const panelVersiTerbuka = jobPanelVersiAktif === tugas.job_id;
+                    const daftarVersi = versiPerJob[tugas.job_id] ?? [];
+                    const versiDetailAktif = versiDetailAktifPerJob[tugas.job_id] ?? "";
+                    const jadwal = formatJadwal(tugas.schedule?.interval_sec, tugas.schedule?.cron);
 
-                  return (
-                    <Fragment key={tugas.job_id}>
-                      <TableRow>
-                        <TableCell className="font-medium">{tugas.job_id}</TableCell>
-                        <TableCell>{tugas.type}</TableCell>
-                        <TableCell>{formatJadwal(tugas.schedule?.interval_sec, tugas.schedule?.cron)}</TableCell>
-                        <TableCell>
-                          <span className={tugas.enabled ? "status-baik" : "status-netral"}>{tugas.enabled ? "Aktif" : "Nonaktif"}</span>
-                        </TableCell>
-                        <TableCell>{formatWaktu(tugas.last_run_time)}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button variant="outline" size="sm" onClick={() => jalankanAksi(() => triggerJob(tugas.job_id))}>
-                              <Play className="mr-1 h-4 w-4" />
-                              Jalankan
-                            </Button>
-                            {tugas.enabled ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={sedangMemprosesAksi}
-                                onClick={() => jalankanAksi(() => disableJob(tugas.job_id))}
-                              >
-                                <Pause className="mr-1 h-4 w-4" />
-                                Nonaktifkan
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={sedangMemprosesAksi}
-                                onClick={() => jalankanAksi(() => enableJob(tugas.job_id))}
-                              >
-                                <RotateCcw className="mr-1 h-4 w-4" />
-                                Aktifkan
-                              </Button>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={sedangMemuatVersiJobId === tugas.job_id}
-                              onClick={() => {
-                                void bukaDetailSpecVersiAktif(tugas.job_id);
-                              }}
-                            >
-                              <Eye className="mr-1 h-4 w-4" />
-                              Lihat
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={sedangMemuatVersiJobId === tugas.job_id}
-                              onClick={() => {
-                                void togglePanelVersi(tugas.job_id);
-                              }}
-                            >
-                              <History className="mr-1 h-4 w-4" />
-                              {panelVersiTerbuka ? "Tutup Versi" : "Versi"}
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <Pencil className="mr-1 h-4 w-4" />
-                              Ubah
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {panelVersiTerbuka ? (
+                    return (
+                      <Fragment key={tugas.job_id}>
                         <TableRow>
-                          <TableCell colSpan={6} className="bg-muted/10">
-                            <div className="space-y-3 py-1">
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <p className="text-sm font-semibold text-foreground">Riwayat Versi Job: {tugas.job_id}</p>
+                          <TableCell className="font-medium">{tugas.job_id}</TableCell>
+                          <TableCell>{tugas.type}</TableCell>
+                          <TableCell>
+                            {jadwal.kind === "interval" ? (
+                              <div className="space-y-1">
+                                <span className="status-netral">Interval</span>
+                                <p className="text-xs text-muted-foreground">{jadwal.label}</p>
+                              </div>
+                            ) : jadwal.kind === "cron" ? (
+                              <div className="space-y-1">
+                                <span className="rounded-full bg-cyan-900/45 px-2 py-1 text-xs font-medium text-cyan-300">Cron</span>
+                                <code className="block text-xs text-muted-foreground">{jadwal.label}</code>
+                              </div>
+                            ) : (
+                              <span className="status-netral">Tanpa Jadwal</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className={tugas.enabled ? "status-baik" : "status-netral"}>
+                              {tugas.enabled ? "Aktif" : "Nonaktif"}
+                            </span>
+                          </TableCell>
+                          <TableCell>{formatWaktu(tugas.last_run_time)}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={sedangMemprosesAksi}
+                                onClick={() => {
+                                  void jalankanAksi(() => triggerJob(tugas.job_id));
+                                }}
+                              >
+                                <Play className="mr-1 h-4 w-4" />
+                                Jalankan
+                              </Button>
+                              {tugas.enabled ? (
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  disabled={sedangMemuatVersiJobId === tugas.job_id}
+                                  disabled={sedangMemprosesAksi}
                                   onClick={() => {
-                                    void muatVersiJob(tugas.job_id);
+                                    void jalankanAksi(() => disableJob(tugas.job_id));
                                   }}
                                 >
-                                  Muat Ulang
+                                  <Pause className="mr-1 h-4 w-4" />
+                                  Nonaktifkan
                                 </Button>
-                              </div>
-
-                              {sedangMemuatVersiJobId === tugas.job_id ? (
-                                <p className="text-sm text-muted-foreground">Memuat data versi...</p>
-                              ) : daftarVersi.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Belum ada versi tersimpan untuk job ini.</p>
                               ) : (
-                                <div className="space-y-2">
-                                  {daftarVersi.map((versi, index) => {
-                                    const tipeRaw = versi.spec["type"];
-                                    const timeoutRaw = versi.spec["timeout_ms"];
-                                    const tipeVersi = typeof tipeRaw === "string" ? tipeRaw : "-";
-                                    const timeoutVersi = typeof timeoutRaw === "number" ? String(timeoutRaw) : "-";
-                                    const sedangAktif = index === 0;
-                                    const sedangRollback = sedangRollbackVersionId === versi.version_id;
-                                    const detailTerbuka = versiDetailAktif === versi.version_id;
-
-                                    return (
-                                      <div key={versi.version_id} className="rounded-lg border border-border bg-card p-3">
-                                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                                          <div className="space-y-1">
-                                            <p className="text-sm font-semibold text-foreground">
-                                              {sedangAktif ? "Versi Aktif" : "Versi Tersimpan"}{" "}
-                                              <span className="font-mono text-xs text-muted-foreground">{versi.version_id}</span>
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                              {formatWaktu(versi.created_at)} | source: {versi.source || "-"} | actor:{" "}
-                                              {versi.actor || "-"}
-                                            </p>
-                                            {versi.note ? (
-                                              <p className="text-xs text-muted-foreground">catatan: {versi.note}</p>
-                                            ) : null}
-                                            <p className="text-xs text-muted-foreground">
-                                              type: {tipeVersi} | timeout_ms: {timeoutVersi}
-                                            </p>
-                                          </div>
-                                          <div className="flex flex-wrap gap-2">
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => {
-                                                toggleDetailSpecVersi(tugas.job_id, versi.version_id);
-                                              }}
-                                            >
-                                              <Eye className="mr-1 h-4 w-4" />
-                                              {detailTerbuka ? "Sembunyikan Spec" : "Lihat Spec"}
-                                            </Button>
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              disabled={sedangAktif || sedangRollback}
-                                              onClick={() => {
-                                                void rollbackVersiJob(tugas.job_id, versi.version_id);
-                                              }}
-                                            >
-                                              <RotateCcw className="mr-1 h-4 w-4" />
-                                              {sedangAktif ? "Sedang Aktif" : sedangRollback ? "Rollback..." : "Rollback"}
-                                            </Button>
-                                          </div>
-                                        </div>
-                                        {detailTerbuka ? (
-                                          <pre className="mt-3 overflow-x-auto rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
-                                            {JSON.stringify(versi.spec, null, 2)}
-                                          </pre>
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={sedangMemprosesAksi}
+                                  onClick={() => {
+                                    void jalankanAksi(() => enableJob(tugas.job_id));
+                                  }}
+                                >
+                                  <RotateCcw className="mr-1 h-4 w-4" />
+                                  Aktifkan
+                                </Button>
                               )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={sedangMemuatVersiJobId === tugas.job_id}
+                                onClick={() => {
+                                  void bukaDetailSpecVersiAktif(tugas.job_id);
+                                }}
+                              >
+                                <Eye className="mr-1 h-4 w-4" />
+                                Lihat
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={sedangMemuatVersiJobId === tugas.job_id}
+                                onClick={() => {
+                                  void togglePanelVersi(tugas.job_id);
+                                }}
+                              >
+                                <History className="mr-1 h-4 w-4" />
+                                {panelVersiTerbuka ? "Tutup Versi" : "Versi"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  toast.message("Editor job detail belum diaktifkan di halaman ini.");
+                                }}
+                              >
+                                <Pencil className="mr-1 h-4 w-4" />
+                                Ubah
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                        {panelVersiTerbuka ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="bg-muted/10">
+                              <div className="space-y-3 py-1">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="text-sm font-semibold text-foreground">Riwayat Versi Job: {tugas.job_id}</p>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={sedangMemuatVersiJobId === tugas.job_id}
+                                    onClick={() => {
+                                      void muatVersiJob(tugas.job_id);
+                                    }}
+                                  >
+                                    Muat Ulang
+                                  </Button>
+                                </div>
+
+                                {sedangMemuatVersiJobId === tugas.job_id ? (
+                                  <p className="text-sm text-muted-foreground">Memuat data versi...</p>
+                                ) : daftarVersi.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">Belum ada versi tersimpan untuk job ini.</p>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {daftarVersi.map((versi, index) => {
+                                      const tipeRaw = versi.spec["type"];
+                                      const timeoutRaw = versi.spec["timeout_ms"];
+                                      const tipeVersi = typeof tipeRaw === "string" ? tipeRaw : "-";
+                                      const timeoutVersi = typeof timeoutRaw === "number" ? String(timeoutRaw) : "-";
+                                      const sedangAktif = index === 0;
+                                      const sedangRollback = sedangRollbackVersionId === versi.version_id;
+                                      const detailTerbuka = versiDetailAktif === versi.version_id;
+
+                                      return (
+                                        <div key={versi.version_id} className="rounded-lg border border-border bg-card p-3">
+                                          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                            <div className="space-y-1">
+                                              <p className="text-sm font-semibold text-foreground">
+                                                {sedangAktif ? "Versi Aktif" : "Versi Tersimpan"}{" "}
+                                                <span className="font-mono text-xs text-muted-foreground">{versi.version_id}</span>
+                                              </p>
+                                              <p className="text-xs text-muted-foreground">
+                                                {formatWaktu(versi.created_at)} | source: {versi.source || "-"} | actor:{" "}
+                                                {versi.actor || "-"}
+                                              </p>
+                                              {versi.note ? (
+                                                <p className="text-xs text-muted-foreground">catatan: {versi.note}</p>
+                                              ) : null}
+                                              <p className="text-xs text-muted-foreground">
+                                                type: {tipeVersi} | timeout_ms: {timeoutVersi}
+                                              </p>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                  toggleDetailSpecVersi(tugas.job_id, versi.version_id);
+                                                }}
+                                              >
+                                                <Eye className="mr-1 h-4 w-4" />
+                                                {detailTerbuka ? "Sembunyikan Spec" : "Lihat Spec"}
+                                              </Button>
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={sedangAktif || sedangRollback}
+                                                onClick={() => {
+                                                  void rollbackVersiJob(tugas.job_id, versi.version_id);
+                                                }}
+                                              >
+                                                <RotateCcw className="mr-1 h-4 w-4" />
+                                                {sedangAktif ? "Sedang Aktif" : sedangRollback ? "Rollback..." : "Rollback"}
+                                              </Button>
+                                            </div>
+                                          </div>
+                                          {detailTerbuka ? (
+                                            <pre className="mt-3 overflow-x-auto rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                                              {JSON.stringify(versi.spec, null, 2)}
+                                            </pre>
+                                          ) : null}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
     </div>
   );
 }
-
-
-
-
