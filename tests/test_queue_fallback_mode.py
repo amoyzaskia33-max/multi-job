@@ -31,6 +31,7 @@ def _reset_queue_fallback_state():
     queue._fallback_job_specs.clear()
     queue._fallback_job_all.clear()
     queue._fallback_job_enabled.clear()
+    queue._fallback_job_spec_versions.clear()
     queue._fallback_runs.clear()
     queue._fallback_run_scores.clear()
     queue._fallback_job_runs.clear()

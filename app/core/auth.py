@@ -124,6 +124,8 @@ def resolve_required_role(path: str, method: str) -> str:
 
     # High-risk endpoints: only admin can mutate security/integration controls.
     if clean_method in {"POST", "PUT", "DELETE"}:
+        if clean_path.startswith("/jobs/") and "/rollback/" in clean_path:
+            return ROLE_ADMIN
         if clean_path.startswith("/approvals/") and (
             clean_path.endswith("/approve") or clean_path.endswith("/reject")
         ):

@@ -76,7 +76,9 @@ from app.core.queue import (
     is_job_enabled,
     list_enabled_job_ids,
     list_job_specs,
+    list_job_spec_versions,
     list_runs,
+    rollback_job_spec_to_version,
     save_job_spec,
     save_run,
     set_mode_fallback_redis,
@@ -552,6 +554,24 @@ class JobMemoryView(BaseModel):
     updated_at: str
 
 
+class JobSpecVersionView(BaseModel):
+    version_id: str
+    job_id: str
+    created_at: str
+    source: str = ""
+    actor: str = ""
+    note: str = ""
+    spec: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JobRollbackResponse(BaseModel):
+    job_id: str
+    status: str
+    rolled_back_to_version_id: str
+    enabled: bool
+    spec: Dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentMemoryFailureView(BaseModel):
     at: str
     signature: str
@@ -717,7 +737,7 @@ async def planner_execute(request: PlannerExecuteRequest):
 @app.post("/jobs")
 async def create_job(job_spec: JobSpec):
     spesifikasi = _serialisasi_model(job_spec)
-    await save_job_spec(job_spec.job_id, spesifikasi)
+    await save_job_spec(job_spec.job_id, spesifikasi, source="api.jobs.create")
     await enable_job(job_spec.job_id)
     await append_event(
         "job.created",
@@ -734,6 +754,58 @@ async def get_job(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     spec["enabled"] = await is_job_enabled(job_id)
     return spec
+
+
+@app.get("/jobs/{job_id}/versions", response_model=List[JobSpecVersionView])
+async def get_job_versions(job_id: str, limit: int = Query(default=20, ge=1, le=200)):
+    spec = await get_job_spec(job_id)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return await list_job_spec_versions(job_id, limit=limit)
+
+
+@app.post("/jobs/{job_id}/rollback/{version_id}", response_model=JobRollbackResponse)
+async def rollback_job(job_id: str, version_id: str, request: Request):
+    spec = await get_job_spec(job_id)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    auth_ctx = getattr(request.state, "auth", {})
+    actor = ""
+    if isinstance(auth_ctx, dict):
+        actor = str(auth_ctx.get("subject") or auth_ctx.get("role") or "").strip()
+
+    restored = await rollback_job_spec_to_version(
+        job_id,
+        version_id,
+        source="api.rollback",
+        actor=actor,
+        note=f"manual rollback to {version_id}",
+    )
+    if not restored:
+        raise HTTPException(status_code=404, detail="Job version not found")
+
+    enabled = await is_job_enabled(job_id)
+    with suppress(Exception):
+        await append_event(
+            "job.rolled_back",
+            {
+                "job_id": job_id,
+                "version_id": version_id,
+                "enabled": enabled,
+                "actor": actor,
+            },
+        )
+
+    restored_payload = dict(restored)
+    restored_payload["enabled"] = enabled
+    return {
+        "job_id": job_id,
+        "status": "rolled_back",
+        "rolled_back_to_version_id": version_id,
+        "enabled": enabled,
+        "spec": restored_payload,
+    }
 
 
 @app.get("/jobs/{job_id}/memory", response_model=JobMemoryView)
@@ -919,7 +991,7 @@ async def upsert_agent_workflow_job(request: AgentWorkflowAutomationRequest):
 
     payload_spesifikasi = _serialisasi_model(spesifikasi)
     sudah_ada = await get_job_spec(job_id) is not None
-    await save_job_spec(job_id, payload_spesifikasi)
+    await save_job_spec(job_id, payload_spesifikasi, source="api.automation.upsert")
     if request.enabled:
         await enable_job(job_id)
     else:

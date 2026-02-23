@@ -23,6 +23,24 @@ export interface JobSpec {
   last_run_time?: string;
 }
 
+export interface JobSpecVersion {
+  version_id: string;
+  job_id: string;
+  created_at: string;
+  source: string;
+  actor: string;
+  note: string;
+  spec: Record<string, unknown>;
+}
+
+export interface JobRollbackResult {
+  job_id: string;
+  status: "rolled_back";
+  rolled_back_to_version_id: string;
+  enabled: boolean;
+  spec: Record<string, unknown>;
+}
+
 export interface Run {
   run_id: string;
   job_id: string;
@@ -454,6 +472,29 @@ export const createJob = async (job: JobSpec): Promise<JobSpec | undefined> => {
     return await send<JobSpec>("/jobs", "POST", job);
   } catch (error) {
     return handleApiError(error, "Gagal membuat tugas baru", undefined);
+  }
+};
+
+export const getJobVersions = async (jobId: string, limit = 20): Promise<JobSpecVersion[]> => {
+  try {
+    const query = new URLSearchParams({ limit: String(limit) });
+    return await getJson<JobSpecVersion[]>(`/jobs/${encodeURIComponent(jobId)}/versions?${query.toString()}`);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat versi job", []);
+  }
+};
+
+export const rollbackJobVersion = async (
+  jobId: string,
+  versionId: string,
+): Promise<JobRollbackResult | undefined> => {
+  try {
+    return await send<JobRollbackResult>(
+      `/jobs/${encodeURIComponent(jobId)}/rollback/${encodeURIComponent(versionId)}`,
+      "POST",
+    );
+  } catch (error) {
+    return handleApiError(error, "Gagal rollback versi job", undefined);
   }
 };
 

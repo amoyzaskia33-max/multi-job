@@ -49,6 +49,7 @@ def test_resolve_required_role_for_write_endpoints():
 
 
 def test_resolve_required_role_for_admin_endpoints():
+    assert resolve_required_role("/jobs/job_a/rollback/v_123", "POST") == ROLE_ADMIN
     assert resolve_required_role("/approvals/apr_123/approve", "POST") == ROLE_ADMIN
     assert resolve_required_role("/approvals/apr_123/reject", "POST") == ROLE_ADMIN
     assert resolve_required_role("/integrations/accounts/openai/default", "PUT") == ROLE_ADMIN

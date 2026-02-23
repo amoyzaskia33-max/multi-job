@@ -113,6 +113,8 @@ Logs are stored in:
 - `POST /planner/execute` - Prompt to plan + create/update jobs + enqueue runs in one call
 - `POST /jobs` - Create new job
 - `GET /jobs/{job_id}` - Get job specification
+- `GET /jobs/{job_id}/versions` - List saved job spec versions
+- `POST /jobs/{job_id}/rollback/{version_id}` - Roll back job spec to selected version
 - `PUT /jobs/{job_id}/enable` - Enable job
 - `PUT /jobs/{job_id}/disable` - Disable job
 - `GET /jobs/{job_id}/runs` - Get recent runs for a job

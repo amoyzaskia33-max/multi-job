@@ -20,6 +20,7 @@ ZSET_DELAYED = "zset:delayed"
 JOB_SPEC_PREFIX = "job:spec:"
 JOB_ENABLED_SET = "job:enabled"
 JOB_ALL_SET = "job:all"
+JOB_SPEC_VERSIONS_PREFIX = "job:spec:versions:"
 RUN_PREFIX = "run:"
 ZSET_RUNS = "zset:runs"
 JOB_RUNS_PREFIX = "job:runs:"
@@ -28,6 +29,7 @@ FLOW_ACTIVE_RUNS_PREFIX = "flow:active:runs:"
 JOB_FAILURE_STATE_PREFIX = "job:failure:state:"
 EVENTS_LOG = "events:log"
 EVENTS_MAX = 500
+JOB_SPEC_VERSIONS_MAX = 100
 
 
 # In-memory fallback store used when Redis is unavailable.
@@ -37,6 +39,7 @@ _fallback_delayed: List[Dict[str, Any]] = []
 _fallback_job_specs: Dict[str, Dict[str, Any]] = {}
 _fallback_job_all: set = set()
 _fallback_job_enabled: set = set()
+_fallback_job_spec_versions: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 _fallback_runs: Dict[str, Dict[str, Any]] = {}
 _fallback_run_scores: Dict[str, float] = {}
 _fallback_job_runs: Dict[str, List[str]] = defaultdict(list)
@@ -110,6 +113,10 @@ def _kunci_active_flow_runs(flow_group: str) -> str:
 
 def _kunci_failure_state(job_id: str) -> str:
     return f"{JOB_FAILURE_STATE_PREFIX}{job_id}"
+
+
+def _kunci_job_spec_versions(job_id: str) -> str:
+    return f"{JOB_SPEC_VERSIONS_PREFIX}{job_id}"
 
 
 def _ke_datetime_utc(raw: Any) -> datetime:
@@ -324,20 +331,144 @@ async def get_due_jobs() -> List[Dict[str, Any]]:
         return [json.loads(payload) for payload in due_payloads]
 
 
-async def save_job_spec(job_id: str, spec: Dict[str, Any]):
+def _buat_job_spec_version(
+    job_id: str,
+    spec: Dict[str, Any],
+    *,
+    source: str = "",
+    actor: str = "",
+    note: str = "",
+) -> Dict[str, Any]:
+    return {
+        "version_id": f"v_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}",
+        "job_id": str(job_id or "").strip(),
+        "created_at": _sekarang_iso(),
+        "source": str(source or "").strip(),
+        "actor": str(actor or "").strip(),
+        "note": str(note or "").strip(),
+        "spec": _salin_nilai(spec),
+    }
+
+
+async def append_job_spec_version(
+    job_id: str,
+    spec: Dict[str, Any],
+    *,
+    source: str = "",
+    actor: str = "",
+    note: str = "",
+    max_versions: int = JOB_SPEC_VERSIONS_MAX,
+) -> Dict[str, Any]:
+    row = _buat_job_spec_version(job_id, spec, source=source, actor=actor, note=note)
+    key = _kunci_job_spec_versions(job_id)
+    batas = max(1, int(max_versions))
+
+    if _sedang_mode_fallback_redis():
+        rows = _fallback_job_spec_versions[job_id]
+        rows.insert(0, _salin_nilai(row))
+        del rows[batas:]
+        return row
+
+    try:
+        await redis_client.lpush(key, json.dumps(row))
+        await redis_client.ltrim(key, 0, batas - 1)
+    except RedisError:
+        _aktifkan_mode_fallback()
+        rows = _fallback_job_spec_versions[job_id]
+        rows.insert(0, _salin_nilai(row))
+        del rows[batas:]
+    return row
+
+
+async def list_job_spec_versions(job_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    safe_limit = max(1, int(limit))
+
+    if _sedang_mode_fallback_redis():
+        rows = _fallback_job_spec_versions.get(job_id, [])
+        return [_salin_nilai(row) for row in rows[:safe_limit]]
+
+    try:
+        raw_rows = await redis_client.lrange(_kunci_job_spec_versions(job_id), 0, safe_limit - 1)
+        rows: List[Dict[str, Any]] = []
+        for item in raw_rows:
+            row = json.loads(item)
+            if isinstance(row, dict):
+                rows.append(row)
+        return rows
+    except RedisError:
+        _aktifkan_mode_fallback()
+        rows = _fallback_job_spec_versions.get(job_id, [])
+        return [_salin_nilai(row) for row in rows[:safe_limit]]
+
+
+async def get_job_spec_version(job_id: str, version_id: str, limit_scan: int = 500) -> Optional[Dict[str, Any]]:
+    target_id = str(version_id or "").strip()
+    if not target_id:
+        return None
+
+    rows = await list_job_spec_versions(job_id, limit=max(1, int(limit_scan)))
+    for row in rows:
+        if str(row.get("version_id") or "").strip() == target_id:
+            return row
+    return None
+
+
+async def rollback_job_spec_to_version(
+    job_id: str,
+    version_id: str,
+    *,
+    source: str = "rollback",
+    actor: str = "",
+    note: str = "",
+) -> Optional[Dict[str, Any]]:
+    row = await get_job_spec_version(job_id, version_id)
+    if not row:
+        return None
+
+    spec = row.get("spec")
+    if not isinstance(spec, dict):
+        return None
+
+    rollback_note = str(note or "").strip() or f"rollback_to:{version_id}"
+    await save_job_spec(
+        job_id,
+        spec,
+        source=source,
+        actor=actor,
+        note=rollback_note,
+        save_version=True,
+    )
+    return await get_job_spec(job_id)
+
+
+async def save_job_spec(
+    job_id: str,
+    spec: Dict[str, Any],
+    *,
+    source: str = "",
+    actor: str = "",
+    note: str = "",
+    save_version: bool = True,
+):
     """Save job specification to Redis."""
     if _sedang_mode_fallback_redis():
         _fallback_job_specs[job_id] = _salin_nilai(spec)
         _fallback_job_all.add(job_id)
+        if save_version:
+            await append_job_spec_version(job_id, spec, source=source, actor=actor, note=note)
         return
 
     try:
         await redis_client.set(f"{JOB_SPEC_PREFIX}{job_id}", json.dumps(spec))
         await redis_client.sadd(JOB_ALL_SET, job_id)
+        if save_version:
+            await append_job_spec_version(job_id, spec, source=source, actor=actor, note=note)
     except RedisError:
         _aktifkan_mode_fallback()
         _fallback_job_specs[job_id] = _salin_nilai(spec)
         _fallback_job_all.add(job_id)
+        if save_version:
+            await append_job_spec_version(job_id, spec, source=source, actor=actor, note=note)
 
 
 async def get_job_spec(job_id: str) -> Optional[Dict[str, Any]]:
