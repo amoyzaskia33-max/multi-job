@@ -1,0 +1,47 @@
+WORKFLOW HARIAN MULTI-PROVIDER (SOCIAL + COMMERCE)
+
++---------------------------------------------------------------------+
+| 1) PILIH PROVIDER DI SETTINGS                                       |
+| - Instagram / Facebook / TikTok / X / Shopee / Tokopedia / lainnya |
+| - Isi range akun: 001..010                                          |
+| - Simpan token + user/shop/account id                               |
++---------------------------------------------------------------------+
+                                |
+                                v
++---------------------------------------------------------------------+
+| 2) GENERATE JOB HARIAN (1 KLIK)                                     |
+| - <prefix>_reply_<account_id>  (interval)                           |
+| - <prefix>_post_<account_id>   (cron stagger per akun)              |
+| - <prefix>_report_night        (cron malam)                         |
++---------------------------------------------------------------------+
+              |                                  |                                  |
+              v                                  v                                  v
++----------------------------------+  +----------------------------------+  +----------------------------------+
+| LANE A - OPERASIONAL BERKALA     |  | LANE B - PUBLIKASI/SINKRON PAGI  |  | LANE C - REPORT MALAM           |
+| Trigger: interval (mis. 60 detik)|  | Trigger: cron (mis. 08:00 +2m)    |  | Trigger: cron (mis. 21:00)      |
+|                                  |  |                                    |  |                                  |
+| - Social: pantau komentar/DM     |  | - Ambil materi dari folder lokal   |  | - Ambil run per akun             |
+| - Commerce: pantau chat/order    |  | - Upload/proses lalu publish/sync  |  | - Rekap sukses/gagal             |
+| - Simpan status hasil            |  | - Simpan status hasil              |  | - Kirim ringkasan + error utama  |
++----------------------------------+  +----------------------------------+  +----------------------------------+
+              |                                  |                                  |
+              +------------------------+---------+------------------------+---------+
+                                       |                                  |
+                                       v                                  v
+                      +--------------------------------------------------------------+
+                      | KONTROL PLATFORM                                              |
+                      | - Retry + backoff                                             |
+                      | - Cooldown saat gagal beruntun                                |
+                      | - Approval untuk aksi sensitif                                |
+                      | - Audit log + event timeline                                  |
+                      | - Versioning job + rollback                                   |
+                      +--------------------------------------------------------------+
+                                                  |
+                                                  v
+                      +--------------------------------------------------------------+
+                      | OUTPUT                                                        |
+                      | - Operasi harian per akun tetap jalan                         |
+                      | - Publikasi pagi tidak barengan (stagger)                    |
+                      | - Report malam otomatis setiap hari                           |
+                      +--------------------------------------------------------------+
+

@@ -45,8 +45,136 @@ type InstagramBulkAccountRow = {
   enabled: boolean;
 };
 
-const INSTAGRAM_PROVIDER = "instagram_graph";
-const INSTAGRAM_BASE_URL_DEFAULT = "https://graph.facebook.com/v20.0";
+type BulkProviderMeta = {
+  provider: string;
+  label: string;
+  default_prefix: string;
+  default_base_url: string;
+  user_id_key: string;
+  user_id_label: string;
+  default_channel: string;
+  job_prefix: string;
+};
+
+const BULK_PROVIDER_META: BulkProviderMeta[] = [
+  {
+    provider: "instagram_graph",
+    label: "Instagram",
+    default_prefix: "ig_",
+    default_base_url: "https://graph.facebook.com/v20.0",
+    user_id_key: "instagram_user_id",
+    user_id_label: "Instagram User ID",
+    default_channel: "instagram",
+    job_prefix: "ig",
+  },
+  {
+    provider: "facebook_graph",
+    label: "Facebook",
+    default_prefix: "fb_",
+    default_base_url: "https://graph.facebook.com/v20.0",
+    user_id_key: "facebook_page_id",
+    user_id_label: "Facebook Page ID",
+    default_channel: "facebook",
+    job_prefix: "fb",
+  },
+  {
+    provider: "tiktok_open",
+    label: "TikTok",
+    default_prefix: "tt_",
+    default_base_url: "https://open.tiktokapis.com/v2",
+    user_id_key: "tiktok_open_id",
+    user_id_label: "TikTok Account ID",
+    default_channel: "tiktok",
+    job_prefix: "tt",
+  },
+  {
+    provider: "x_twitter",
+    label: "Twitter / X",
+    default_prefix: "x_",
+    default_base_url: "https://api.x.com/2",
+    user_id_key: "x_account_id",
+    user_id_label: "X Account ID",
+    default_channel: "x",
+    job_prefix: "x",
+  },
+  {
+    provider: "shopee",
+    label: "Shopee",
+    default_prefix: "sp_",
+    default_base_url: "https://partner.shopeemobile.com",
+    user_id_key: "shop_id",
+    user_id_label: "Shop ID",
+    default_channel: "shopee",
+    job_prefix: "sp",
+  },
+  {
+    provider: "tokopedia",
+    label: "Tokopedia",
+    default_prefix: "tp_",
+    default_base_url: "https://fs.tokopedia.net",
+    user_id_key: "shop_id",
+    user_id_label: "Shop ID",
+    default_channel: "tokopedia",
+    job_prefix: "tp",
+  },
+  {
+    provider: "tiktok_shop",
+    label: "TikTok Shop",
+    default_prefix: "tts_",
+    default_base_url: "https://open-api.tiktokglobalshop.com",
+    user_id_key: "shop_id",
+    user_id_label: "Shop ID",
+    default_channel: "tiktok_shop",
+    job_prefix: "tts",
+  },
+  {
+    provider: "lazada",
+    label: "Lazada",
+    default_prefix: "lz_",
+    default_base_url: "https://api.lazada.co.id/rest",
+    user_id_key: "shop_id",
+    user_id_label: "Shop ID",
+    default_channel: "lazada",
+    job_prefix: "lz",
+  },
+  {
+    provider: "youtube_data",
+    label: "YouTube",
+    default_prefix: "yt_",
+    default_base_url: "https://www.googleapis.com/youtube/v3",
+    user_id_key: "channel_id",
+    user_id_label: "Channel ID",
+    default_channel: "youtube",
+    job_prefix: "yt",
+  },
+  {
+    provider: "linkedin",
+    label: "LinkedIn",
+    default_prefix: "li_",
+    default_base_url: "https://api.linkedin.com/v2",
+    user_id_key: "organization_id",
+    user_id_label: "Organization ID",
+    default_channel: "linkedin",
+    job_prefix: "li",
+  },
+];
+
+const BULK_PROVIDER_META_BY_ID = new Map(BULK_PROVIDER_META.map((row) => [row.provider, row]));
+
+const AMBIL_META_PROVIDER_BULK = (provider: string): BulkProviderMeta => {
+  return (
+    BULK_PROVIDER_META_BY_ID.get(provider) || {
+      provider,
+      label: provider || "Provider",
+      default_prefix: "acc_",
+      default_base_url: "",
+      user_id_key: "external_user_id",
+      user_id_label: "External User ID",
+      default_channel: provider || "generic",
+      job_prefix: "acc",
+    }
+  );
+};
 
 const batasiDetikTunggu = (value: number) => {
   if (!Number.isFinite(value)) return 0;
@@ -200,12 +328,13 @@ export default function SettingsPage() {
   const [integrationSecret, setIntegrationSecret] = useState("");
   const [integrationConfigText, setIntegrationConfigText] = useState("{}");
 
+  const [instagramProvider, setInstagramProvider] = useState("instagram_graph");
   const [instagramPrefixId, setInstagramPrefixId] = useState("ig_");
   const [instagramMulaiDari, setInstagramMulaiDari] = useState(1);
   const [instagramSampaiKe, setInstagramSampaiKe] = useState(10);
   const [instagramPadDigit, setInstagramPadDigit] = useState(3);
   const [instagramRows, setInstagramRows] = useState<InstagramBulkAccountRow[]>([]);
-  const [instagramBaseUrl, setInstagramBaseUrl] = useState(INSTAGRAM_BASE_URL_DEFAULT);
+  const [instagramBaseUrl, setInstagramBaseUrl] = useState("https://graph.facebook.com/v20.0");
   const [instagramTimezone, setInstagramTimezone] = useState("Asia/Jakarta");
   const [instagramFolderKonten, setInstagramFolderKonten] = useState("C:\\Users\\user\\Desktop");
   const [instagramIntervalReplyDetik, setInstagramIntervalReplyDetik] = useState(60);
@@ -303,13 +432,15 @@ export default function SettingsPage() {
     akunTelegram,
   ]);
 
+  const instagramProviderMeta = useMemo(() => AMBIL_META_PROVIDER_BULK(instagramProvider), [instagramProvider]);
+
   const akunInstagramTersimpan = useMemo(
     () =>
       akunIntegrasi
-        .filter((row) => row.provider === INSTAGRAM_PROVIDER)
+        .filter((row) => row.provider === instagramProvider)
         .slice()
         .sort((a, b) => a.account_id.localeCompare(b.account_id)),
-    [akunIntegrasi],
+    [akunIntegrasi, instagramProvider],
   );
 
   const daftarUpdateSkill = useMemo(
@@ -338,6 +469,14 @@ export default function SettingsPage() {
 
     setTokenApi(getApiAuthToken());
   }, []);
+
+  useEffect(() => {
+    const meta = instagramProviderMeta;
+    setInstagramPrefixId(meta.default_prefix);
+    if (meta.default_base_url) {
+      setInstagramBaseUrl(meta.default_base_url);
+    }
+  }, [instagramProviderMeta]);
 
   const simpanPengaturanUi = () => {
     const payload: PengaturanUi = {
@@ -544,7 +683,7 @@ export default function SettingsPage() {
 
   const tambahBarisInstagramManual = () => {
     const pad = batasiAngka(instagramPadDigit, 1, 6, 3);
-    const prefix = instagramPrefixId.trim() || "ig_";
+    const prefix = instagramPrefixId.trim() || instagramProviderMeta.default_prefix || "acc_";
     const sudahAda = new Set(instagramRows.map((row) => row.account_id.trim()));
 
     let nomor = batasiAngka(instagramMulaiDari, 1, 9999, 1);
@@ -570,13 +709,13 @@ export default function SettingsPage() {
   };
 
   const buatRangeAkunInstagram = () => {
-    const prefix = instagramPrefixId.trim() || "ig_";
+    const prefix = instagramPrefixId.trim() || instagramProviderMeta.default_prefix || "acc_";
     const mulai = batasiAngka(instagramMulaiDari, 1, 9999, 1);
     const sampai = batasiAngka(instagramSampaiKe, 1, 9999, 10);
     const pad = batasiAngka(instagramPadDigit, 1, 6, 3);
 
     if (sampai < mulai) {
-      toast.error("Rentang akun Instagram tidak valid (akhir < awal).");
+      toast.error(`Rentang akun ${instagramProviderMeta.label} tidak valid (akhir < awal).`);
       return;
     }
 
@@ -589,7 +728,7 @@ export default function SettingsPage() {
       const draft = sekarangById.get(accountId);
       const saved = tersimpanById.get(accountId);
       const savedConfig = saved?.config || {};
-      const rawInstagramUserId = savedConfig["instagram_user_id"];
+      const rawInstagramUserId = savedConfig[instagramProviderMeta.user_id_key];
       const instagramUserId = typeof rawInstagramUserId === "string" ? rawInstagramUserId : "";
 
       generated.push({
@@ -601,18 +740,20 @@ export default function SettingsPage() {
     }
 
     setInstagramRows(generated);
-    toast.success(`Range akun Instagram ${prefix}${String(mulai).padStart(pad, "0")} sampai ${prefix}${String(sampai).padStart(pad, "0")} siap.`);
+    toast.success(
+      `Range akun ${instagramProviderMeta.label} ${prefix}${String(mulai).padStart(pad, "0")} sampai ${prefix}${String(sampai).padStart(pad, "0")} siap.`,
+    );
   };
 
   const muatAkunInstagramTersimpanKeEditor = () => {
     if (akunInstagramTersimpan.length === 0) {
-      toast.message("Belum ada akun Instagram tersimpan.");
+      toast.message(`Belum ada akun ${instagramProviderMeta.label} tersimpan.`);
       return;
     }
 
     const rows: InstagramBulkAccountRow[] = akunInstagramTersimpan.map((row) => {
       const config = row.config || {};
-      const rawInstagramUserId = config["instagram_user_id"];
+      const rawInstagramUserId = config[instagramProviderMeta.user_id_key];
       const instagramUserId = typeof rawInstagramUserId === "string" ? rawInstagramUserId : "";
       return {
         account_id: row.account_id,
@@ -623,7 +764,7 @@ export default function SettingsPage() {
     });
 
     setInstagramRows(rows);
-    toast.success(`Editor Instagram diisi dari ${rows.length} akun tersimpan.`);
+    toast.success(`Editor ${instagramProviderMeta.label} diisi dari ${rows.length} akun tersimpan.`);
   };
 
   const simpanSemuaAkunInstagram = async () => {
@@ -637,21 +778,21 @@ export default function SettingsPage() {
       .filter((row) => row.account_id.length > 0);
 
     if (rows.length === 0) {
-      toast.error("Belum ada baris akun Instagram untuk disimpan.");
+      toast.error(`Belum ada baris akun ${instagramProviderMeta.label} untuk disimpan.`);
       return;
     }
 
-    const baseUrl = instagramBaseUrl.trim() || INSTAGRAM_BASE_URL_DEFAULT;
+    const baseUrl = instagramBaseUrl.trim() || instagramProviderMeta.default_base_url;
     let sukses = 0;
     const gagal: string[] = [];
 
     for (const row of rows) {
       const config: Record<string, unknown> = { base_url: baseUrl };
       if (row.instagram_user_id) {
-        config.instagram_user_id = row.instagram_user_id;
+        config[instagramProviderMeta.user_id_key] = row.instagram_user_id;
       }
 
-      const saved = await upsertIntegrationAccount(INSTAGRAM_PROVIDER, row.account_id, {
+      const saved = await upsertIntegrationAccount(instagramProvider, row.account_id, {
         enabled: row.enabled,
         secret: row.token || undefined,
         config,
@@ -668,7 +809,7 @@ export default function SettingsPage() {
     await muatUlangAkunIntegrasi();
 
     if (sukses > 0) {
-      toast.success(`Akun Instagram tersimpan: ${sukses} dari ${rows.length}.`);
+      toast.success(`Akun ${instagramProviderMeta.label} tersimpan: ${sukses} dari ${rows.length}.`);
     }
     if (gagal.length > 0) {
       toast.error(`Gagal menyimpan akun: ${gagal.join(", ")}`);
@@ -699,7 +840,7 @@ export default function SettingsPage() {
   const generateJobHarianInstagram = async () => {
     const targetAccounts = ambilTargetAkunInstagramAktif();
     if (targetAccounts.length === 0) {
-      toast.error("Belum ada akun Instagram aktif untuk dibuatkan job.");
+      toast.error(`Belum ada akun ${instagramProviderMeta.label} aktif untuk dibuatkan job.`);
       return;
     }
 
@@ -712,6 +853,9 @@ export default function SettingsPage() {
     const menitReport = batasiAngka(instagramMenitReport, 0, 59, 0);
     const folderKonten = instagramFolderKonten.trim() || "C:\\Users\\user\\Desktop";
     const akunGabung = targetAccounts.map((row) => row.account_id).join(", ");
+    const labelProvider = instagramProviderMeta.label;
+    const channelProvider = instagramProviderMeta.default_channel;
+    const prefixJob = instagramProviderMeta.job_prefix;
 
     let sukses = 0;
     const gagal: string[] = [];
@@ -726,30 +870,30 @@ export default function SettingsPage() {
       );
 
       const replyPayload = {
-        job_id: `ig_reply_${accountId}`,
+        job_id: `${prefixJob}_reply_${accountId}`,
         prompt:
-          `Pantau komentar dan DM Instagram akun ${accountId}. ` +
-          "Balas dengan gaya ramah, tandai isu sensitif untuk eskalasi, dan hindari jawaban berulang.",
+          `Pantau interaksi utama di ${labelProvider} akun ${accountId}. ` +
+          "Tindaklanjuti komentar/chat/notifikasi sesuai SOP, tandai isu sensitif untuk eskalasi, dan hindari jawaban berulang.",
         interval_sec: intervalReply,
         enabled: true,
         timezone: timezoneValue,
-        default_channel: "instagram",
+        default_channel: channelProvider,
         default_account_id: accountId,
-        flow_group: "ig_reply_ops",
+        flow_group: `${prefixJob}_reply_ops`,
         pressure_priority: "normal" as const,
       };
 
       const postPayload = {
-        job_id: `ig_post_${accountId}`,
+        job_id: `${prefixJob}_post_${accountId}`,
         prompt:
-          `Jadwalkan posting Instagram akun ${accountId} menggunakan konten dari folder ${folderKonten}. ` +
-          "Pilih file hari ini, upload media, publish satu konten, lalu catat status hasil.",
+          `Jadwalkan publikasi/sinkron konten untuk ${labelProvider} akun ${accountId} dari folder ${folderKonten}. ` +
+          "Pilih materi hari ini, proses upload/publish, lalu catat status hasil.",
         cron: cronPosting,
         enabled: true,
         timezone: timezoneValue,
-        default_channel: "instagram",
+        default_channel: channelProvider,
         default_account_id: accountId,
-        flow_group: "ig_post_ops",
+        flow_group: `${prefixJob}_post_ops`,
         pressure_priority: "normal" as const,
       };
 
@@ -769,16 +913,16 @@ export default function SettingsPage() {
     }
 
     const reportPayload = {
-      job_id: "ig_report_night",
+      job_id: `${prefixJob}_report_night`,
       prompt:
-        `Buat laporan operasional Instagram harian untuk akun: ${akunGabung}. ` +
-        "Ringkas total balasan komentar/DM, total posting sukses, error utama, dan rekomendasi tindakan besok.",
+        `Buat laporan operasional harian ${labelProvider} untuk akun: ${akunGabung}. ` +
+        "Ringkas total aktivitas sukses, total gagal, error utama, dan rekomendasi tindakan besok.",
       cron: `${menitReport} ${jamReport} * * *`,
       enabled: true,
       timezone: timezoneValue,
-      default_channel: "instagram",
-      default_account_id: targetAccounts[0]?.account_id || "ig_001",
-      flow_group: "ig_report_ops",
+      default_channel: channelProvider,
+      default_account_id: targetAccounts[0]?.account_id || `${prefixJob}_001`,
+      flow_group: `${prefixJob}_report_ops`,
       pressure_priority: "low" as const,
     };
 
@@ -786,11 +930,11 @@ export default function SettingsPage() {
     if (reportSaved) {
       sukses += 1;
     } else {
-      gagal.push("ig_report_night");
+      gagal.push(`${prefixJob}_report_night`);
     }
 
     if (sukses > 0) {
-      toast.success(`Job Instagram berhasil dibuat/diperbarui: ${sukses}.`);
+      toast.success(`Job ${labelProvider} berhasil dibuat/diperbarui: ${sukses}.`);
     }
     if (gagal.length > 0) {
       toast.error(`Sebagian job gagal dibuat: ${gagal.join(", ")}`);
@@ -1448,22 +1592,38 @@ export default function SettingsPage() {
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Instagram Bulk Accounts & Job Harian</CardTitle>
+          <CardTitle>Bulk Accounts & Job Harian (Multi-Provider)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Kelola akun Instagram (contoh <code>ig_001</code> s/d <code>ig_010</code>) dari satu panel, lalu buat
-            job harian otomatis untuk balas DM/komentar, posting pagi bertahap, dan report malam.
+            Pilih provider (Instagram/Facebook/TikTok/X/Shopee/Tokopedia/dll), kelola akun bulk (contoh{" "}
+            <code>{`${instagramProviderMeta.default_prefix}001`}</code> s/d{" "}
+            <code>{`${instagramProviderMeta.default_prefix}010`}</code>), lalu generate job harian otomatis.
           </p>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+            <div>
+              <Label htmlFor="bulk-provider">Provider</Label>
+              <select
+                id="bulk-provider"
+                value={instagramProvider}
+                onChange={(event) => setInstagramProvider(event.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground"
+              >
+                {BULK_PROVIDER_META.map((row) => (
+                  <option key={row.provider} value={row.provider}>
+                    {row.label} ({row.provider})
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <Label htmlFor="ig-prefix">Prefix ID Akun</Label>
               <Input
                 id="ig-prefix"
                 value={instagramPrefixId}
                 onChange={(event) => setInstagramPrefixId(event.target.value)}
-                placeholder="ig_"
+                placeholder={instagramProviderMeta.default_prefix}
               />
             </div>
             <div>
@@ -1525,7 +1685,7 @@ export default function SettingsPage() {
                 id="ig-base-url"
                 value={instagramBaseUrl}
                 onChange={(event) => setInstagramBaseUrl(event.target.value)}
-                placeholder={INSTAGRAM_BASE_URL_DEFAULT}
+                placeholder={instagramProviderMeta.default_base_url || "https://api.example.com"}
               />
             </div>
             <div>
@@ -1624,14 +1784,14 @@ export default function SettingsPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={simpanSemuaAkunInstagram}>Simpan Semua Akun Instagram</Button>
+            <Button onClick={simpanSemuaAkunInstagram}>Simpan Semua Akun {instagramProviderMeta.label}</Button>
             <Button variant="outline" onClick={generateJobHarianInstagram}>
-              Generate Job Harian Instagram
+              Generate Job Harian {instagramProviderMeta.label}
             </Button>
           </div>
 
           <div className="space-y-2">
-            <Label>Editor Akun Instagram</Label>
+            <Label>Editor Akun {instagramProviderMeta.label}</Label>
             {instagramRows.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 Belum ada baris akun. Klik <strong>Buat Range Akun</strong> atau <strong>Muat dari Akun Tersimpan</strong>.
@@ -1647,15 +1807,15 @@ export default function SettingsPage() {
                     <Input
                       value={row.account_id}
                       onChange={(event) => ubahBarisInstagram(index, { account_id: event.target.value })}
-                      placeholder="ig_001"
+                      placeholder={`${instagramProviderMeta.default_prefix}001`}
                     />
                   </div>
                   <div className="lg:col-span-3">
-                    <Label>Instagram User ID</Label>
+                    <Label>{instagramProviderMeta.user_id_label}</Label>
                     <Input
                       value={row.instagram_user_id}
                       onChange={(event) => ubahBarisInstagram(index, { instagram_user_id: event.target.value })}
-                      placeholder="1784xxxxxxxxxxxx"
+                      placeholder={instagramProviderMeta.user_id_key}
                     />
                   </div>
                   <div className="lg:col-span-4">
@@ -1687,15 +1847,15 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>Akun Instagram Tersimpan Saat Ini</Label>
+            <Label>Akun {instagramProviderMeta.label} Tersimpan Saat Ini</Label>
             {sedangMemuatIntegrasi ? (
               <div className="text-sm text-muted-foreground">Lagi ambil akun integrasi...</div>
             ) : akunInstagramTersimpan.length === 0 ? (
-              <div className="text-sm text-muted-foreground">Belum ada akun Instagram tersimpan.</div>
+              <div className="text-sm text-muted-foreground">Belum ada akun {instagramProviderMeta.label} tersimpan.</div>
             ) : (
               akunInstagramTersimpan.map((row) => {
                 const config = row.config || {};
-                const rawInstagramUserId = config["instagram_user_id"];
+                const rawInstagramUserId = config[instagramProviderMeta.user_id_key];
                 const instagramUserId = typeof rawInstagramUserId === "string" ? rawInstagramUserId : "-";
                 return (
                   <div
@@ -1704,7 +1864,8 @@ export default function SettingsPage() {
                   >
                     <span className="font-semibold text-foreground">{row.account_id}</span>{" "}
                     | status: {row.enabled ? "aktif" : "nonaktif"} | token:{" "}
-                    {row.has_secret ? row.secret_masked || "tersimpan" : "belum ada"} | user_id: {instagramUserId}
+                    {row.has_secret ? row.secret_masked || "tersimpan" : "belum ada"} | {instagramProviderMeta.user_id_key}:{" "}
+                    {instagramUserId}
                   </div>
                 );
               })
