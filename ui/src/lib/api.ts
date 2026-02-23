@@ -226,6 +226,22 @@ export interface SystemEvent {
   data: Record<string, unknown>;
 }
 
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  method: string;
+  path: string;
+  status_code: number;
+  outcome: "success" | "error" | "denied";
+  required_role: string;
+  actor_role: string;
+  actor_subject: string;
+  auth_enabled: boolean;
+  query: string;
+  detail: string;
+  client_ip: string;
+}
+
 export interface PlannerExecutionResult {
   job_id: string;
   type: string;
@@ -677,6 +693,29 @@ export const getEvents = async (params?: { since?: string; limit?: number }): Pr
     return await getJson<SystemEvent[]>(path);
   } catch (error) {
     return handleApiError(error, "Gagal memuat update skill", []);
+  }
+};
+
+export const getAuditLogs = async (params?: {
+  since?: string;
+  limit?: number;
+  method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+  outcome?: "success" | "error" | "denied";
+  actor_role?: "viewer" | "operator" | "admin" | "unknown";
+  path_contains?: string;
+}): Promise<AuditLog[]> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params?.since) queryParams.append("since", params.since);
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.method) queryParams.append("method", params.method);
+    if (params?.outcome) queryParams.append("outcome", params.outcome);
+    if (params?.actor_role) queryParams.append("actor_role", params.actor_role);
+    if (params?.path_contains) queryParams.append("path_contains", params.path_contains);
+    const path = `/audit/logs${queryParams.size ? `?${queryParams.toString()}` : ""}`;
+    return await getJson<AuditLog[]>(path);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat audit log", []);
   }
 };
 

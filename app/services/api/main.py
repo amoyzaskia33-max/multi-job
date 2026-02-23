@@ -19,6 +19,12 @@ from app.core.auth import (
     resolve_required_role,
     role_memenuhi,
 )
+from app.core.audit import (
+    AUDIT_EVENT_TYPE,
+    build_audit_payload,
+    event_to_audit_row,
+    is_mutating_method,
+)
 from app.core.connector_accounts import (
     delete_telegram_account,
     get_telegram_account,
@@ -140,30 +146,61 @@ async def auth_rbac_middleware(request: Request, call_next):
             "role": ROLE_ADMIN,
             "subject": "auth-disabled",
         }
-        return await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            await _catat_audit_api(
+                request,
+                required_role=required_role,
+                status_code=500,
+                detail=f"Unhandled exception: {exc}",
+            )
+            raise
+
+        await _catat_audit_api(
+            request,
+            required_role=required_role,
+            status_code=response.status_code,
+            detail="auth disabled",
+        )
+        return response
 
     token = extract_auth_token(dict(request.headers), _AUTH_CONFIG.header_name, _AUTH_CONFIG.scheme)
     if not token:
-        return JSONResponse(
+        response = JSONResponse(
             status_code=401,
             content={
                 "detail": "Unauthorized: missing auth token.",
                 "required_role": required_role,
             },
         )
+        await _catat_audit_api(
+            request,
+            required_role=required_role,
+            status_code=401,
+            detail="missing auth token",
+        )
+        return response
 
     role = _AUTH_CONFIG.token_roles.get(token, "")
     if not role:
-        return JSONResponse(
+        response = JSONResponse(
             status_code=401,
             content={
                 "detail": "Unauthorized: invalid auth token.",
                 "required_role": required_role,
             },
         )
+        await _catat_audit_api(
+            request,
+            required_role=required_role,
+            status_code=401,
+            detail="invalid auth token",
+        )
+        return response
 
     if not role_memenuhi(required_role, role):
-        return JSONResponse(
+        response = JSONResponse(
             status_code=403,
             content={
                 "detail": "Forbidden: role is not allowed for this endpoint.",
@@ -171,13 +208,36 @@ async def auth_rbac_middleware(request: Request, call_next):
                 "role": role,
             },
         )
+        await _catat_audit_api(
+            request,
+            required_role=required_role,
+            status_code=403,
+            detail=f"insufficient role: {role}",
+        )
+        return response
 
     request.state.auth = {
         "enabled": True,
         "role": role,
         "subject": token[:6] + "***",
     }
-    return await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        await _catat_audit_api(
+            request,
+            required_role=required_role,
+            status_code=500,
+            detail=f"Unhandled exception: {exc}",
+        )
+        raise
+
+    await _catat_audit_api(
+        request,
+        required_role=required_role,
+        status_code=response.status_code,
+    )
+    return response
 
 
 @app.exception_handler(RedisError)
@@ -257,6 +317,34 @@ def _local_agents_snapshot() -> List[Dict[str, Any]]:
         )
 
     return rows
+
+
+async def _catat_audit_api(
+    request: Request,
+    *,
+    required_role: str,
+    status_code: int,
+    detail: str = "",
+) -> None:
+    if not is_mutating_method(request.method) and int(status_code) not in {401, 403}:
+        return
+
+    client_ip = ""
+    if request.client and request.client.host:
+        client_ip = str(request.client.host)
+
+    payload = build_audit_payload(
+        method=request.method,
+        path=request.url.path,
+        status_code=status_code,
+        required_role=required_role,
+        auth_ctx=getattr(request.state, "auth", None),
+        query=request.url.query or "",
+        detail=detail,
+        client_ip=client_ip,
+    )
+    with suppress(Exception):
+        await append_event(AUDIT_EVENT_TYPE, payload)
 
 
 class TelegramConnectorAccountUpsert(BaseModel):
@@ -430,6 +518,22 @@ class ApprovalRequestView(BaseModel):
     decided_at: Optional[str] = None
     decision_by: Optional[str] = None
     decision_note: Optional[str] = None
+
+
+class AuditLogView(BaseModel):
+    id: str
+    timestamp: str
+    method: str
+    path: str
+    status_code: int
+    outcome: str
+    required_role: str = ""
+    actor_role: str = ""
+    actor_subject: str = ""
+    auth_enabled: bool = False
+    query: str = ""
+    detail: str = ""
+    client_ip: str = ""
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -1308,6 +1412,47 @@ async def run_detail(run_id: str):
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return _serialisasi_model(run)
+
+
+@app.get("/audit/logs", response_model=List[AuditLogView])
+async def audit_logs(
+    since: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    method: Optional[str] = Query(default=None, pattern="^(GET|POST|PUT|DELETE|PATCH)$"),
+    outcome: Optional[str] = Query(default=None, pattern="^(success|error|denied)$"),
+    actor_role: Optional[str] = Query(default=None, pattern="^(viewer|operator|admin|unknown)$"),
+    path_contains: Optional[str] = None,
+):
+    scan_limit = min(max(limit * 8, 300), 5000)
+
+    try:
+        rows = await get_events(limit=scan_limit, since=since)
+    except RedisError:
+        return _fallback_payload("/audit/logs", [])
+
+    method_filter = method.upper() if method else ""
+    outcome_filter = outcome.lower() if outcome else ""
+    role_filter = actor_role.lower() if actor_role else ""
+    path_filter = str(path_contains or "").strip().lower()
+
+    hasil: List[Dict[str, Any]] = []
+    for event in rows:
+        row = event_to_audit_row(event)
+        if not row:
+            continue
+        if method_filter and row.get("method") != method_filter:
+            continue
+        if outcome_filter and row.get("outcome") != outcome_filter:
+            continue
+        if role_filter and row.get("actor_role") != role_filter:
+            continue
+        if path_filter and path_filter not in str(row.get("path") or "").lower():
+            continue
+        hasil.append(row)
+
+    if len(hasil) > limit:
+        return hasil[-limit:]
+    return hasil
 
 
 @app.get("/events")

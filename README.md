@@ -137,6 +137,10 @@ Logs are stored in:
 - `GET /approvals` - List approval queue (`pending/approved/rejected`)
 - `POST /approvals/{approval_id}/approve` - Approve approval request
 - `POST /approvals/{approval_id}/reject` - Reject approval request
+- `GET /runs` - List all runs
+- `GET /runs/{run_id}` - Get run detail
+- `GET /audit/logs` - List audit actions (`method/outcome/actor_role/path_contains`)
+- `GET /events` - Get timeline events (supports SSE mode)
 
 Planner request example:
 ```json
@@ -178,6 +182,7 @@ Notes:
 - Read-only endpoints require `viewer` (or higher).
 - Write endpoints require `operator` (or higher).
 - Security-sensitive writes (`/approvals/*/approve|reject`, integrations writes, bootstrap catalog, delete agent memory) require `admin`.
+- Use `GET /auth/me` to check active role seen by API.
 
 Optional setup for UI auth header forwarding:
 ```bash
