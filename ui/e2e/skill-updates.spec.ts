@@ -18,11 +18,10 @@ test("menampilkan update skill baru dari event backend di halaman setelan", asyn
 
     await page.goto("/settings");
 
-    await expect(page.getByRole("heading", { name: "Update Skill & Puzzle Terbaru" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Pembaruan Skill & Puzzle Terbaru" })).toBeVisible();
     await expect(page.getByText(new RegExp(`Akun integrasi openai/${accountId} diperbarui\\.`))).toBeVisible();
   } finally {
     await api.delete(`/integrations/accounts/openai/${accountId}`);
     await api.dispose();
   }
 });
-
