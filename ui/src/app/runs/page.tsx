@@ -22,7 +22,7 @@ const labelStatusRun: Record<RunStatus, string> = {
 
 const kelasStatusRun: Record<RunStatus, string> = {
   queued: "status-netral",
-  running: "rounded-full bg-sky-900/45 px-2 py-1 text-xs font-medium text-sky-300",
+  running: "status-waspada",
   success: "status-baik",
   failed: "status-buruk",
 };
@@ -139,11 +139,11 @@ export default function RunsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-card p-6">
+    <div className="ux-rise-in space-y-5">
+      <section className="ux-fade-in-delayed rounded-2xl border border-border bg-card p-5">
         <div className="space-y-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Riwayat Eksekusi</h1>
+            <h1 className="text-2xl font-bold text-foreground">Riwayat Eksekusi</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Pantau antrean, proses berjalan, hasil sukses/gagal, dan detail output run.
             </p>
@@ -203,7 +203,7 @@ export default function RunsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistik.total}</p>
+            <p className="metric-number text-2xl">{statistik.total}</p>
           </CardContent>
         </Card>
         <Card className="bg-card">
@@ -211,31 +211,31 @@ export default function RunsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Antre</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistik.queued}</p>
+            <p className="metric-number text-2xl">{statistik.queued}</p>
           </CardContent>
         </Card>
-        <Card className="border-sky-800/40 bg-sky-950/20">
+        <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase tracking-wide text-sky-300">Berjalan</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Berjalan</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-sky-300">{statistik.running}</p>
+            <p className="metric-number text-2xl">{statistik.running}</p>
           </CardContent>
         </Card>
-        <Card className="border-emerald-800/40 bg-emerald-950/20">
+        <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase tracking-wide text-emerald-300">Berhasil</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Berhasil</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-emerald-400">{statistik.success}</p>
+            <p className="metric-number text-2xl">{statistik.success}</p>
           </CardContent>
         </Card>
-        <Card className="border-rose-800/40 bg-rose-950/20">
+        <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase tracking-wide text-rose-300">Gagal</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Gagal</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-rose-300">{statistik.failed}</p>
+            <p className="metric-number text-2xl">{statistik.failed}</p>
           </CardContent>
         </Card>
         <Card className="bg-card">
@@ -243,7 +243,7 @@ export default function RunsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Success Rate</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistik.successRate}%</p>
+            <p className="metric-number text-2xl">{statistik.successRate}%</p>
           </CardContent>
         </Card>
         <Card className="bg-card">
@@ -251,7 +251,7 @@ export default function RunsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Rata Durasi</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-lg font-bold">{formatDurasi(statistik.rataDurasiMs || undefined)}</p>
+            <p className="metric-number text-lg">{formatDurasi(statistik.rataDurasiMs || undefined)}</p>
           </CardContent>
         </Card>
       </div>
@@ -362,7 +362,7 @@ export default function RunsPage() {
                                     duration: {formatDurasi(run.result?.duration_ms)}
                                   </p>
                                   {run.result?.error ? (
-                                    <p className="rounded-md border border-rose-900/50 bg-rose-950/20 px-2 py-1 text-xs text-rose-300">
+                                    <p className="rounded-md border border-border bg-muted/20 px-2 py-1 text-xs text-foreground">
                                       error: {run.result.error}
                                     </p>
                                   ) : null}

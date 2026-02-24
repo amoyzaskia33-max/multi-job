@@ -728,9 +728,9 @@ export default function AutomationPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-card p-6">
-        <h1 className="text-3xl font-bold text-foreground">Otomasi & Persetujuan</h1>
+    <div className="ux-rise-in space-y-5">
+      <section className="ux-fade-in-delayed rounded-2xl border border-border bg-card p-5">
+        <h1 className="text-2xl font-bold text-foreground">Otomasi & Persetujuan</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Buat tugas berulang untuk agen, lalu putuskan persetujuan puzzle/skill baru langsung dari satu layar.
         </p>
@@ -750,7 +750,7 @@ export default function AutomationPage() {
               <div
                 key={kunci}
                 className={`rounded-xl border p-4 ${
-                  templateJalurAktif === kunci ? "border-sky-500/70 bg-sky-500/10" : "border-border bg-muted/35"
+                  templateJalurAktif === kunci ? "border-primary/60 bg-primary/5" : "border-border bg-muted/20"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -1167,21 +1167,21 @@ export default function AutomationPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <div className="rounded-xl border border-border bg-muted p-3">
+            <div className="rounded-xl border border-border bg-muted/30 p-3">
               <div className="text-xs text-muted-foreground">Total</div>
-              <div className="mt-1 text-xl font-semibold text-foreground">{statistikApproval.total}</div>
+              <div className="metric-number mt-1 text-xl text-foreground">{statistikApproval.total}</div>
             </div>
-            <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 p-3">
-              <div className="text-xs text-amber-300">Menunggu</div>
-              <div className="mt-1 text-xl font-semibold text-amber-300">{statistikApproval.pending}</div>
+            <div className="rounded-xl border border-border bg-muted/30 p-3">
+              <div className="text-xs text-muted-foreground">Menunggu</div>
+              <div className="metric-number mt-1 text-xl text-foreground">{statistikApproval.pending}</div>
             </div>
-            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-3">
-              <div className="text-xs text-emerald-300">Disetujui</div>
-              <div className="mt-1 text-xl font-semibold text-emerald-300">{statistikApproval.approved}</div>
+            <div className="rounded-xl border border-border bg-muted/30 p-3">
+              <div className="text-xs text-muted-foreground">Disetujui</div>
+              <div className="metric-number mt-1 text-xl text-foreground">{statistikApproval.approved}</div>
             </div>
-            <div className="rounded-xl border border-rose-800/40 bg-rose-950/20 p-3">
-              <div className="text-xs text-rose-300">Ditolak</div>
-              <div className="mt-1 text-xl font-semibold text-rose-300">{statistikApproval.rejected}</div>
+            <div className="rounded-xl border border-border bg-muted/30 p-3">
+              <div className="text-xs text-muted-foreground">Ditolak</div>
+              <div className="metric-number mt-1 text-xl text-foreground">{statistikApproval.rejected}</div>
             </div>
           </div>
 
@@ -1265,9 +1265,9 @@ export default function AutomationPage() {
                   ) : null}
 
                   {(row.command_allow_prefixes_rejected || []).length > 0 ? (
-                    <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                      <p className="font-medium text-amber-200">Prefix command ditolak (di luar policy backend):</p>
-                      <p className="mt-1 text-xs text-amber-100">
+                    <div className="mt-3 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm">
+                      <p className="font-medium text-foreground">Prefix command ditolak (di luar policy backend):</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {(row.command_allow_prefixes_rejected || []).join(", ")}
                       </p>
                     </div>

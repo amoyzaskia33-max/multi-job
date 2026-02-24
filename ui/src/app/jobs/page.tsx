@@ -208,11 +208,11 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-card p-6">
+    <div className="ux-rise-in space-y-5">
+      <section className="ux-fade-in-delayed rounded-2xl border border-border bg-card p-5">
         <div className="space-y-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Daftar Tugas</h1>
+            <h1 className="text-2xl font-bold text-foreground">Daftar Tugas</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Kelola job operasional: filter cepat, jalankan manual, aktif/nonaktif, dan rollback versi.
             </p>
@@ -273,23 +273,23 @@ export default function JobsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistik.total}</p>
+            <p className="metric-number text-2xl">{statistik.total}</p>
           </CardContent>
         </Card>
-        <Card className="border-emerald-800/40 bg-emerald-950/20">
+        <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase tracking-wide text-emerald-300">Aktif</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Aktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-emerald-400">{statistik.aktif}</p>
+            <p className="metric-number text-2xl">{statistik.aktif}</p>
           </CardContent>
         </Card>
-        <Card className="border-slate-700/60 bg-slate-800/40">
+        <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase tracking-wide text-slate-300">Nonaktif</CardTitle>
+            <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Nonaktif</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-slate-300">{statistik.nonaktif}</p>
+            <p className="metric-number text-2xl">{statistik.nonaktif}</p>
           </CardContent>
         </Card>
         <Card className="bg-card">
@@ -297,7 +297,7 @@ export default function JobsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Interval</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistik.interval}</p>
+            <p className="metric-number text-2xl">{statistik.interval}</p>
           </CardContent>
         </Card>
         <Card className="bg-card">
@@ -305,7 +305,7 @@ export default function JobsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Cron</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistik.cron}</p>
+            <p className="metric-number text-2xl">{statistik.cron}</p>
           </CardContent>
         </Card>
         <Card className="bg-card">
@@ -313,7 +313,7 @@ export default function JobsPage() {
             <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Ditampilkan</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistik.ditampilkan}</p>
+            <p className="metric-number text-2xl">{statistik.ditampilkan}</p>
           </CardContent>
         </Card>
       </div>
