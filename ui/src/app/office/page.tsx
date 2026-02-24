@@ -29,8 +29,8 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-ceo",
     nama: "Astra Prime",
     tingkat: "CEO",
-    peran: "Chief Orchestrator",
-    meja: "Strategy Desk",
+    peran: "Orkestrator Utama",
+    meja: "Meja Strategi",
     fokus: "Menentukan prioritas target dan guardrail.",
     runtimeTerkait: "virtual",
     hewanPendamping: "owl",
@@ -39,9 +39,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-ops-manager",
     nama: "Reno Flux",
     tingkat: "Manager",
-    peran: "Ops Manager",
-    meja: "Ops Control",
-    fokus: "Menjaga run success dan antrean tetap sehat.",
+    peran: "Manajer Operasional",
+    meja: "Kontrol Operasional",
+    fokus: "Menjaga tingkat keberhasilan eksekusi dan antrean tetap sehat.",
     runtimeTerkait: "scheduler",
     hewanPendamping: "none",
   },
@@ -49,9 +49,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-growth-manager",
     nama: "Luna Grid",
     tingkat: "Manager",
-    peran: "Growth Manager",
-    meja: "Growth Desk",
-    fokus: "Eksperimen ide konten dan trend cycle.",
+    peran: "Manajer Pertumbuhan",
+    meja: "Meja Pertumbuhan",
+    fokus: "Eksperimen ide konten dan siklus tren.",
     runtimeTerkait: "worker",
     hewanPendamping: "cat",
   },
@@ -59,9 +59,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-integration-manager",
     nama: "Nexa Port",
     tingkat: "Manager",
-    peran: "Integration Manager",
-    meja: "Connector Bay",
-    fokus: "Token, provider, dan MCP tetap stabil.",
+    peran: "Manajer Integrasi",
+    meja: "Zona Konektor",
+    fokus: "Token, penyedia, dan MCP tetap stabil.",
     runtimeTerkait: "connector",
     hewanPendamping: "none",
   },
@@ -69,9 +69,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-supervisor-scheduling",
     nama: "Sora Clock",
     tingkat: "Supervisor",
-    peran: "Scheduling Supervisor",
-    meja: "Time Desk",
-    fokus: "Membagi ritme job berulang dan SLA.",
+    peran: "Supervisor Jadwal",
+    meja: "Meja Waktu",
+    fokus: "Membagi ritme tugas berulang dan SLA.",
     runtimeTerkait: "scheduler",
     hewanPendamping: "none",
   },
@@ -79,9 +79,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-supervisor-content",
     nama: "Echo Frame",
     tingkat: "Supervisor",
-    peran: "Content Supervisor",
-    meja: "Creative Pod",
-    fokus: "Validasi script, visual, caption, publish queue.",
+    peran: "Supervisor Konten",
+    meja: "Pod Kreatif",
+    fokus: "Validasi skrip, visual, caption, dan antrean publikasi.",
     runtimeTerkait: "worker",
     hewanPendamping: "dog",
   },
@@ -89,9 +89,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-supervisor-connectors",
     nama: "Pulse Relay",
     tingkat: "Supervisor",
-    peran: "Connector Supervisor",
-    meja: "API Bridge",
-    fokus: "Monitoring health konektor dan fallback.",
+    peran: "Supervisor Konektor",
+    meja: "Jembatan API",
+    fokus: "Memantau kesehatan konektor dan jalur cadangan.",
     runtimeTerkait: "connector",
     hewanPendamping: "none",
   },
@@ -99,9 +99,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-worker-scout",
     nama: "Scout-17",
     tingkat: "Worker",
-    peran: "Trend Scout Worker",
-    meja: "Data Desk 01",
-    fokus: "Mengambil data trend mentah dari source aktif.",
+    peran: "Pekerja Pemantau Tren",
+    meja: "Meja Data 01",
+    fokus: "Mengambil data tren mentah dari sumber aktif.",
     runtimeTerkait: "worker",
     hewanPendamping: "none",
   },
@@ -109,9 +109,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-worker-writer",
     nama: "Glyph-9",
     tingkat: "Worker",
-    peran: "Script Writer Worker",
-    meja: "Data Desk 02",
-    fokus: "Menyusun hook, script, dan variation copy.",
+    peran: "Pekerja Penulis Skrip",
+    meja: "Meja Data 02",
+    fokus: "Menyusun hook, skrip, dan variasi naskah.",
     runtimeTerkait: "worker",
     hewanPendamping: "cat",
   },
@@ -119,9 +119,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-worker-video",
     nama: "Frame-12",
     tingkat: "Worker",
-    peran: "Video Builder Worker",
-    meja: "Render Desk",
-    fokus: "Merakit draft video dari script + asset.",
+    peran: "Pekerja Perakit Video",
+    meja: "Meja Render",
+    fokus: "Merakit draf video dari skrip + aset.",
     runtimeTerkait: "worker",
     hewanPendamping: "none",
   },
@@ -129,9 +129,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-worker-publisher",
     nama: "Drop-4",
     tingkat: "Worker",
-    peran: "Publisher Worker",
-    meja: "Publish Desk",
-    fokus: "Upload draft/final ke channel sesuai policy.",
+    peran: "Pekerja Penerbit",
+    meja: "Meja Publikasi",
+    fokus: "Mengunggah draf/final ke kanal sesuai kebijakan.",
     runtimeTerkait: "connector",
     hewanPendamping: "dog",
   },
@@ -139,9 +139,9 @@ const anggotaKantor: AnggotaKantor[] = [
     id: "m-worker-recovery",
     nama: "Fixer-3",
     tingkat: "Worker",
-    peran: "Recovery Worker",
-    meja: "Reliability Desk",
-    fokus: "Retry dan fallback saat run gagal.",
+    peran: "Pekerja Pemulihan",
+    meja: "Meja Keandalan",
+    fokus: "Retry dan jalur cadangan saat eksekusi gagal.",
     runtimeTerkait: "worker",
     hewanPendamping: "owl",
   },
@@ -155,10 +155,10 @@ const kelasChipTingkat: Record<TingkatAgen, string> = {
 };
 
 const labelHewanPendamping: Record<AnggotaKantor["hewanPendamping"], string> = {
-  cat: "Cat",
-  dog: "Dog",
-  owl: "Owl",
-  none: "No Pet",
+  cat: "Kucing",
+  dog: "Anjing",
+  owl: "Burung hantu",
+  none: "Tanpa hewan",
 };
 
 const kelasChipStatus = (status: StatusAnggota) => {
@@ -168,9 +168,9 @@ const kelasChipStatus = (status: StatusAnggota) => {
 };
 
 const labelStatus = (status: StatusAnggota) => {
-  if (status === "sibuk") return "Working";
-  if (status === "siaga") return "Standby";
-  return "Offline";
+  if (status === "sibuk") return "Lagi kerja";
+  if (status === "siaga") return "Siaga";
+  return "Nonaktif";
 };
 
 const cekOnlineRuntime = (daftarAgen: Agent[], runtime: RuntimeTerkait) => {
@@ -188,10 +188,17 @@ const cekSibukRuntime = (daftarAgen: Agent[], runtime: RuntimeTerkait) => {
 };
 
 const labelRuntime = (runtime: RuntimeTerkait) => {
-  if (runtime === "worker") return "Worker Runtime";
-  if (runtime === "scheduler") return "Scheduler Runtime";
-  if (runtime === "connector") return "Connector Runtime";
-  return "Virtual Control";
+  if (runtime === "worker") return "Sistem Pekerja";
+  if (runtime === "scheduler") return "Sistem Penjadwal";
+  if (runtime === "connector") return "Sistem Konektor";
+  return "Sistem Virtual";
+};
+
+const labelTingkatAgen = (tingkat: TingkatAgen) => {
+  if (tingkat === "Manager") return "Manajer";
+  if (tingkat === "Supervisor") return "Supervisor";
+  if (tingkat === "Worker") return "Pekerja";
+  return "CEO";
 };
 
 function AvatarRobotMeja({
@@ -284,9 +291,9 @@ export default function OfficePage() {
       <section className="rounded-2xl border border-border bg-card p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Digital Office</h1>
+            <h1 className="text-3xl font-bold text-foreground">Kantor Digital</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Pantau tim agent kamu seperti kantor digital: siapa yang lagi kerja, standby, atau offline.
+              Pantau tim agen kamu seperti kantor digital: siapa yang lagi kerja, siaga, atau nonaktif.
             </p>
           </div>
           <div className="w-full max-w-md">
@@ -296,7 +303,7 @@ export default function OfficePage() {
                 value={kataKunci}
                 onChange={(event) => setKataKunci(event.target.value)}
                 className="pl-9"
-                placeholder="Cari member, role, atau desk..."
+                placeholder="Cari anggota, peran, atau meja..."
               />
             </div>
           </div>
@@ -306,25 +313,25 @@ export default function OfficePage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <Card className="bg-card">
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Team Member</p>
+            <p className="text-xs text-muted-foreground">Total Anggota Tim</p>
             <p className="mt-1 text-2xl font-semibold text-foreground">{ringkasan.total}</p>
           </CardContent>
         </Card>
         <Card className="border-emerald-800/40 bg-emerald-950/20">
           <CardContent className="p-4">
-            <p className="text-xs text-emerald-300/90">Working</p>
+            <p className="text-xs text-emerald-300/90">Lagi kerja</p>
             <p className="mt-1 text-2xl font-semibold text-emerald-300">{ringkasan.sibuk}</p>
           </CardContent>
         </Card>
         <Card className="border-amber-800/40 bg-amber-950/20">
           <CardContent className="p-4">
-            <p className="text-xs text-amber-300/90">Standby</p>
+            <p className="text-xs text-amber-300/90">Siaga</p>
             <p className="mt-1 text-2xl font-semibold text-amber-300">{ringkasan.siaga}</p>
           </CardContent>
         </Card>
         <Card className="border-rose-800/40 bg-rose-950/20">
           <CardContent className="p-4">
-            <p className="text-xs text-rose-300/90">Offline</p>
+            <p className="text-xs text-rose-300/90">Nonaktif</p>
             <p className="mt-1 text-2xl font-semibold text-rose-300">{ringkasan.offline}</p>
           </CardContent>
         </Card>
@@ -333,11 +340,11 @@ export default function OfficePage() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2 bg-card">
           <CardHeader>
-            <CardTitle>Office Floor</CardTitle>
+            <CardTitle>Area Kantor</CardTitle>
           </CardHeader>
           <CardContent>
             {sedangMemuat ? (
-              <div className="py-8 text-sm text-muted-foreground">Lagi sync status office...</div>
+              <div className="py-8 text-sm text-muted-foreground">Lagi sinkron status kantor...</div>
             ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {daftarMember.map((member) => (
@@ -356,7 +363,7 @@ export default function OfficePage() {
 
                     <div className="mt-3 space-y-1">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className={kelasChipTingkat[member.tingkat]}>{member.tingkat}</span>
+                        <span className={kelasChipTingkat[member.tingkat]}>{labelTingkatAgen(member.tingkat)}</span>
                         <span>{labelRuntime(member.runtimeTerkait)}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">{member.fokus}</p>
@@ -370,7 +377,7 @@ export default function OfficePage() {
 
         <Card className="bg-card">
           <CardHeader>
-            <CardTitle>Quick Status Board</CardTitle>
+            <CardTitle>Papan Status Cepat</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -396,36 +403,36 @@ export default function OfficePage() {
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>Aturan Operasional Team</CardTitle>
+          <CardTitle>Aturan Operasional Tim</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-border bg-muted/70 p-4">
             <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
               <Bot className="h-4 w-4 text-primary" />
-              Rule 1
+              Aturan 1
             </div>
-            <p className="text-xs text-muted-foreground">Task berisiko tinggi wajib approval sebelum publish/action.</p>
+            <p className="text-xs text-muted-foreground">Tugas berisiko tinggi wajib persetujuan sebelum aksi publikasi.</p>
           </div>
           <div className="rounded-xl border border-border bg-muted/70 p-4">
             <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
               <Activity className="h-4 w-4 text-primary" />
-              Rule 2
+              Aturan 2
             </div>
-            <p className="text-xs text-muted-foreground">Semua run harus punya trace dan outcome yang jelas di log.</p>
+            <p className="text-xs text-muted-foreground">Semua eksekusi harus punya jejak dan hasil yang jelas di log.</p>
           </div>
           <div className="rounded-xl border border-border bg-muted/70 p-4">
             <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
               <MonitorSmartphone className="h-4 w-4 text-primary" />
-              Rule 3
+              Aturan 3
             </div>
-            <p className="text-xs text-muted-foreground">Worker gagal berulang wajib auto-eskalasi ke supervisor.</p>
+            <p className="text-xs text-muted-foreground">Pekerja gagal berulang wajib auto-eskalasi ke supervisor.</p>
           </div>
           <div className="rounded-xl border border-border bg-muted/70 p-4">
             <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
               <PawPrint className="h-4 w-4 text-primary" />
-              Rule 4
+              Aturan 4
             </div>
-            <p className="text-xs text-muted-foreground">Token/secret tidak boleh tampil di output operasional.</p>
+            <p className="text-xs text-muted-foreground">Token/rahasia tidak boleh tampil di output operasional.</p>
           </div>
         </CardContent>
       </Card>

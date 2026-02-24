@@ -58,7 +58,7 @@ export default function OverviewPage() {
       <section className="rounded-2xl border border-border bg-card p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Dashboard Ringkas</h1>
+            <h1 className="text-3xl font-bold text-foreground">Dasbor Ringkas</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Lihat kondisi API, antrean, agen, dan koneksi dalam satu layar.
             </p>
@@ -102,7 +102,7 @@ export default function OverviewPage() {
             <div className={`h-3 w-3 rounded-full ${dataMetrik?.redis_online ? "bg-emerald-400" : "bg-rose-400"}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dataMetrik?.redis_online ? "Online" : "Offline"}</div>
+            <div className="text-2xl font-bold">{dataMetrik?.redis_online ? "Aktif" : "Nonaktif"}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {dataMetrik?.redis_online ? "Antrean bisa diproses normal" : "Koneksi Redis sedang putus"}
             </p>
@@ -116,7 +116,7 @@ export default function OverviewPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{dataMetrik?.worker_count || 0} aktif</div>
-            <p className="mt-1 text-xs text-muted-foreground">Worker yang siap ngerjain tugas</p>
+            <p className="mt-1 text-xs text-muted-foreground">Pekerja yang siap ngerjain tugas</p>
           </CardContent>
         </Card>
 

@@ -11,14 +11,14 @@ type SidebarNavProps = {
 };
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: Gauge },
-  { href: "/prompt", label: "Prompt", icon: Sparkles },
+  { href: "/", label: "Dasbor", icon: Gauge },
+  { href: "/prompt", label: "Perintah", icon: Sparkles },
   { href: "/jobs", label: "Tugas", icon: Workflow },
   { href: "/automation", label: "Otomasi", icon: ShieldCheck },
   { href: "/runs", label: "Riwayat", icon: History },
   { href: "/agents", label: "Agen", icon: Bot },
-  { href: "/team", label: "Team", icon: Users2 },
-  { href: "/office", label: "Office", icon: Building2 },
+  { href: "/team", label: "Tim", icon: Users2 },
+  { href: "/office", label: "Kantor", icon: Building2 },
   { href: "/connectors", label: "Koneksi", icon: Cable },
   { href: "/settings", label: "Setelan", icon: Settings2 },
 ];

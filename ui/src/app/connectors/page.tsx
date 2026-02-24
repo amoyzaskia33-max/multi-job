@@ -58,7 +58,7 @@ export default function ConnectorsPage() {
 
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle>List Koneksi</CardTitle>
+          <CardTitle>Daftar Koneksi</CardTitle>
         </CardHeader>
         <CardContent>
           {sedangMemuat ? (
@@ -77,7 +77,7 @@ export default function ConnectorsPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Heartbeat Terakhir</TableHead>
                   <TableHead>Sambung Ulang</TableHead>
-                  <TableHead>Error Terakhir</TableHead>
+                  <TableHead>Kesalahan Terakhir</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
