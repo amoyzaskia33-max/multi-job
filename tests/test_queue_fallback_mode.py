@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from redis.exceptions import RedisError
 
@@ -197,3 +197,63 @@ def test_flow_active_runs_index_updates_in_fallback_mode(monkeypatch):
     run.status = RunStatus.SUCCESS
     asyncio.run(queue.save_run(run))
     assert asyncio.run(queue.count_active_runs_for_flow_group("tim_konten")) == 0
+
+
+def test_list_runs_supports_offset_and_search_in_fallback_mode(monkeypatch):
+    _reset_queue_fallback_state()
+    monkeypatch.setattr(queue, "redis_client", _MustNotCallRedis())
+    queue.set_mode_fallback_redis(True)
+
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [
+        ("run_1", "job_a", RunStatus.QUEUED),
+        ("run_2", "job_b", RunStatus.SUCCESS),
+        ("run_3", "job_a", RunStatus.FAILED),
+        ("run_4", "job_b", RunStatus.SUCCESS),
+        ("run_5", "job_a", RunStatus.RUNNING),
+    ]
+    for idx, (run_id, job_id, status) in enumerate(rows):
+        asyncio.run(
+            queue.save_run(
+                Run(
+                    run_id=run_id,
+                    job_id=job_id,
+                    status=status,
+                    attempt=0,
+                    scheduled_at=base + timedelta(minutes=idx),
+                    inputs={},
+                )
+            )
+        )
+
+    page = asyncio.run(queue.list_runs(limit=2, offset=1))
+    assert [run.run_id for run in page] == ["run_4", "run_3"]
+
+    success_rows = asyncio.run(queue.list_runs(limit=10, status="success"))
+    assert [run.run_id for run in success_rows] == ["run_4", "run_2"]
+
+    search_rows = asyncio.run(queue.list_runs(limit=10, search="job_b"))
+    assert [run.run_id for run in search_rows] == ["run_4", "run_2"]
+
+
+def test_get_events_supports_offset_and_since_in_fallback_mode(monkeypatch):
+    _reset_queue_fallback_state()
+    monkeypatch.setattr(queue, "redis_client", _MustNotCallRedis())
+    queue.set_mode_fallback_redis(True)
+
+    queue._fallback_events[:] = [
+        {"id": "evt_5", "type": "run.failed", "timestamp": "2026-01-05T00:00:00+00:00", "data": {"run_id": "run_5"}},
+        {"id": "evt_4", "type": "run.success", "timestamp": "2026-01-04T00:00:00+00:00", "data": {"run_id": "run_4"}},
+        {"id": "evt_3", "type": "run.started", "timestamp": "2026-01-03T00:00:00+00:00", "data": {"run_id": "run_3"}},
+        {"id": "evt_2", "type": "run.queued", "timestamp": "2026-01-02T00:00:00+00:00", "data": {"run_id": "run_2"}},
+        {"id": "evt_1", "type": "system.ready", "timestamp": "2026-01-01T00:00:00+00:00", "data": {"ok": True}},
+    ]
+
+    page = asyncio.run(queue.get_events(limit=2, offset=1))
+    assert [row["id"] for row in page] == ["evt_3", "evt_4"]
+
+    since_rows = asyncio.run(queue.get_events(limit=10, since="2026-01-02T12:00:00+00:00"))
+    assert [row["id"] for row in since_rows] == ["evt_3", "evt_4", "evt_5"]
+
+    second_page = asyncio.run(queue.get_events(limit=1, offset=1, since="2026-01-01T00:00:00+00:00"))
+    assert [row["id"] for row in second_page] == ["evt_4"]

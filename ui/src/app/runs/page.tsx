@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, Eye, FilterX, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { getRuns } from "@/lib/api";
 
 type RunStatus = "queued" | "running" | "success" | "failed";
+const BATAS_PER_HALAMAN = 30;
 
 const labelStatusRun: Record<RunStatus, string> = {
   queued: "Antre",
@@ -44,10 +45,12 @@ export default function RunsPage() {
   const [kataCari, setKataCari] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [idTugas, setIdTugas] = useState("");
+  const [halamanAktif, setHalamanAktif] = useState(1);
   const [runDetailAktif, setRunDetailAktif] = useState("");
 
   const idTugasTrim = idTugas.trim();
-  const queryCari = kataCari.trim().toLowerCase();
+  const queryCari = kataCari.trim();
+  const offsetHalaman = (halamanAktif - 1) * BATAS_PER_HALAMAN;
 
   const {
     data: dataRun,
@@ -55,27 +58,20 @@ export default function RunsPage() {
     isFetching: sedangMenyegarkan,
     refetch,
   } = useQuery({
-    queryKey: ["runs", idTugasTrim, statusFilter],
+    queryKey: ["runs", idTugasTrim, statusFilter, queryCari, halamanAktif],
     queryFn: () =>
       getRuns({
         job_id: idTugasTrim || undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
+        search: queryCari || undefined,
+        limit: BATAS_PER_HALAMAN,
+        offset: offsetHalaman,
       }),
     refetchInterval: 10000,
   });
 
   const daftarRun = dataRun ?? [];
-
-  const runTersaring = useMemo(() => {
-    return daftarRun.filter((run) => {
-      const cocokKataCari =
-        run.run_id.toLowerCase().includes(queryCari) || run.job_id.toLowerCase().includes(queryCari);
-
-      const cocokStatus = statusFilter === "all" || run.status === statusFilter;
-
-      return cocokKataCari && cocokStatus;
-    });
-  }, [daftarRun, queryCari, statusFilter]);
+  const adaHalamanBerikutnya = daftarRun.length === BATAS_PER_HALAMAN;
 
   const statistik = useMemo(() => {
     let queued = 0;
@@ -112,16 +108,21 @@ export default function RunsPage() {
       selesai,
       successRate,
       rataDurasiMs,
-      ditampilkan: runTersaring.length,
+      ditampilkan: total,
     };
-  }, [daftarRun, runTersaring.length]);
+  }, [daftarRun]);
 
   const adaFilterAktif = queryCari.length > 0 || statusFilter !== "all" || idTugasTrim.length > 0;
+
+  useEffect(() => {
+    setHalamanAktif(1);
+  }, [queryCari, statusFilter, idTugasTrim]);
 
   const resetFilter = () => {
     setKataCari("");
     setStatusFilter("all");
     setIdTugas("");
+    setHalamanAktif(1);
     setRunDetailAktif("");
   };
 
@@ -155,14 +156,18 @@ export default function RunsPage() {
               <Input
                 placeholder="Cari run (run_id / job_id)..."
                 value={kataCari}
-                onChange={(event) => setKataCari(event.target.value)}
+                onChange={(event) => {
+                  setKataCari(event.target.value);
+                }}
                 className="pl-10"
               />
             </div>
 
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => {
+                setStatusFilter(event.target.value);
+              }}
               className="h-10 rounded-md border border-input bg-card px-3 text-sm text-foreground"
             >
               <option value="all">Semua Status</option>
@@ -175,7 +180,9 @@ export default function RunsPage() {
             <Input
               placeholder="Filter job_id"
               value={idTugas}
-              onChange={(event) => setIdTugas(event.target.value)}
+              onChange={(event) => {
+                setIdTugas(event.target.value);
+              }}
             />
 
             <Button
@@ -260,13 +267,13 @@ export default function RunsPage() {
         <CardHeader className="space-y-2">
           <CardTitle>Daftar Eksekusi</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Menampilkan {statistik.ditampilkan} dari {statistik.total} run (setelah filter aktif).
+            Halaman {halamanAktif}, menampilkan {statistik.ditampilkan} run.
           </p>
         </CardHeader>
         <CardContent>
           {sedangMemuat ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil data eksekusi...</div>
-          ) : runTersaring.length === 0 ? (
+          ) : daftarRun.length === 0 ? (
             <div className="py-12 text-center">
               <div className="mb-2 text-muted-foreground">Belum ada eksekusi yang cocok.</div>
               <p className="text-sm text-muted-foreground">Coba ubah filter atau jalankan job terlebih dulu.</p>
@@ -288,7 +295,7 @@ export default function RunsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {runTersaring.map((run) => {
+                  {daftarRun.map((run) => {
                     const detailTerbuka = runDetailAktif === run.run_id;
                     const status = (run.status as RunStatus) || "queued";
                     return (
@@ -392,6 +399,29 @@ export default function RunsPage() {
               </Table>
             </div>
           )}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={halamanAktif <= 1 || sedangMenyegarkan}
+              onClick={() => {
+                setHalamanAktif((current) => Math.max(1, current - 1));
+              }}
+            >
+              Sebelumnya
+            </Button>
+            <span className="text-sm text-muted-foreground">Halaman {halamanAktif}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!adaHalamanBerikutnya || sedangMenyegarkan}
+              onClick={() => {
+                setHalamanAktif((current) => current + 1);
+              }}
+            >
+              Berikutnya
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

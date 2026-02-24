@@ -903,18 +903,39 @@ async def get_job_runs(job_id: str, limit: int = 20):
 
 
 @app.get("/jobs")
-async def list_jobs():
+async def list_jobs(
+    search: Optional[str] = Query(default=None, max_length=120),
+    enabled: Optional[bool] = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
     try:
         specs = await list_job_specs()
         enabled_ids = set(await list_enabled_job_ids())
 
-        jobs = []
+        jobs: List[Dict[str, Any]] = []
         for spec in specs:
             job = dict(spec)
             job["enabled"] = spec.get("job_id") in enabled_ids
             jobs.append(job)
 
         jobs.sort(key=lambda job: job.get("job_id", ""))
+        query_search = str(search or "").strip().lower()
+        if query_search:
+            jobs = [
+                job
+                for job in jobs
+                if query_search in str(job.get("job_id") or "").lower()
+                or query_search in str(job.get("type") or "").lower()
+            ]
+
+        if enabled is not None:
+            jobs = [job for job in jobs if bool(job.get("enabled")) == enabled]
+
+        if offset:
+            jobs = jobs[offset:]
+        if len(jobs) > limit:
+            jobs = jobs[:limit]
         return jobs
     except RedisError:
         return _fallback_payload("/jobs", [])
@@ -1469,10 +1490,12 @@ async def reset_agent_memory(agent_key: str):
 async def runs(
     job_id: Optional[str] = None,
     status: Optional[str] = Query(default=None, pattern="^(queued|running|success|failed)$"),
+    search: Optional[str] = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
     try:
-        rows = await list_runs(limit=limit, job_id=job_id, status=status)
+        rows = await list_runs(limit=limit, job_id=job_id, status=status, offset=offset, search=search)
         return [_serialisasi_model(run) for run in rows]
     except RedisError:
         return _fallback_payload("/runs", [])
@@ -1531,8 +1554,25 @@ async def audit_logs(
 async def events(
     request: Request,
     since: Optional[str] = None,
+    event_type: Optional[str] = Query(default=None, max_length=120),
+    search: Optional[str] = Query(default=None, max_length=160),
     limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
+    type_filter = str(event_type or "").strip()
+    search_filter = str(search or "").strip().lower()
+
+    def cocok_filter_event(row: Dict[str, Any]) -> bool:
+        if type_filter and str(row.get("type") or "") != type_filter:
+            return False
+        if search_filter:
+            token_type = str(row.get("type") or "").lower()
+            token_id = str(row.get("id") or "").lower()
+            token_data = json.dumps(row.get("data") or {}, ensure_ascii=False).lower()
+            if search_filter not in token_type and search_filter not in token_id and search_filter not in token_data:
+                return False
+        return True
+
     accept = request.headers.get("accept", "")
 
     if "text/event-stream" in accept:
@@ -1545,6 +1585,8 @@ async def events(
                     await asyncio.sleep(1)
                     continue
                 for row in rows:
+                    if not cocok_filter_event(row):
+                        continue
                     event_id = row.get("id")
                     if event_id in seen_ids:
                         continue
@@ -1564,6 +1606,17 @@ async def events(
         )
 
     try:
-        return await get_events(limit=limit, since=since)
+        if type_filter or search_filter:
+            scan_limit = min(max((offset + limit) * 6, limit), 5000)
+            rows = await get_events(limit=scan_limit, since=since, offset=0)
+            rows = [row for row in rows if cocok_filter_event(row)]
+            if offset:
+                rows = rows[offset:]
+            if len(rows) > limit:
+                rows = rows[:limit]
+            return rows
+
+        rows = await get_events(limit=limit, since=since, offset=offset)
+        return rows
     except RedisError:
         return _fallback_payload("/events", [])

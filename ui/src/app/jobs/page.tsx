@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Eye,
@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 
 type JobScheduleKind = "interval" | "cron" | "none";
+const BATAS_PER_HALAMAN = 20;
 
 const formatWaktu = (value?: string) => {
   if (!value) return "-";
@@ -52,12 +53,16 @@ const formatJadwal = (intervalDetik?: number, cron?: string) => {
 export default function JobsPage() {
   const [kataCari, setKataCari] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [halamanAktif, setHalamanAktif] = useState(1);
   const [sedangMemprosesAksi, setSedangMemprosesAksi] = useState(false);
   const [jobPanelVersiAktif, setJobPanelVersiAktif] = useState("");
   const [versiPerJob, setVersiPerJob] = useState<Record<string, JobSpecVersion[]>>({});
   const [versiDetailAktifPerJob, setVersiDetailAktifPerJob] = useState<Record<string, string>>({});
   const [sedangMemuatVersiJobId, setSedangMemuatVersiJobId] = useState("");
   const [sedangRollbackVersionId, setSedangRollbackVersionId] = useState("");
+  const queryCari = kataCari.trim();
+  const offsetHalaman = (halamanAktif - 1) * BATAS_PER_HALAMAN;
+  const filterEnabled = statusFilter === "enabled" ? true : statusFilter === "disabled" ? false : undefined;
 
   const {
     data: dataTugas,
@@ -65,27 +70,19 @@ export default function JobsPage() {
     isFetching: sedangMenyegarkan,
     refetch,
   } = useQuery({
-    queryKey: ["jobs"],
-    queryFn: getJobs,
+    queryKey: ["jobs", queryCari, statusFilter, halamanAktif],
+    queryFn: () =>
+      getJobs({
+        search: queryCari || undefined,
+        enabled: filterEnabled,
+        limit: BATAS_PER_HALAMAN,
+        offset: offsetHalaman,
+      }),
     refetchInterval: 10000,
   });
 
   const daftarTugas = dataTugas ?? [];
-  const queryCari = kataCari.trim().toLowerCase();
-
-  const tugasTersaring = useMemo(() => {
-    return daftarTugas.filter((tugas) => {
-      const cocokKataCari =
-        tugas.job_id.toLowerCase().includes(queryCari) || tugas.type.toLowerCase().includes(queryCari);
-
-      const cocokStatus =
-        statusFilter === "all" ||
-        (statusFilter === "enabled" && tugas.enabled !== undefined && tugas.enabled) ||
-        (statusFilter === "disabled" && tugas.enabled !== undefined && !tugas.enabled);
-
-      return cocokKataCari && cocokStatus;
-    });
-  }, [daftarTugas, queryCari, statusFilter]);
+  const adaHalamanBerikutnya = daftarTugas.length === BATAS_PER_HALAMAN;
 
   const statistik = useMemo(() => {
     let aktif = 0;
@@ -109,9 +106,9 @@ export default function JobsPage() {
       interval,
       cron,
       tanpaJadwal,
-      ditampilkan: tugasTersaring.length,
+      ditampilkan: total,
     };
-  }, [daftarTugas, tugasTersaring.length]);
+  }, [daftarTugas]);
 
   const totalVersiTermuat = useMemo(
     () => Object.values(versiPerJob).reduce((acc, rows) => acc + rows.length, 0),
@@ -120,9 +117,14 @@ export default function JobsPage() {
 
   const adaFilterAktif = queryCari.length > 0 || statusFilter !== "all";
 
+  useEffect(() => {
+    setHalamanAktif(1);
+  }, [queryCari, statusFilter]);
+
   const resetFilter = () => {
     setKataCari("");
     setStatusFilter("all");
+    setHalamanAktif(1);
   };
 
   const jalankanAksi = async (aksi: () => Promise<boolean>) => {
@@ -224,14 +226,18 @@ export default function JobsPage() {
               <Input
                 placeholder="Cari job (job_id / type)..."
                 value={kataCari}
-                onChange={(event) => setKataCari(event.target.value)}
+                onChange={(event) => {
+                  setKataCari(event.target.value);
+                }}
                 className="pl-10"
               />
             </div>
 
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => {
+                setStatusFilter(event.target.value);
+              }}
               className="h-10 rounded-md border border-input bg-card px-3 text-sm text-foreground"
             >
               <option value="all">Semua Status</option>
@@ -322,13 +328,13 @@ export default function JobsPage() {
         <CardHeader className="space-y-2">
           <CardTitle>Daftar Tugas</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Menampilkan {statistik.ditampilkan} dari {statistik.total} job. Versi termuat saat ini: {totalVersiTermuat}.
+            Halaman {halamanAktif}, menampilkan {statistik.ditampilkan} job. Versi termuat saat ini: {totalVersiTermuat}.
           </p>
         </CardHeader>
         <CardContent>
           {sedangMemuatTugas ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil daftar tugas...</div>
-          ) : tugasTersaring.length === 0 ? (
+          ) : daftarTugas.length === 0 ? (
             <div className="py-12 text-center">
               <div className="mb-2 text-muted-foreground">Belum ada job yang cocok.</div>
               <p className="text-sm text-muted-foreground">Coba ubah filter atau kata kunci pencarian.</p>
@@ -347,7 +353,7 @@ export default function JobsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tugasTersaring.map((tugas) => {
+                  {daftarTugas.map((tugas) => {
                     const panelVersiTerbuka = jobPanelVersiAktif === tugas.job_id;
                     const daftarVersi = versiPerJob[tugas.job_id] ?? [];
                     const versiDetailAktif = versiDetailAktifPerJob[tugas.job_id] ?? "";
@@ -549,6 +555,29 @@ export default function JobsPage() {
               </Table>
             </div>
           )}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={halamanAktif <= 1 || sedangMenyegarkan}
+              onClick={() => {
+                setHalamanAktif((current) => Math.max(1, current - 1));
+              }}
+            >
+              Sebelumnya
+            </Button>
+            <span className="text-sm text-muted-foreground">Halaman {halamanAktif}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!adaHalamanBerikutnya || sedangMenyegarkan}
+              onClick={() => {
+                setHalamanAktif((current) => current + 1);
+              }}
+            >
+              Berikutnya
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

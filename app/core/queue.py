@@ -135,6 +135,18 @@ def _ke_datetime_utc(raw: Any) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _parse_iso_datetime(raw: Optional[str]) -> Optional[datetime]:
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
 def _normalisasi_flow_group(raw: Any) -> str:
     value = str(raw or "").strip()
     if not value:
@@ -604,35 +616,88 @@ async def get_run(run_id: str) -> Optional[Run]:
         return Run(**_salin_nilai(payload))
 
 
-async def list_runs(limit: int = 50, job_id: Optional[str] = None, status: Optional[str] = None) -> List[Run]:
+async def list_runs(
+    limit: int = 50,
+    job_id: Optional[str] = None,
+    status: Optional[str] = None,
+    offset: int = 0,
+    search: Optional[str] = None,
+) -> List[Run]:
     """List runs ordered by latest schedule time."""
-    candidate_limit = max(limit * 5, 100)
+    page_limit = max(int(limit), 0)
+    page_offset = max(int(offset), 0)
+    if page_limit == 0:
+        return []
+
+    page_end = page_offset + page_limit
+    if page_end <= 0:
+        return []
+
+    normalized_job_id = str(job_id or "").strip()
+    normalized_status = str(status or "").strip().lower()
+    normalized_search = str(search or "").strip().lower()
+
+    def _run_match(run: Run) -> bool:
+        if normalized_job_id and run.job_id != normalized_job_id:
+            return False
+        if normalized_status:
+            run_status = run.status.value if hasattr(run.status, "value") else str(run.status)
+            if str(run_status or "").strip().lower() != normalized_status:
+                return False
+        if normalized_search:
+            run_id_text = str(run.run_id or "").lower()
+            job_id_text = str(run.job_id or "").lower()
+            if normalized_search not in run_id_text and normalized_search not in job_id_text:
+                return False
+        return True
+
+    scan_limit = max(page_limit * 4, 200)
+    runs: List[Run] = []
+
     if _sedang_mode_fallback_redis():
         ordered = sorted(_fallback_run_scores.items(), key=lambda item: item[1], reverse=True)
-        run_ids = [run_id for run_id, _ in ordered[:candidate_limit]]
+        run_ids = [run_id for run_id, _ in ordered]
+        for run_id in run_ids:
+            run = await get_run(run_id)
+            if not run:
+                continue
+            if not _run_match(run):
+                continue
+            runs.append(run)
+            if len(runs) >= page_end:
+                break
     else:
         try:
-            run_ids = await redis_client.zrevrange(ZSET_RUNS, 0, candidate_limit - 1)
+            cursor = 0
+            while len(runs) < page_end:
+                batch = await redis_client.zrevrange(ZSET_RUNS, cursor, cursor + scan_limit - 1)
+                if not batch:
+                    break
+
+                for run_id in batch:
+                    run = await get_run(run_id)
+                    if not run:
+                        continue
+                    if not _run_match(run):
+                        continue
+                    runs.append(run)
+                    if len(runs) >= page_end:
+                        break
+
+                if len(batch) < scan_limit:
+                    break
+                cursor += len(batch)
         except RedisError:
             _aktifkan_mode_fallback()
-            ordered = sorted(_fallback_run_scores.items(), key=lambda item: item[1], reverse=True)
-            run_ids = [run_id for run_id, _ in ordered[:candidate_limit]]
+            return await list_runs(
+                limit=page_limit,
+                job_id=normalized_job_id or None,
+                status=normalized_status or None,
+                offset=page_offset,
+                search=normalized_search or None,
+            )
 
-    runs: List[Run] = []
-    for run_id in run_ids:
-        run = await get_run(run_id)
-        if not run:
-            continue
-        if job_id and run.job_id != job_id:
-            continue
-        if status:
-            run_status = run.status.value if hasattr(run.status, "value") else str(run.status)
-            if run_status != status:
-                continue
-        runs.append(run)
-        if len(runs) >= limit:
-            break
-    return runs
+    return runs[page_offset:page_end]
 
 
 async def add_run_to_job_history(job_id: str, run_id: str, max_history: int = 50):
@@ -845,34 +910,71 @@ async def append_event(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
     return event
 
 
-async def get_events(limit: int = 200, since: Optional[str] = None) -> List[Dict[str, Any]]:
+async def get_events(limit: int = 200, since: Optional[str] = None, offset: int = 0) -> List[Dict[str, Any]]:
     """Get latest events in ascending time order."""
+    page_limit = max(int(limit), 0)
+    page_offset = max(int(offset), 0)
+    if page_limit == 0:
+        return []
+
+    page_end = page_offset + page_limit
+    if page_end <= 0:
+        return []
+
+    since_dt = _parse_iso_datetime(since)
+
+    def _event_match_since(row: Dict[str, Any]) -> bool:
+        if since_dt is None:
+            return True
+        return _ke_datetime_utc(row.get("timestamp")).astimezone(timezone.utc) > since_dt
+
+    def _finalize(result_desc: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        selected = result_desc[page_offset:page_end]
+        selected.reverse()
+        return selected
+
+    events_desc: List[Dict[str, Any]] = []
+
     if _sedang_mode_fallback_redis():
-        events = [_salin_nilai(row) for row in _fallback_events[: max(limit, 0)]]
+        for row in _fallback_events:
+            event = _salin_nilai(row)
+            if not _event_match_since(event):
+                if since_dt is not None:
+                    break
+                continue
+            events_desc.append(event)
+            if len(events_desc) >= page_end:
+                break
+        return _finalize(events_desc)
     else:
         try:
-            rows = await redis_client.lrange(EVENTS_LOG, 0, max(limit - 1, 0))
-            events = [json.loads(row) for row in rows]
+            scan_limit = max(page_limit * 4, 200)
+            cursor = 0
+            while True:
+                rows = await redis_client.lrange(EVENTS_LOG, cursor, cursor + scan_limit - 1)
+                if not rows:
+                    break
+
+                stop_scan = False
+                for raw in rows:
+                    event = json.loads(raw)
+                    if not _event_match_since(event):
+                        if since_dt is not None:
+                            stop_scan = True
+                            break
+                        continue
+                    events_desc.append(event)
+                    if len(events_desc) >= page_end:
+                        stop_scan = True
+                        break
+
+                if stop_scan:
+                    break
+                if len(rows) < scan_limit:
+                    break
+                cursor += len(rows)
         except RedisError:
             _aktifkan_mode_fallback()
-            events = [_salin_nilai(row) for row in _fallback_events[: max(limit, 0)]]
+            return await get_events(limit=page_limit, since=since, offset=page_offset)
 
-    events.reverse()
-
-    if since:
-        try:
-            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
-            if since_dt.tzinfo is None:
-                since_dt = since_dt.replace(tzinfo=timezone.utc)
-            events = [
-                event
-                for event in events
-                if datetime.fromisoformat(event.get("timestamp", _sekarang_iso()).replace("Z", "+00:00")).astimezone(timezone.utc)
-                > since_dt.astimezone(timezone.utc)
-            ]
-        except ValueError:
-            pass
-
-    if len(events) > limit:
-        return events[-limit:]
-    return events
+    return _finalize(events_desc)

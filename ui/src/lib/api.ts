@@ -441,9 +441,20 @@ const send = async <T>(path: string, method: "POST" | "PUT" | "DELETE", body?: u
   return (await response.json()) as T;
 };
 
-export const getJobs = async (): Promise<JobSpec[]> => {
+export const getJobs = async (params?: {
+  search?: string;
+  enabled?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<JobSpec[]> => {
   try {
-    return await getJson<JobSpec[]>("/jobs");
+    const queryParams = new URLSearchParams();
+    if (params?.search) queryParams.append("search", params.search);
+    if (typeof params?.enabled === "boolean") queryParams.append("enabled", params.enabled ? "true" : "false");
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (typeof params?.offset === "number" && params.offset >= 0) queryParams.append("offset", params.offset.toString());
+    const path = `/jobs${queryParams.size ? `?${queryParams.toString()}` : ""}`;
+    return await getJson<JobSpec[]>(path);
   } catch (error) {
     return handleApiError(error, "Gagal memuat daftar tugas", []);
   }
@@ -525,12 +536,20 @@ export const triggerJob = async (jobId: string): Promise<boolean> => {
   }
 };
 
-export const getRuns = async (params?: { job_id?: string; limit?: number; status?: string }): Promise<Run[]> => {
+export const getRuns = async (params?: {
+  job_id?: string;
+  limit?: number;
+  status?: string;
+  search?: string;
+  offset?: number;
+}): Promise<Run[]> => {
   try {
     const queryParams = new URLSearchParams();
     if (params?.job_id) queryParams.append("job_id", params.job_id);
     if (params?.limit) queryParams.append("limit", params.limit.toString());
     if (params?.status) queryParams.append("status", params.status);
+    if (params?.search) queryParams.append("search", params.search);
+    if (typeof params?.offset === "number" && params.offset >= 0) queryParams.append("offset", params.offset.toString());
     const path = `/runs${queryParams.size ? `?${queryParams.toString()}` : ""}`;
     return await getJson<Run[]>(path);
   } catch (error) {
@@ -725,11 +744,20 @@ export const getSystemMetrics = async (): Promise<SystemMetrics> => {
   };
 };
 
-export const getEvents = async (params?: { since?: string; limit?: number }): Promise<SystemEvent[]> => {
+export const getEvents = async (params?: {
+  since?: string;
+  limit?: number;
+  offset?: number;
+  event_type?: string;
+  search?: string;
+}): Promise<SystemEvent[]> => {
   try {
     const queryParams = new URLSearchParams();
     if (params?.since) queryParams.append("since", params.since);
     if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (typeof params?.offset === "number" && params.offset >= 0) queryParams.append("offset", params.offset.toString());
+    if (params?.event_type) queryParams.append("event_type", params.event_type);
+    if (params?.search) queryParams.append("search", params.search);
     const path = `/events${queryParams.size ? `?${queryParams.toString()}` : ""}`;
     return await getJson<SystemEvent[]>(path);
   } catch (error) {
