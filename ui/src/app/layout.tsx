@@ -1,10 +1,20 @@
 import './globals.css';
-import { Inter } from 'next/font/google';
+import { Plus_Jakarta_Sans, Sora } from 'next/font/google';
 import SidebarNav from '@/components/sidebar-nav';
 
 import Providers from './providers';
 
-const inter = Inter({ subsets: ['latin'] });
+const bodyFont = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-body',
+  weight: ['400', '500', '600', '700'],
+});
+
+const headingFont = Sora({
+  subsets: ['latin'],
+  variable: '--font-heading',
+  weight: ['500', '600', '700'],
+});
 
 export default function RootLayout({
   children,
@@ -13,7 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id">
-      <body className={inter.className}>
+      <body className={`${bodyFont.variable} ${headingFont.variable} antialiased`}>
         <Providers>
           <div className="min-h-screen">
             <div className="mx-auto flex min-h-screen max-w-[1600px]">

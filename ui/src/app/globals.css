@@ -36,8 +36,22 @@ body {
 
 body {
   margin: 0;
+  font-family: var(--font-body), "Segoe UI", sans-serif;
+  line-height: 1.5;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.ui-heading {
+  font-family: var(--font-heading), var(--font-body), "Segoe UI", sans-serif;
+  letter-spacing: -0.01em;
+  font-weight: 600;
 }
 
 a {
@@ -64,7 +78,55 @@ a {
   background-clip: padding-box;
 }
 
+@keyframes ux-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ux-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @layer utilities {
+  .ux-fade-in {
+    animation: ux-fade-in 220ms ease-out both;
+  }
+
+  .ux-fade-in-delayed {
+    animation: ux-fade-in 300ms ease-out both;
+    animation-delay: 70ms;
+  }
+
+  .ux-rise-in {
+    animation: ux-rise-in 260ms cubic-bezier(0.2, 0.75, 0.3, 1) both;
+  }
+
+  .ux-surface {
+    transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .ux-surface:hover {
+    background-color: hsl(var(--card) / 0.96);
+    border-color: hsl(var(--ring) / 0.45);
+    box-shadow: 0 10px 26px -20px hsl(var(--ring) / 0.75), 0 0 0 1px hsl(var(--ring) / 0.18);
+  }
+
+  .metric-number {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
   .status-baik {
     @apply rounded-full bg-emerald-900/45 px-2 py-1 text-xs font-medium text-emerald-300;
   }
@@ -79,5 +141,13 @@ a {
 
   .status-netral {
     @apply rounded-full bg-slate-700/45 px-2 py-1 text-xs font-medium text-slate-300;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ux-fade-in,
+  .ux-fade-in-delayed,
+  .ux-rise-in {
+    animation: none !important;
   }
 }

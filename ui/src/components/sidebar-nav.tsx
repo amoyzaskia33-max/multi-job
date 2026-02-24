@@ -29,10 +29,10 @@ export default function SidebarNav({ compact = false }: SidebarNavProps) {
   const getLinkClass = (href: string) => {
     const isActive = pathname === href;
     return cn(
-      "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+      "flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-sm font-medium transition-[background-color,color,border-color,box-shadow] duration-200",
       isActive
-        ? "bg-primary text-primary-foreground"
-        : "text-foreground/80 hover:bg-secondary hover:text-secondary-foreground",
+        ? "border-primary/40 bg-primary/90 text-primary-foreground shadow-[0_10px_22px_-18px_hsl(var(--ring)/0.9)]"
+        : "text-foreground/80 hover:border-border/80 hover:bg-secondary/90 hover:text-secondary-foreground hover:shadow-[0_10px_22px_-20px_hsl(var(--ring)/0.7)]",
       compact && "justify-center sm:justify-start",
     );
   };

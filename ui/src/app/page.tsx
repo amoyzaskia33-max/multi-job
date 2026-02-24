@@ -1,11 +1,63 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { checkHealth, getConnectors, getSystemMetrics } from "@/lib/api";
+import { checkHealth, getConnectors, getSystemMetrics, type Connector } from "@/lib/api";
+
+type Tone = "good" | "warn" | "bad";
+
+type IssueItem = {
+  tone: Exclude<Tone, "good">;
+  title: string;
+  detail: string;
+};
+
+const STATUS_LABEL: Record<Connector["status"], string> = {
+  online: "Aktif",
+  degraded: "Tidak Stabil",
+  offline: "Terputus",
+};
+
+const STATUS_CLASS: Record<Connector["status"], string> = {
+  online: "status-baik",
+  degraded: "status-waspada",
+  offline: "status-buruk",
+};
+
+const STATUS_PRIORITY: Record<Connector["status"], number> = {
+  offline: 0,
+  degraded: 1,
+  online: 2,
+};
+
+const REFRESH_OPTIONS = [
+  { label: "2 detik", value: 2000 },
+  { label: "5 detik", value: 5000 },
+  { label: "10 detik", value: 10000 },
+  { label: "30 detik", value: 30000 },
+];
+
+const getToneClass = (tone: Tone) => {
+  if (tone === "good") return "status-baik";
+  if (tone === "warn") return "status-waspada";
+  return "status-buruk";
+};
+
+const formatHeartbeat = (value?: string) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
 export default function OverviewPage() {
   const [jedaPembaruan, setJedaPembaruan] = useState(5000);
@@ -28,186 +80,286 @@ export default function OverviewPage() {
     refetchInterval: jedaPembaruan,
   });
 
-  const statistikKoneksi = useMemo(() => {
+  const ringkasanKoneksi = useMemo(() => {
     const daftarKoneksi = dataKoneksi ?? [];
     const aktif = daftarKoneksi.filter((koneksi) => koneksi.status === "online").length;
     const tidakStabil = daftarKoneksi.filter((koneksi) => koneksi.status === "degraded").length;
     const terputus = daftarKoneksi.filter((koneksi) => koneksi.status === "offline").length;
 
-    return [
-      { name: "Aktif", value: aktif, color: "#16a34a" },
-      { name: "Tidak Stabil", value: tidakStabil, color: "#d97706" },
-      { name: "Terputus", value: terputus, color: "#dc2626" },
-    ].filter((item) => item.value > 0);
+    return {
+      total: daftarKoneksi.length,
+      aktif,
+      tidakStabil,
+      terputus,
+    };
   }, [dataKoneksi]);
 
-  const ambilLabelStatus = (status: "online" | "offline" | "degraded") => {
-    if (status === "online") return "Aktif";
-    if (status === "degraded") return "Tidak Stabil";
-    return "Terputus";
-  };
+  const nadaApi: Tone = dataKesehatan?.apiHealthy ? "good" : "bad";
+  const nadaRedis: Tone = dataMetrik?.redis_online ? "good" : "bad";
+  const nadaScheduler: Tone = dataMetrik?.scheduler_online ? "good" : "warn";
+  const nadaAntrian: Tone = (dataMetrik?.queue_depth || 0) > 50 ? "warn" : "good";
 
-  const ambilKelasStatus = (status: "online" | "offline" | "degraded") => {
-    if (status === "online") return "status-baik";
-    if (status === "degraded") return "status-waspada";
-    return "status-buruk";
-  };
+  const isuSistem = useMemo((): IssueItem[] => {
+    const rows: IssueItem[] = [];
+
+    if (!dataKesehatan?.apiHealthy) {
+      rows.push({
+        tone: "bad",
+        title: "API tidak merespons normal",
+        detail: "Cek service API di backend lalu lihat log `runtime-logs/api.err.log`.",
+      });
+    }
+
+    if (!dataMetrik?.redis_online) {
+      rows.push({
+        tone: "bad",
+        title: "Redis tidak siap",
+        detail: "Queue bisa tertahan. Pastikan service Redis aktif.",
+      });
+    }
+
+    if (!dataMetrik?.scheduler_online) {
+      rows.push({
+        tone: "warn",
+        title: "Scheduler belum aktif",
+        detail: "Job berbasis waktu (interval/cron) tidak akan dipicu otomatis.",
+      });
+    }
+
+    if (ringkasanKoneksi.terputus > 0) {
+      rows.push({
+        tone: "bad",
+        title: `${ringkasanKoneksi.terputus} koneksi terputus`,
+        detail: "Buka menu Koneksi untuk periksa token, endpoint, atau status jaringan.",
+      });
+    }
+
+    if ((dataMetrik?.queue_depth || 0) > 50) {
+      rows.push({
+        tone: "warn",
+        title: "Antrian mulai padat",
+        detail: "Pertimbangkan tambah worker atau turunkan frekuensi job.",
+      });
+    }
+
+    return rows;
+  }, [dataKesehatan?.apiHealthy, dataMetrik?.queue_depth, dataMetrik?.redis_online, dataMetrik?.scheduler_online, ringkasanKoneksi.terputus]);
+
+  const daftarKoneksiPrioritas = useMemo(() => {
+    const rows = [...(dataKoneksi ?? [])];
+    rows.sort((a, b) => {
+      const statusA = STATUS_PRIORITY[a.status];
+      const statusB = STATUS_PRIORITY[b.status];
+      if (statusA !== statusB) return statusA - statusB;
+
+      const waktuA = a.last_heartbeat_at ? new Date(a.last_heartbeat_at).getTime() : 0;
+      const waktuB = b.last_heartbeat_at ? new Date(b.last_heartbeat_at).getTime() : 0;
+      return waktuA - waktuB;
+    });
+    return rows;
+  }, [dataKoneksi]);
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-card p-6">
+    <div className="ux-rise-in space-y-5">
+      <section className="ux-fade-in-delayed rounded-2xl border border-border bg-card p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Dasbor Ringkas</h1>
+            <h1 className="text-2xl font-bold text-foreground">Dashboard Operasional</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Lihat kondisi API, antrean, agen, dan koneksi dalam satu layar.
+              Ringkasan status sistem paling penting dalam satu layar.
             </p>
           </div>
-          <div className="inline-flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-2">
-            <label htmlFor="interval" className="text-sm font-medium text-foreground">
-              Update data
-            </label>
-            <select
-              id="interval"
-              value={jedaPembaruan}
-              onChange={(event) => setJedaPembaruan(Number(event.target.value))}
-              className="rounded-lg border border-input bg-card px-2 py-1 text-sm text-foreground"
-            >
-              <option value={2000}>2 detik</option>
-              <option value={5000}>5 detik</option>
-              <option value={10000}>10 detik</option>
-              <option value={30000}>30 detik</option>
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/prompt" className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground">
+              Jalankan Prompt
+            </Link>
+            <Link href="/jobs" className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
+              Lihat Jobs
+            </Link>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2">
+              <label htmlFor="interval" className="text-xs font-medium text-muted-foreground">
+                Refresh
+              </label>
+              <select
+                id="interval"
+                value={jedaPembaruan}
+                onChange={(event) => setJedaPembaruan(Number(event.target.value))}
+                className="rounded-md border border-input bg-card px-2 py-1 text-xs text-foreground"
+              >
+                {REFRESH_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Total Koneksi</p>
+            <p className="text-lg font-semibold">{ringkasanKoneksi.total}</p>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Antrian</p>
+            <p className="text-lg font-semibold">{dataMetrik?.queue_depth || 0}</p>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Delayed</p>
+            <p className="text-lg font-semibold">{dataMetrik?.delayed_count || 0}</p>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Worker Aktif</p>
+            <p className="text-lg font-semibold">{dataMetrik?.worker_count || 0}</p>
           </div>
         </div>
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-emerald-800/40 bg-emerald-950/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Status API</CardTitle>
-            <div className={`h-3 w-3 rounded-full ${dataKesehatan?.apiHealthy ? "bg-emerald-400" : "bg-rose-400"}`} />
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">API</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dataKesehatan?.apiHealthy ? "Aman" : "Ada kendala"}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {dataKesehatan?.apiHealthy ? "API merespons normal" : "Cek log API backend"}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xl font-semibold">{dataKesehatan?.apiHealthy ? "Normal" : "Bermasalah"}</p>
+              <span className={getToneClass(nadaApi)}>{dataKesehatan?.apiHealthy ? "Sehat" : "Error"}</span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Status endpoint backend utama.</p>
           </CardContent>
         </Card>
 
-        <Card className="border-sky-800/40 bg-sky-950/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Status Redis</CardTitle>
-            <div className={`h-3 w-3 rounded-full ${dataMetrik?.redis_online ? "bg-emerald-400" : "bg-rose-400"}`} />
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Redis</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dataMetrik?.redis_online ? "Aktif" : "Nonaktif"}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {dataMetrik?.redis_online ? "Antrean bisa diproses normal" : "Koneksi Redis sedang putus"}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xl font-semibold">{dataMetrik?.redis_online ? "Aktif" : "Tidak Aktif"}</p>
+              <span className={getToneClass(nadaRedis)}>{dataMetrik?.redis_online ? "Sehat" : "Error"}</span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Kesiapan queue dan penyimpanan runtime.</p>
           </CardContent>
         </Card>
 
-        <Card className="border-violet-800/40 bg-violet-950/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Jumlah Pekerja</CardTitle>
-            <div className="text-2xl font-bold">{dataMetrik?.worker_count || 0}</div>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Scheduler</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dataMetrik?.worker_count || 0} aktif</div>
-            <p className="mt-1 text-xs text-muted-foreground">Pekerja yang siap ngerjain tugas</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xl font-semibold">{dataMetrik?.scheduler_online ? "Aktif" : "Mati"}</p>
+              <span className={getToneClass(nadaScheduler)}>{dataMetrik?.scheduler_online ? "Jalan" : "Perlu Cek"}</span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Pemicu job terjadwal (cron/interval).</p>
           </CardContent>
         </Card>
 
-        <Card className="border-amber-800/40 bg-amber-950/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Penjadwal</CardTitle>
-            <div className={`h-3 w-3 rounded-full ${dataMetrik?.scheduler_online ? "bg-emerald-400" : "bg-amber-400"}`} />
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Antrian</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dataMetrik?.scheduler_online ? "Nyala" : "Mati"}</div>
-            <p className="mt-1 text-xs text-muted-foreground">Mesin yang ngatur jadwal jalan tugas</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xl font-semibold">{dataMetrik?.queue_depth || 0} item</p>
+              <span className={getToneClass(nadaAntrian)}>{nadaAntrian === "warn" ? "Padat" : "Normal"}</span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Jumlah run menunggu worker.</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="bg-card">
+        <Card>
           <CardHeader>
-            <CardTitle>Antrean Tugas</CardTitle>
+            <CardTitle className="text-lg">Hal yang Perlu Dicek</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-lg border border-sky-800/40 bg-sky-950/20 p-4 text-center">
-                <div className="text-2xl font-bold text-sky-400">{dataMetrik?.queue_depth || 0}</div>
-                <div className="text-sm text-sky-400/80">Lagi nunggu diproses</div>
+          <CardContent className="space-y-3">
+            {isuSistem.length === 0 ? (
+              <div className="flex items-start gap-3 rounded-lg border border-emerald-700/40 bg-emerald-900/15 p-3">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-400" />
+                <div>
+                  <p className="text-sm font-medium">Semua indikator utama aman.</p>
+                  <p className="text-xs text-muted-foreground">Pantau periodik dari halaman ini atau menu Runs.</p>
+                </div>
               </div>
-              <div className="rounded-lg border border-amber-800/40 bg-amber-950/20 p-4 text-center">
-                <div className="text-2xl font-bold text-amber-400">{dataMetrik?.delayed_count || 0}</div>
-                <div className="text-sm text-amber-400/80">Dijadwalkan nanti</div>
-              </div>
-            </div>
+            ) : (
+              isuSistem.map((issue, index) => (
+                <div
+                  key={`${issue.title}-${index}`}
+                  className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3"
+                >
+                  <AlertTriangle className={`mt-0.5 h-4 w-4 ${issue.tone === "bad" ? "text-rose-400" : "text-amber-400"}`} />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{issue.title}</p>
+                      <span className={getToneClass(issue.tone)}>{issue.tone === "bad" ? "Penting" : "Perhatian"}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{issue.detail}</p>
+                  </div>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 
-        <Card className="bg-card">
+        <Card>
           <CardHeader>
-          <CardTitle>Ringkasan Koneksi</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {statistikKoneksi.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">Belum ada data koneksi. Nanti muncul otomatis.</div>
-          ) : (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                      data={statistikKoneksi}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={88}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
-                    >
-                      {statistikKoneksi.map((entri) => (
-                        <Cell key={entri.name} fill={entri.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value}`, "Jumlah Koneksi"]} />
-                  </PieChart>
-                </ResponsiveContainer>
+            <CardTitle className="text-lg">Ringkasan Koneksi</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-center">
+                <p className="text-xs text-muted-foreground">Aktif</p>
+                <p className="text-lg font-semibold text-emerald-400">{ringkasanKoneksi.aktif}</p>
               </div>
-            )}
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-center">
+                <p className="text-xs text-muted-foreground">Tidak Stabil</p>
+                <p className="text-lg font-semibold text-amber-400">{ringkasanKoneksi.tidakStabil}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-center">
+                <p className="text-xs text-muted-foreground">Terputus</p>
+                <p className="text-lg font-semibold text-rose-400">{ringkasanKoneksi.terputus}</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Prioritas perbaikan: koneksi terputus terlebih dahulu, lalu yang tidak stabil.
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="bg-card">
+      <Card>
         <CardHeader>
-          <CardTitle>Daftar Koneksi</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-lg">Daftar Koneksi</CardTitle>
+            <Link href="/connectors" className="text-xs font-medium text-primary hover:underline">
+              Buka halaman koneksi
+            </Link>
+          </div>
         </CardHeader>
         <CardContent>
           {sedangMemuatKoneksi ? (
             <div className="py-8 text-center text-muted-foreground">Lagi ambil data koneksi...</div>
-          ) : dataKoneksi && dataKoneksi.length > 0 ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {dataKoneksi.map((koneksi) => (
-                <div key={`${koneksi.channel}-${koneksi.account_id}`} className="rounded-xl border border-border bg-muted p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-medium capitalize">{koneksi.channel}</h3>
-                      <p className="text-sm text-muted-foreground">{koneksi.account_id}</p>
-                    </div>
-                    <span className={ambilKelasStatus(koneksi.status)}>{ambilLabelStatus(koneksi.status)}</span>
+          ) : daftarKoneksiPrioritas.length > 0 ? (
+            <div className="space-y-2">
+              {daftarKoneksiPrioritas.slice(0, 10).map((koneksi) => (
+                <div
+                  key={`${koneksi.channel}-${koneksi.account_id}`}
+                  className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3 md:flex-row md:items-center md:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium capitalize">{koneksi.channel}</p>
+                    <p className="text-xs text-muted-foreground">{koneksi.account_id}</p>
                   </div>
-                  <div className="mt-3 space-y-1 text-sm text-muted-foreground">
-                    {koneksi.last_heartbeat_at ? (
-                      <div>Terakhir update: {new Date(koneksi.last_heartbeat_at).toLocaleString("id-ID")}</div>
-                    ) : null}
+                  <div className="flex items-center gap-2">
+                    <span className={STATUS_CLASS[koneksi.status]}>{STATUS_LABEL[koneksi.status]}</span>
+                    <span className="text-xs text-muted-foreground">
+                      heartbeat: {formatHeartbeat(koneksi.last_heartbeat_at)}
+                    </span>
                     {koneksi.reconnect_count !== undefined ? (
-                      <div>Sudah reconnect: {koneksi.reconnect_count}x</div>
+                      <span className="text-xs text-muted-foreground">reconnect {koneksi.reconnect_count}x</span>
                     ) : null}
                   </div>
                 </div>
