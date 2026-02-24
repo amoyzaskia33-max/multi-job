@@ -1,4 +1,13 @@
-from app.services.api.planner_ai import PlannerAiRequest, build_plan_from_ai_payload, build_plan_with_ai
+import asyncio
+
+from app.services.api import planner_ai
+from app.services.api.planner_ai import (
+    PlannerAiRequest,
+    build_plan_from_ai_payload,
+    build_plan_with_ai,
+    resolve_planner_ai_credential_candidates,
+    resolve_planner_ai_credentials,
+)
 
 
 def test_build_plan_from_ai_payload_converts_jobs():
@@ -79,3 +88,105 @@ def test_build_plan_from_ai_payload_supports_agent_workflow_type():
     assert job.type == "agent.workflow"
     assert job.schedule is None
     assert job.inputs["prompt"] == "Sinkron github ke notion"
+
+
+def test_resolve_planner_ai_credentials_uses_dashboard_account(monkeypatch):
+    async def fake_get_integration_account(provider: str, account_id: str, include_secret: bool = False):
+        assert provider == "openai"
+        assert account_id == "default"
+        return {
+            "provider": "openai",
+            "account_id": "default",
+            "enabled": True,
+            "secret": "sk-dashboard",
+            "config": {"model_id": "openai/gpt-4.1-mini"},
+        }
+
+    async def fake_list_integration_accounts(provider=None, include_secret=False):
+        raise AssertionError("list_integration_accounts should not be called when preferred account is ready")
+
+    monkeypatch.setattr(planner_ai, "get_integration_account", fake_get_integration_account)
+    monkeypatch.setattr(planner_ai, "list_integration_accounts", fake_list_integration_accounts)
+
+    request = PlannerAiRequest(prompt="uji", openai_account_id="default")
+    model_id, api_key, warnings = asyncio.run(resolve_planner_ai_credentials(request))
+
+    assert model_id == "openai/gpt-4.1-mini"
+    assert api_key == "sk-dashboard"
+    assert warnings == []
+
+
+def test_resolve_planner_ai_credentials_falls_back_to_env(monkeypatch):
+    async def fake_get_integration_account(provider: str, account_id: str, include_secret: bool = False):
+        return None
+
+    async def fake_list_integration_accounts(provider=None, include_secret=False):
+        return []
+
+    monkeypatch.setattr(planner_ai, "get_integration_account", fake_get_integration_account)
+    monkeypatch.setattr(planner_ai, "list_integration_accounts", fake_list_integration_accounts)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    monkeypatch.setenv("PLANNER_AI_MODEL", "openai/gpt-4o-mini")
+
+    request = PlannerAiRequest(prompt="uji", openai_account_id="default")
+    model_id, api_key, warnings = asyncio.run(resolve_planner_ai_credentials(request))
+
+    assert model_id == "openai/gpt-4o-mini"
+    assert api_key == "sk-env"
+    assert any("OPENAI_API_KEY" in item for item in warnings)
+
+
+def test_resolve_planner_ai_credentials_can_select_ollama_provider(monkeypatch):
+    async def fake_get_integration_account(provider: str, account_id: str, include_secret: bool = False):
+        if provider != "ollama":
+            return None
+        return {
+            "provider": "ollama",
+            "account_id": "default",
+            "enabled": True,
+            "secret": "",
+            "config": {"model_id": "qwen3:8b", "base_url": "http://localhost:11434/v1"},
+        }
+
+    async def fake_list_integration_accounts(provider=None, include_secret=False):
+        return []
+
+    monkeypatch.setattr(planner_ai, "get_integration_account", fake_get_integration_account)
+    monkeypatch.setattr(planner_ai, "list_integration_accounts", fake_list_integration_accounts)
+
+    request = PlannerAiRequest(prompt="uji", ai_provider="ollama", ai_account_id="default")
+    model_id, api_key, warnings = asyncio.run(resolve_planner_ai_credentials(request))
+
+    assert model_id == "ollama/qwen3:8b"
+    assert api_key
+    assert warnings == []
+
+
+def test_resolve_planner_ai_candidates_auto_falls_back_to_ollama(monkeypatch):
+    async def fake_get_integration_account(provider: str, account_id: str, include_secret: bool = False):
+        if provider == "openai":
+            return None
+        if provider == "ollama":
+            return {
+                "provider": "ollama",
+                "account_id": "default",
+                "enabled": True,
+                "secret": "",
+                "config": {"model_id": "qwen3:8b", "base_url": "http://localhost:11434/v1"},
+            }
+        return None
+
+    async def fake_list_integration_accounts(provider=None, include_secret=False):
+        return []
+
+    monkeypatch.setattr(planner_ai, "get_integration_account", fake_get_integration_account)
+    monkeypatch.setattr(planner_ai, "list_integration_accounts", fake_list_integration_accounts)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    request = PlannerAiRequest(prompt="uji", ai_provider="auto", ai_account_id="default")
+    kandidat, warnings = asyncio.run(resolve_planner_ai_credential_candidates(request))
+
+    assert kandidat
+    assert kandidat[0].provider == "ollama"
+    assert kandidat[0].model_id.startswith("ollama/")
+    assert any("OpenAI" in item for item in warnings)

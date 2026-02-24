@@ -17,7 +17,7 @@ from app.core.queue import (
     save_run,
 )
 from app.services.api.planner import build_plan_from_prompt
-from app.services.api.planner_ai import PlannerAiRequest, build_plan_with_ai
+from app.services.api.planner_ai import PlannerAiRequest, build_plan_with_ai_dari_dashboard
 
 
 def _serialisasi_model(model: Any) -> Dict[str, Any]:
@@ -93,7 +93,7 @@ async def _antrikan_run_dari_spesifikasi(job_id: str, spesifikasi: Dict[str, Any
 
 async def execute_prompt_plan(request: PlannerExecuteRequest) -> PlannerExecuteResponse:
     if request.use_ai:
-        rencana = build_plan_with_ai(request)
+        rencana = await build_plan_with_ai_dari_dashboard(request)
     else:
         rencana = build_plan_from_prompt(request)
 

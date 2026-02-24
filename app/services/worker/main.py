@@ -10,6 +10,7 @@ from app.core.queue import append_event, dequeue_job, get_job_spec, init_queue, 
 from app.core.redis_client import redis_client
 from app.core.registry import policy_manager, tool_registry
 from app.core.runner import handle_retry, process_job_event
+from app.core.tools.command import CommandTool
 from app.core.tools.files import FilesTool
 from app.core.tools.http import HTTPTool
 from app.core.tools.kv import KVTool
@@ -24,12 +25,13 @@ tool_registry.register_tool("kv", "1.0.0", KVTool().run)
 tool_registry.register_tool("messaging", "1.0.0", MessagingTool().run)
 tool_registry.register_tool("files", "1.0.0", FilesTool().run)
 tool_registry.register_tool("metrics", "1.0.0", MetricsTool().run)
+tool_registry.register_tool("command", "1.0.0", CommandTool().run)
 
 # Set default policies
 policy_manager.set_allowlist("monitor.channel", ["metrics", "messaging"])
 policy_manager.set_allowlist("report.daily", ["metrics", "messaging"])
 policy_manager.set_allowlist("backup.export", ["files", "kv"])
-policy_manager.set_allowlist("agent.workflow", ["http", "kv", "messaging", "files", "metrics"])
+policy_manager.set_allowlist("agent.workflow", ["http", "kv", "messaging", "files", "metrics", "command"])
 policy_manager.set_allowlist("simulation.heavy", ["metrics"])
 
 

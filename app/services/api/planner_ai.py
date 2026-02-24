@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
 
+from app.core.integration_configs import get_integration_account, list_integration_accounts
 from app.core.models import JobSpec, RetryPolicy, Schedule
 from app.services.api.planner import PlannerJob, PlannerRequest, PlannerResponse, build_plan_from_prompt
 
@@ -13,7 +14,19 @@ from app.services.api.planner import PlannerJob, PlannerRequest, PlannerResponse
 class PlannerAiRequest(PlannerRequest):
     force_rule_based: bool = False
     model_id: Optional[str] = None
+    ai_provider: str = "auto"
+    ai_account_id: str = "default"
+    # Legacy field kept for backward compatibility with existing clients.
+    openai_account_id: str = "default"
     max_steps: int = Field(default=4, ge=1, le=12)
+
+
+class PlannerAiCredentials(BaseModel):
+    provider: str
+    account_id: str
+    model_id: str
+    api_key: str = ""
+    api_base: Optional[str] = None
 
 
 ALLOWED_JOB_TYPES: Set[str] = {
@@ -35,6 +48,12 @@ DEFAULT_RETRY: Dict[str, RetryPolicy] = {
     "report.daily": RetryPolicy(max_retry=3, backoff_sec=[5, 10, 30]),
     "backup.export": RetryPolicy(max_retry=2, backoff_sec=[10, 30]),
     "agent.workflow": RetryPolicy(max_retry=1, backoff_sec=[2, 5]),
+}
+
+PROVIDER_CHAIN_DEFAULT: List[str] = ["openai", "ollama"]
+DEFAULT_MODEL_PER_PROVIDER: Dict[str, str] = {
+    "openai": "openai/gpt-4o-mini",
+    "ollama": "ollama/qwen3:8b",
 }
 
 
@@ -69,6 +88,50 @@ def _hapus_duplikat(items: List[str]) -> List[str]:
         seen.add(cleaned)
         output.append(cleaned)
     return output
+
+
+def _normalisasi_provider(provider: str) -> str:
+    cleaned = str(provider or "").strip().lower()
+    return cleaned or "auto"
+
+
+def _normalisasi_model_id(provider: str, model_id: str) -> str:
+    cleaned = str(model_id or "").strip()
+    if not cleaned:
+        return ""
+    if "/" in cleaned:
+        return cleaned
+    if provider == "openai":
+        return f"openai/{cleaned}"
+    if provider == "ollama":
+        return f"ollama/{cleaned}"
+    return cleaned
+
+
+def _ambil_base_url_dari_config(config: Any) -> str:
+    if not isinstance(config, dict):
+        return ""
+
+    kandidat = [
+        config.get("base_url"),
+        config.get("api_base"),
+        config.get("openai_base_url"),
+    ]
+    for value in kandidat:
+        cleaned = str(value or "").strip()
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _akun_provider_siapsaji(provider: str, row: Optional[Dict[str, Any]]) -> bool:
+    if not row or not isinstance(row, dict):
+        return False
+    if not bool(row.get("enabled", True)):
+        return False
+    if provider == "openai":
+        return bool(str(row.get("secret") or "").strip())
+    return True
 
 
 def _ekstrak_teks_json(raw: Any) -> Optional[str]:
@@ -130,17 +193,37 @@ def _bangun_prompt_smolagents(request: PlannerAiRequest) -> str:
     )
 
 
-def _inisialisasi_model_litellm(model_class: Any, model_id: str, api_key: Optional[str]) -> Any:
-    attempts: List[Dict[str, Any]] = [
-        {"model_id": model_id, "api_key": api_key},
-        {"model_id": model_id},
-        {"model": model_id, "api_key": api_key},
-        {"model": model_id},
-    ]
+def _inisialisasi_model_litellm(
+    model_class: Any,
+    model_id: str,
+    api_key: Optional[str],
+    api_base: Optional[str] = None,
+) -> Any:
+    daftar_percobaan: List[Dict[str, Any]] = []
+
+    daftar_nama_model = ["model_id", "model"]
+    daftar_nama_base = ["api_base", "base_url"]
+
+    for nama_model in daftar_nama_model:
+        kwargs_dasar: Dict[str, Any] = {nama_model: model_id}
+        daftar_percobaan.append(dict(kwargs_dasar))
+        if api_key:
+            daftar_percobaan.append({**kwargs_dasar, "api_key": api_key})
+
+        if api_base:
+            for nama_base in daftar_nama_base:
+                daftar_percobaan.append({**kwargs_dasar, nama_base: api_base})
+                if api_key:
+                    daftar_percobaan.append({**kwargs_dasar, nama_base: api_base, "api_key": api_key})
 
     errors: List[str] = []
-    for kwargs in attempts:
+    sudah_dicoba: Set[str] = set()
+    for kwargs in daftar_percobaan:
         clean_kwargs = {key: value for key, value in kwargs.items() if value is not None}
+        jejak = json.dumps(clean_kwargs, sort_keys=True)
+        if jejak in sudah_dicoba:
+            continue
+        sudah_dicoba.add(jejak)
         try:
             return model_class(**clean_kwargs)
         except Exception as exc:
@@ -164,7 +247,164 @@ def _buat_code_agent(code_agent_class: Any, model: Any, max_steps: int) -> Any:
     return code_agent_class(**kwargs)
 
 
-def _jalankan_smolagents(request: PlannerAiRequest) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+async def _pilih_akun_openai_dashboard(account_id: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    return await _pilih_akun_provider_dashboard("openai", account_id)
+
+
+async def _pilih_akun_provider_dashboard(provider: str, account_id: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    warnings: List[str] = []
+    normalized_provider = _normalisasi_provider(provider)
+    target_id = str(account_id or "default").strip() or "default"
+
+    try:
+        pilihan = await get_integration_account(normalized_provider, target_id, include_secret=True)
+    except Exception:
+        pilihan = None
+
+    if _akun_provider_siapsaji(normalized_provider, pilihan):
+        return pilihan, warnings
+
+    try:
+        daftar = await list_integration_accounts(provider=normalized_provider, include_secret=True)
+    except Exception:
+        daftar = []
+
+    kandidat_akun: List[Dict[str, Any]] = []
+    for row in daftar:
+        if _akun_provider_siapsaji(normalized_provider, row):
+            kandidat_akun.append(row)
+
+    kandidat_akun.sort(key=lambda row: str(row.get("account_id") or ""))
+    if kandidat_akun:
+        kandidat = kandidat_akun[0]
+        kandidat_id = str(kandidat.get("account_id") or "default").strip() or "default"
+        if kandidat_id != target_id:
+            warnings.append(
+                f"Akun {normalized_provider}/{target_id} belum siap. Planner AI memakai akun {normalized_provider}/{kandidat_id}."
+            )
+        return kandidat, warnings
+
+    return None, warnings
+
+
+async def resolve_planner_ai_credential_candidates(
+    request: PlannerAiRequest,
+) -> Tuple[List[PlannerAiCredentials], List[str]]:
+    warnings: List[str] = []
+    daftar_kandidat: List[PlannerAiCredentials] = []
+
+    provider_request = _normalisasi_provider(request.ai_provider)
+    account_target = str(request.ai_account_id or "").strip() or str(request.openai_account_id or "default").strip() or "default"
+    model_request = str(request.model_id or "").strip()
+
+    provider_chain = [provider_request] if provider_request != "auto" else list(PROVIDER_CHAIN_DEFAULT)
+
+    for provider in provider_chain:
+        butuh_warning = provider_request != "auto" or len(daftar_kandidat) == 0
+        akun, warning_akun = await _pilih_akun_provider_dashboard(provider, account_target)
+        if butuh_warning:
+            warnings.extend(warning_akun)
+
+        if akun:
+            config = akun.get("config", {})
+            model_dari_config = str(config.get("model_id") or "").strip() if isinstance(config, dict) else ""
+            model_id = _normalisasi_model_id(provider, model_request or model_dari_config or DEFAULT_MODEL_PER_PROVIDER.get(provider, ""))
+            api_key = str(akun.get("secret") or "").strip()
+            api_base = _ambil_base_url_dari_config(config)
+
+            if provider == "ollama":
+                if not api_base:
+                    api_base = str(os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").strip()
+                if not api_key:
+                    api_key = str(os.getenv("OLLAMA_API_KEY") or "ollama").strip()
+
+            if model_id:
+                daftar_kandidat.append(
+                    PlannerAiCredentials(
+                        provider=provider,
+                        account_id=str(akun.get("account_id") or account_target or "default"),
+                        model_id=model_id,
+                        api_key=api_key,
+                        api_base=api_base or None,
+                    )
+                )
+            continue
+
+        if provider == "openai":
+            env_api_key = str(os.getenv("OPENAI_API_KEY") or "").strip()
+            if env_api_key:
+                model_id = _normalisasi_model_id(
+                    "openai",
+                    model_request or str(os.getenv("PLANNER_AI_MODEL") or DEFAULT_MODEL_PER_PROVIDER["openai"]).strip(),
+                )
+                daftar_kandidat.append(
+                    PlannerAiCredentials(
+                        provider="openai",
+                        account_id="env",
+                        model_id=model_id,
+                        api_key=env_api_key,
+                        api_base=str(os.getenv("OPENAI_BASE_URL") or "").strip() or None,
+                    )
+                )
+                if butuh_warning:
+                    warnings.append("Token OpenAI diambil dari environment (OPENAI_API_KEY).")
+            else:
+                if butuh_warning:
+                    warnings.append("Akun OpenAI belum siap dan OPENAI_API_KEY belum diisi.")
+
+        if provider == "ollama":
+            model_id = _normalisasi_model_id(
+                "ollama",
+                model_request or str(os.getenv("OLLAMA_MODEL") or DEFAULT_MODEL_PER_PROVIDER["ollama"]).strip(),
+            )
+            api_base = str(os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").strip()
+            api_key = str(os.getenv("OLLAMA_API_KEY") or "ollama").strip()
+            daftar_kandidat.append(
+                PlannerAiCredentials(
+                    provider="ollama",
+                    account_id="local",
+                    model_id=model_id,
+                    api_key=api_key,
+                    api_base=api_base,
+                )
+            )
+            if butuh_warning:
+                warnings.append("Akun Ollama di dashboard belum siap, memakai konfigurasi lokal default.")
+
+    kandidat_final: List[PlannerAiCredentials] = []
+    jejak: Set[str] = set()
+    for row in daftar_kandidat:
+        signature = f"{row.provider}|{row.account_id}|{row.model_id}|{row.api_base or ''}"
+        if signature in jejak:
+            continue
+        jejak.add(signature)
+        kandidat_final.append(row)
+
+    return kandidat_final, _hapus_duplikat(warnings)
+
+
+async def resolve_planner_ai_credentials(
+    request: PlannerAiRequest,
+) -> Tuple[str, str, List[str]]:
+    kandidat, warnings = await resolve_planner_ai_credential_candidates(request)
+    if kandidat:
+        return kandidat[0].model_id, kandidat[0].api_key, warnings
+
+    model_id = str(request.model_id or "").strip() or str(os.getenv("PLANNER_AI_MODEL") or DEFAULT_MODEL_PER_PROVIDER["openai"]).strip()
+    if not model_id:
+        model_id = DEFAULT_MODEL_PER_PROVIDER["openai"]
+    model_id = _normalisasi_model_id("openai", model_id)
+    api_key = str(os.getenv("OPENAI_API_KEY") or "").strip()
+    return model_id, api_key, _hapus_duplikat(warnings)
+
+
+def _jalankan_smolagents(
+    request: PlannerAiRequest,
+    *,
+    model_id_override: Optional[str] = None,
+    api_key_override: Optional[str] = None,
+    api_base_override: Optional[str] = None,
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
     warnings: List[str] = []
 
     try:
@@ -178,14 +418,30 @@ def _jalankan_smolagents(request: PlannerAiRequest) -> Tuple[Optional[Dict[str, 
     if code_agent_class is None or model_class is None:
         return None, ["Versi smolagents tidak menyediakan CodeAgent/LiteLLMModel."]
 
-    model_id = request.model_id or os.getenv("PLANNER_AI_MODEL", "openai/gpt-4o-mini")
-    api_key = os.getenv("OPENAI_API_KEY")
+    model_id = str(
+        model_id_override
+        or request.model_id
+        or os.getenv("PLANNER_AI_MODEL", DEFAULT_MODEL_PER_PROVIDER["openai"])
+    ).strip()
+    api_key = str(api_key_override or os.getenv("OPENAI_API_KEY") or "").strip()
+    api_base = str(api_base_override or os.getenv("PLANNER_AI_BASE_URL") or "").strip()
 
     if model_id.startswith("openai/") and not api_key:
-        return None, ["OPENAI_API_KEY belum di-set. Planner AI fallback ke rule-based."]
+        return None, [
+            "Token OpenAI belum tersedia. Isi Setelan > Akun Integrasi (openai/default) "
+            "atau set OPENAI_API_KEY. Planner AI fallback ke rule-based."
+        ]
+
+    if model_id.startswith("ollama/") and not api_base:
+        api_base = "http://localhost:11434"
 
     try:
-        model = _inisialisasi_model_litellm(model_class, model_id=model_id, api_key=api_key)
+        model = _inisialisasi_model_litellm(
+            model_class,
+            model_id=model_id,
+            api_key=api_key,
+            api_base=api_base or None,
+        )
     except Exception as exc:
         return None, [f"Gagal inisialisasi model AI: {exc}"]
 
@@ -369,21 +625,35 @@ def build_plan_from_ai_payload(request: PlannerAiRequest, payload: Dict[str, Any
     )
 
 
-def build_plan_with_ai(request: PlannerAiRequest) -> PlannerResponse:
+def build_plan_with_ai(
+    request: PlannerAiRequest,
+    *,
+    model_id_override: Optional[str] = None,
+    api_key_override: Optional[str] = None,
+    api_base_override: Optional[str] = None,
+    pre_warnings: Optional[List[str]] = None,
+) -> PlannerResponse:
     fallback_plan = build_plan_from_prompt(request)
+    warning_awal = _hapus_duplikat(list(pre_warnings or []))
 
     if request.force_rule_based:
         fallback_plan.warnings = _hapus_duplikat(
-            [*fallback_plan.warnings, "force_rule_based aktif: planner AI dilewati."]
+            [*fallback_plan.warnings, *warning_awal, "force_rule_based aktif: planner AI dilewati."]
         )
         return fallback_plan
 
-    payload, ai_warnings = _jalankan_smolagents(request)
+    payload, ai_warnings = _jalankan_smolagents(
+        request,
+        model_id_override=model_id_override,
+        api_key_override=api_key_override,
+        api_base_override=api_base_override,
+    )
+    gabung_warning_ai = _hapus_duplikat([*warning_awal, *ai_warnings])
     if payload is None:
         fallback_plan.warnings = _hapus_duplikat(
             [
                 *fallback_plan.warnings,
-                *ai_warnings,
+                *gabung_warning_ai,
                 "Planner AI gagal dipakai. Sistem otomatis memakai planner rule-based.",
             ]
         )
@@ -394,12 +664,78 @@ def build_plan_with_ai(request: PlannerAiRequest) -> PlannerResponse:
         fallback_plan.warnings = _hapus_duplikat(
             [
                 *fallback_plan.warnings,
-                *ai_warnings,
+                *gabung_warning_ai,
                 *ai_plan.warnings,
                 "Planner AI tidak menghasilkan job valid. Sistem memakai planner rule-based.",
             ]
         )
         return fallback_plan
 
-    ai_plan.warnings = _hapus_duplikat([*ai_plan.warnings, *ai_warnings])
+    ai_plan.warnings = _hapus_duplikat([*ai_plan.warnings, *gabung_warning_ai])
     return ai_plan
+
+
+async def build_plan_with_ai_dari_dashboard(request: PlannerAiRequest) -> PlannerResponse:
+    kandidat, warnings_awal = await resolve_planner_ai_credential_candidates(request)
+    fallback_plan = build_plan_from_prompt(request)
+
+    if request.force_rule_based:
+        fallback_plan.warnings = _hapus_duplikat(
+            [*fallback_plan.warnings, *warnings_awal, "force_rule_based aktif: planner AI dilewati."]
+        )
+        return fallback_plan
+
+    warning_terkumpul = list(warnings_awal)
+    if not kandidat:
+        fallback_plan.warnings = _hapus_duplikat(
+            [
+                *fallback_plan.warnings,
+                *warning_terkumpul,
+                "Planner AI belum menemukan provider yang siap. Sistem memakai planner rule-based.",
+            ]
+        )
+        return fallback_plan
+
+    for index, kredensial in enumerate(kandidat, start=1):
+        warning_konteks = _hapus_duplikat(
+            [
+                *warning_terkumpul,
+                f"Mencoba planner AI lewat {kredensial.provider}/{kredensial.account_id} (percobaan {index}/{len(kandidat)}).",
+            ]
+        )
+
+        payload, warnings_ai = _jalankan_smolagents(
+            request,
+            model_id_override=kredensial.model_id,
+            api_key_override=kredensial.api_key,
+            api_base_override=kredensial.api_base,
+        )
+
+        if payload is None:
+            warning_terkumpul = _hapus_duplikat(
+                [*warning_konteks, *warnings_ai, f"Planner AI gagal di {kredensial.provider}/{kredensial.account_id}."]
+            )
+            continue
+
+        ai_plan = build_plan_from_ai_payload(request, payload)
+        if ai_plan.jobs:
+            ai_plan.warnings = _hapus_duplikat([*ai_plan.warnings, *warning_konteks, *warnings_ai])
+            return ai_plan
+
+        warning_terkumpul = _hapus_duplikat(
+            [
+                *warning_konteks,
+                *warnings_ai,
+                *ai_plan.warnings,
+                f"Planner AI di {kredensial.provider}/{kredensial.account_id} tidak menghasilkan job valid.",
+            ]
+        )
+
+    fallback_plan.warnings = _hapus_duplikat(
+        [
+            *fallback_plan.warnings,
+            *warning_terkumpul,
+            "Planner AI gagal di semua provider yang tersedia. Sistem memakai planner rule-based.",
+        ]
+    )
+    return fallback_plan

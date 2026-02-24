@@ -212,7 +212,10 @@ def test_execute_prompt_plan_uses_ai_planner_when_enabled(monkeypatch):
     def should_not_use_rule_builder(request):
         raise AssertionError("rule-based planner must not be called when use_ai is true")
 
-    monkeypatch.setattr(planner_execute, "build_plan_with_ai", lambda request: plan)
+    async def fake_build_plan_with_ai_dari_dashboard(request):
+        return plan
+
+    monkeypatch.setattr(planner_execute, "build_plan_with_ai_dari_dashboard", fake_build_plan_with_ai_dari_dashboard)
     monkeypatch.setattr(planner_execute, "build_plan_from_prompt", should_not_use_rule_builder)
     monkeypatch.setattr(planner_execute, "get_job_spec", fake_get_job_spec)
     monkeypatch.setattr(planner_execute, "save_job_spec", fake_save_job_spec)
