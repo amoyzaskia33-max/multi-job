@@ -360,6 +360,10 @@ export interface Experiment {
   notes: string;
   created_at?: string;
   updated_at?: string;
+  last_variant?: string;
+  last_variant_name?: string;
+  last_variant_bucket?: number;
+  last_variant_run_at?: string;
 }
 
 export interface ExperimentUpsertRequest {
@@ -376,6 +380,30 @@ export interface ExperimentUpsertRequest {
   tags?: string[];
   owner?: string;
   notes?: string;
+}
+
+export interface Trigger {
+  trigger_id: string;
+  name: string;
+  job_id: string;
+  channel: string;
+  description: string;
+  enabled: boolean;
+  default_payload: Record<string, unknown>;
+  secret_present: boolean;
+  created_at?: string;
+  updated_at?: string;
+  last_fired_run_id?: string;
+  last_fired_at?: string;
+}
+
+export interface TriggerFireResponse {
+  trigger_id: string;
+  job_id: string;
+  message_id: string;
+  run_id: string;
+  channel: string;
+  source: string;
 }
 
 const handleApiError = <T>(error: unknown, message: string, fallback: T): T => {
@@ -654,6 +682,69 @@ export const getConnectors = async (): Promise<Connector[]> => {
   } catch (error) {
     return handleApiError(error, "Gagal memuat data koneksi", []);
   }
+};
+
+export const getTriggers = async (): Promise<Trigger[]> => {
+  try {
+    return await getJson<Trigger[]>("/triggers");
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat trigger", []);
+  }
+};
+
+const buildTriggerHeaders = (withJson: boolean, secret?: string): HeadersInit => {
+  const headers = buildHeaders(withJson) as Record<string, string>;
+  if (secret) {
+    headers["X-Trigger-Auth"] = secret;
+  }
+  return headers;
+};
+
+const parseTriggerResponse = async (response: Response): Promise<TriggerFireResponse> => {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Gagal memicu trigger");
+  }
+  return (await response.json()) as TriggerFireResponse;
+};
+
+export const fireTriggerWebhook = async (
+  triggerId: string,
+  payload: Record<string, unknown>,
+  secret?: string,
+): Promise<TriggerFireResponse> => {
+  const response = await fetch(`${API_BASE}/connectors/webhook/${encodeURIComponent(triggerId)}`, {
+    method: "POST",
+    headers: buildTriggerHeaders(true, secret),
+    body: JSON.stringify(payload),
+  });
+  return await parseTriggerResponse(response);
+};
+
+export const fireTriggerTelegram = async (
+  triggerId: string,
+  data: { chat_id: string; text: string; username?: string },
+  secret?: string,
+): Promise<TriggerFireResponse> => {
+  const response = await fetch(`${API_BASE}/connectors/telegram/${encodeURIComponent(triggerId)}`, {
+    method: "POST",
+    headers: buildTriggerHeaders(true, secret),
+    body: JSON.stringify(data),
+  });
+  return await parseTriggerResponse(response);
+};
+
+export const fireTriggerEmail = async (
+  triggerId: string,
+  data: { sender: string; subject: string; body: string },
+  secret?: string,
+): Promise<TriggerFireResponse> => {
+  const response = await fetch(`${API_BASE}/connectors/email/${encodeURIComponent(triggerId)}`, {
+    method: "POST",
+    headers: buildTriggerHeaders(true, secret),
+    body: JSON.stringify(data),
+  });
+  return await parseTriggerResponse(response);
 };
 
 export const getTelegramConnectorAccounts = async (): Promise<TelegramConnectorAccount[]> => {

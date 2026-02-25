@@ -443,19 +443,20 @@ export default function ExperimentsPage() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Nama</TableHead>
-                  <TableHead>Job</TableHead>
-                  <TableHead>Split B</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Update</TableHead>
-                  <TableHead>Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Nama</TableHead>
+                <TableHead>Job</TableHead>
+                <TableHead>Split B</TableHead>
+                <TableHead>Varian</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Update</TableHead>
+                <TableHead>Aksi</TableHead>
+            </TableRow>
+            </TableHeader>
+            <TableBody>
                 {filteredExperiments.map((row) => (
-                  <TableRow key={row.experiment_id}>
+                    <TableRow key={row.experiment_id}>
                     <TableCell className="font-medium">{row.experiment_id}</TableCell>
                     <TableCell>
                       <p className="font-medium">{row.name}</p>
@@ -463,8 +464,22 @@ export default function ExperimentsPage() {
                     </TableCell>
                     <TableCell>{row.job_id || "-"}</TableCell>
                     <TableCell>{row.traffic_split_b}%</TableCell>
+                    <TableCell className="space-y-1">
+                      {row.last_variant_name ? (
+                        <>
+                          <span className={row.last_variant === "b" ? "status-baik" : "status-netral"}>
+                            {row.last_variant_name}
+                          </span>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDateTime(row.last_variant_run_at)}
+                          </p>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Belum jalan</span>
+                      )}
+                    </TableCell>
                     <TableCell>
-                      <span className={row.enabled ? "status-baik" : "status-netral"}>{row.enabled ? "Aktif" : "Nonaktif"}</span>
+                        <span className={row.enabled ? "status-baik" : "status-netral"}>{row.enabled ? "Aktif" : "Nonaktif"}</span>
                     </TableCell>
                     <TableCell>{formatDateTime(row.updated_at)}</TableCell>
                     <TableCell>

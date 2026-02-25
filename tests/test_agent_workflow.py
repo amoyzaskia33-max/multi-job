@@ -13,10 +13,12 @@ class _FakeHttpTool:
 
 
 class _Ctx:
-    def __init__(self, http_tool, command_tool=None):
+    def __init__(self, http_tool, command_tool=None, job_id="job_test", run_id="run_test"):
         self.tools = {"http": http_tool}
         if command_tool:
             self.tools["command"] = command_tool
+        self.job_id = job_id
+        self.run_id = run_id
 
 
 class _FakeCommandTool:
@@ -459,3 +461,94 @@ def test_agent_workflow_sanitizes_requested_prefix_subset_when_approval_disabled
     assert command_tool.calls[0]["allow_prefixes"] == ["pytest -q"]
     assert result["command_allow_prefixes_requested"] == ["pytest -q", "git status"]
     assert result["command_allow_prefixes_rejected"] == ["git status"]
+
+
+def test_agent_workflow_uses_prompt_from_experiment_context(monkeypatch):
+    async def fake_list_accounts(include_secret: bool = False):
+        return [
+            {
+                "provider": "openai",
+                "account_id": "default",
+                "enabled": True,
+                "secret": "sk-openai",
+                "config": {"model_id": "gpt-4o-mini"},
+            }
+        ]
+
+    async def fake_list_mcp_servers(include_secret: bool = False):
+        return []
+
+    async def fake_resolve_experiment_prompt_for_job(
+        job_id,
+        *,
+        run_id="",
+        base_prompt="",
+        experiment_id="",
+        preferred_variant="",
+    ):
+        assert job_id == "job_exp_01"
+        assert run_id == "run_exp_01"
+        assert base_prompt == "Prompt asli"
+        return {
+            "applied": True,
+            "reason": "traffic_split",
+            "job_id": "job_exp_01",
+            "experiment_id": "exp_growth",
+            "variant": "b",
+            "variant_name": "treatment",
+            "traffic_split_b": 70,
+            "bucket": 15,
+            "prompt": "Prompt hasil eksperimen",
+        }
+
+    captured = {"prompt": ""}
+
+    async def fake_plan_actions_with_openai(
+        prompt,
+        model_id,
+        api_key,
+        provider_catalog,
+        mcp_catalog,
+        command_allow_prefixes,
+        allow_sensitive_commands,
+    ):
+        captured["prompt"] = prompt
+        return {
+            "summary": "Plan eksperimen",
+            "steps": [{"kind": "note", "text": "Selesai"}],
+            "final_message": "ok",
+        }
+
+    monkeypatch.setattr(agent_workflow, "list_integration_accounts", fake_list_accounts)
+    monkeypatch.setattr(agent_workflow, "list_mcp_servers", fake_list_mcp_servers)
+    recorded = {}
+
+    async def fake_record_exposure(*args, **kwargs):
+        if args:
+            recorded["experiment_id"] = args[0]
+        recorded.update(kwargs)
+
+    monkeypatch.setattr(agent_workflow, "resolve_experiment_prompt_for_job", fake_resolve_experiment_prompt_for_job)
+    monkeypatch.setattr(agent_workflow, "record_experiment_variant_run", fake_record_exposure)
+    monkeypatch.setattr(agent_workflow, "_rencanakan_aksi_dengan_openai", fake_plan_actions_with_openai)
+    monkeypatch.setattr(agent_workflow, "append_event", _noop_append_event)
+    monkeypatch.setattr(agent_workflow, "list_approval_requests", _noop_list_approvals)
+
+    http_tool = _FakeHttpTool()
+    result = asyncio.run(
+        agent_workflow.run(
+            _Ctx(http_tool, job_id="job_exp_01", run_id="run_exp_01"),
+            {"prompt": "Prompt asli"},
+        )
+    )
+
+    assert result["success"] is True
+    assert captured["prompt"] == "Prompt hasil eksperimen"
+    assert result["prompt_original"] == "Prompt asli"
+    assert result["prompt"] == "Prompt hasil eksperimen"
+    assert result["experiment"]["applied"] is True
+    assert result["experiment"]["experiment_id"] == "exp_growth"
+    assert result["experiment"]["variant"] == "b"
+    assert recorded["experiment_id"] == "exp_growth"
+    assert recorded["variant"] == "b"
+    assert recorded["job_id"] == "job_exp_01"

@@ -13,6 +13,7 @@ from app.core.agent_memory import (
     record_agent_workflow_outcome,
 )
 from app.core.approval_queue import list_approval_requests
+from app.core.experiments import record_experiment_variant_run, resolve_experiment_prompt_for_job
 from app.core.integration_configs import list_integration_accounts, list_mcp_servers
 from app.core.queue import append_event
 from app.core.tools.command import (
@@ -960,9 +961,61 @@ async def _eksekusi_langkah_perintah_lokal(
 
 
 async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
-    prompt_pengguna = str(inputs.get("prompt") or "").strip()
+    prompt_awal = str(inputs.get("prompt") or "").strip()
+    job_id_ctx = str(getattr(ctx, "job_id", "") or "").strip()
+    run_id_ctx = str(getattr(ctx, "run_id", "") or "").strip()
+
+    try:
+        konteks_experiment = await resolve_experiment_prompt_for_job(
+            job_id_ctx,
+            run_id=run_id_ctx,
+            base_prompt=prompt_awal,
+            experiment_id=str(inputs.get("experiment_id") or ""),
+            preferred_variant=str(inputs.get("experiment_variant") or ""),
+        )
+    except Exception as exc:
+        konteks_experiment = {
+            "applied": False,
+            "reason": "resolution_error",
+            "job_id": str(job_id_ctx or "").strip().lower(),
+            "experiment_id": str(inputs.get("experiment_id") or "").strip().lower(),
+            "variant": "",
+            "variant_name": "",
+            "traffic_split_b": 0,
+            "bucket": None,
+            "prompt": prompt_awal,
+            "error": str(exc),
+        }
+
+    prompt_pengguna = str(konteks_experiment.get("prompt") or prompt_awal).strip()
+    raw_traffic_split = konteks_experiment.get("traffic_split_b", 0)
+    try:
+        traffic_split_b = int(raw_traffic_split)
+    except Exception:
+        traffic_split_b = 0
+    experiment_payload = {
+        "applied": bool(konteks_experiment.get("applied", False)),
+        "reason": str(konteks_experiment.get("reason") or ""),
+        "experiment_id": str(konteks_experiment.get("experiment_id") or ""),
+        "variant": str(konteks_experiment.get("variant") or ""),
+        "variant_name": str(konteks_experiment.get("variant_name") or ""),
+        "traffic_split_b": max(0, min(100, traffic_split_b)),
+        "bucket": konteks_experiment.get("bucket"),
+    }
+
+    if experiment_payload["applied"] and experiment_payload["experiment_id"]:
+        with suppress(Exception):
+            await record_experiment_variant_run(
+                experiment_payload["experiment_id"],
+                variant=experiment_payload["variant"],
+                variant_name=experiment_payload["variant_name"],
+                job_id=job_id_ctx,
+                run_id=run_id_ctx,
+                bucket=experiment_payload["bucket"],
+            )
+
     if not prompt_pengguna:
-        return {"success": False, "error": "prompt is required"}
+        return {"success": False, "error": "prompt is required", "experiment": experiment_payload}
 
     agent_key = _tentukan_agent_key(ctx, inputs)
     memori_agent = await get_agent_memory(agent_key)
@@ -997,7 +1050,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
 
     alat_http = ctx.tools.get("http")
     if not alat_http:
-        return {"success": False, "error": "http tool is not available"}
+        return {"success": False, "error": "http tool is not available", "experiment": experiment_payload}
     alat_command = ctx.tools.get("command")
 
     daftar_integrasi = await list_integration_accounts(include_secret=True)
@@ -1049,6 +1102,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
             response_izin["memory_context"] = konteks_memori_terbaru
             response_izin["command_allow_prefixes_requested"] = prefix_perintah_diminta
             response_izin["command_allow_prefixes_rejected"] = prefix_perintah_ditolak
+            response_izin["experiment"] = experiment_payload
             return response_izin
 
     akun_openai_pilihan = str(inputs.get("openai_account_id") or "default").strip() or "default"
@@ -1090,6 +1144,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         with_izin["agent_key"] = agent_key
         with_izin["command_allow_prefixes_requested"] = prefix_perintah_diminta
         with_izin["command_allow_prefixes_rejected"] = prefix_perintah_ditolak
+        with_izin["experiment"] = experiment_payload
         with suppress(Exception):
             await append_event(
                 "agent.approval_requested",
@@ -1116,6 +1171,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
             "memory_context": konteks_memori_terbaru,
             "command_allow_prefixes_requested": prefix_perintah_diminta,
             "command_allow_prefixes_rejected": prefix_perintah_ditolak,
+            "experiment": experiment_payload,
             "error": "OpenAI API key belum tersedia. Isi provider 'openai' di dashboard atau set OPENAI_API_KEY.",
         }
 
@@ -1148,6 +1204,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
             "success": False,
             "agent_key": agent_key,
             "memory_context": konteks_memori_terbaru,
+            "experiment": experiment_payload,
             "error": f"Agent planner gagal: {exc}",
         }
 
@@ -1192,6 +1249,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         response_izin["memory_guardrail"] = rencana.get("memory_guardrail", [])
         response_izin["command_allow_prefixes_requested"] = prefix_perintah_diminta
         response_izin["command_allow_prefixes_rejected"] = prefix_perintah_ditolak
+        response_izin["experiment"] = experiment_payload
         return response_izin
 
     hasil_langkah: List[Dict[str, Any]] = []
@@ -1238,10 +1296,12 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         "summary": rencana["summary"],
         "final_message": rencana.get("final_message") or "",
         "model_id": model_id,
+        "prompt_original": prompt_awal,
         "prompt": prompt_pengguna,
         "steps_planned": len(rencana["steps"]),
         "steps_executed": len(hasil_langkah),
         "step_results": hasil_langkah,
+        "experiment": experiment_payload,
         "memory_context": konteks_memori,
         "memory_guardrail": rencana.get("memory_guardrail", []),
         "available_providers": provider_tersedia,
@@ -1258,6 +1318,9 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 "success": sukses_total,
                 "steps_planned": len(rencana["steps"]),
                 "steps_executed": len(hasil_langkah),
+                "experiment_applied": experiment_payload["applied"],
+                "experiment_id": experiment_payload["experiment_id"],
+                "experiment_variant": experiment_payload["variant"],
             },
         )
     konteks_memori_terbaru = await _catat_memori(

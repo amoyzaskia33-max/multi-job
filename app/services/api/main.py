@@ -65,6 +65,13 @@ from app.core.experiments import (
     upsert_experiment,
 )
 from app.core.models import JobSpec, QueueEvent, RetryPolicy, Run, RunStatus, Schedule
+from app.core.triggers import (
+    delete_trigger as hapus_trigger,
+    fire_trigger,
+    get_trigger,
+    list_triggers,
+    upsert_trigger,
+)
 from app.core.observability import expose_metrics, logger
 from app.core.queue import (
     add_run_to_job_history,
@@ -514,10 +521,65 @@ class ExperimentView(BaseModel):
     notes: str = ""
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    last_variant: Optional[str] = None
+    last_variant_name: str = ""
+    last_variant_bucket: Optional[int] = None
+    last_variant_run_at: Optional[str] = None
 
 
 class ExperimentEnabledRequest(BaseModel):
     enabled: bool
+
+
+class TriggerUpsertRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    job_id: str
+    channel: str
+    description: str = ""
+    enabled: bool = True
+    default_payload: Dict[str, Any] = Field(default_factory=dict)
+    secret: str = ""
+
+
+class TriggerView(TriggerUpsertRequest):
+    trigger_id: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    last_fired_run_id: Optional[str] = None
+    last_fired_at: Optional[str] = None
+    secret_present: bool = False
+
+
+class TriggerFireRequest(BaseModel):
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    source: str = "api.trigger"
+
+
+class TriggerFireResponse(BaseModel):
+    trigger_id: str
+    job_id: str
+    message_id: str
+    run_id: str
+    channel: str
+    source: str
+
+
+class ConnectorWebhookRequest(BaseModel):
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ConnectorTelegramRequest(BaseModel):
+    chat_id: str
+    text: str
+    username: Optional[str] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ConnectorEmailRequest(BaseModel):
+    sender: str
+    subject: str
+    body: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentWorkflowAutomationRequest(BaseModel):
@@ -1505,6 +1567,157 @@ async def delete_experiment_endpoint(experiment_id: str):
 
     await append_event("experiment.deleted", {"experiment_id": str(experiment_id or "").strip().lower()})
     return {"experiment_id": str(experiment_id or "").strip().lower(), "status": "deleted"}
+
+
+@app.get("/triggers", response_model=List[TriggerView])
+async def list_triggers_endpoint():
+    return await list_triggers()
+
+
+@app.get("/triggers/{trigger_id}", response_model=TriggerView)
+async def get_trigger_endpoint(trigger_id: str):
+    row = await get_trigger(trigger_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    return row
+
+
+@app.put("/triggers/{trigger_id}", response_model=TriggerView)
+async def upsert_trigger_endpoint(trigger_id: str, request: TriggerUpsertRequest):
+    try:
+        row = await upsert_trigger(trigger_id, request.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return row
+
+
+def _resolve_trigger_auth(request: Request) -> Optional[str]:
+    token = request.headers.get("x-trigger-auth") or request.headers.get("authorization")
+    if not token:
+        return None
+    token = token.strip()
+    if token.lower().startswith("bearer "):
+        return token[7:].strip()
+    return token
+
+
+@app.post("/triggers/{trigger_id}/fire", response_model=TriggerFireResponse)
+async def fire_trigger_endpoint(trigger_id: str, request: TriggerFireRequest, http_request: Request):
+    auth_token = _resolve_trigger_auth(http_request)
+    try:
+        result = await fire_trigger(
+            trigger_id,
+            payload=request.payload,
+            source=request.source,
+            auth_token=auth_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "trigger_id": trigger_id,
+        "job_id": result["job_id"],
+        "message_id": result["message_id"],
+        "run_id": result["run_id"],
+        "channel": result["channel"],
+        "source": request.source,
+    }
+
+
+@app.post("/connectors/webhook/{trigger_id}", response_model=TriggerFireResponse)
+async def connector_webhook(trigger_id: str, request_body: ConnectorWebhookRequest, http_request: Request):
+    trigger = await get_trigger(trigger_id)
+    if not trigger or trigger.get("channel") != "webhook":
+        raise HTTPException(status_code=404, detail="Webhook trigger not found")
+    auth_token = _resolve_trigger_auth(http_request)
+    try:
+        result = await fire_trigger(
+            trigger_id,
+            payload=request_body.payload,
+            source="connector.webhook",
+            auth_token=auth_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "trigger_id": trigger_id,
+        "job_id": result["job_id"],
+        "message_id": result["message_id"],
+        "run_id": result["run_id"],
+        "channel": trigger["channel"],
+        "source": "connector.webhook",
+    }
+
+
+@app.post("/connectors/telegram/{trigger_id}", response_model=TriggerFireResponse)
+async def connector_telegram(trigger_id: str, request_body: ConnectorTelegramRequest, http_request: Request):
+    trigger = await get_trigger(trigger_id)
+    if not trigger or trigger.get("channel") != "telegram":
+        raise HTTPException(status_code=404, detail="Telegram trigger not found")
+    auth_token = _resolve_trigger_auth(http_request)
+    payload = {
+        **request_body.payload,
+        "chat_id": request_body.chat_id,
+        "text": request_body.text,
+    }
+    if request_body.username:
+        payload["username"] = request_body.username
+    try:
+        result = await fire_trigger(
+            trigger_id,
+            payload=payload,
+            source="connector.telegram",
+            auth_token=auth_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "trigger_id": trigger_id,
+        "job_id": result["job_id"],
+        "message_id": result["message_id"],
+        "run_id": result["run_id"],
+        "channel": trigger["channel"],
+        "source": "connector.telegram",
+    }
+
+
+@app.post("/connectors/email/{trigger_id}", response_model=TriggerFireResponse)
+async def connector_email(trigger_id: str, request_body: ConnectorEmailRequest, http_request: Request):
+    trigger = await get_trigger(trigger_id)
+    if not trigger or trigger.get("channel") != "email":
+        raise HTTPException(status_code=404, detail="Email trigger not found")
+    auth_token = _resolve_trigger_auth(http_request)
+    payload = {
+        **request_body.payload,
+        "sender": request_body.sender,
+        "subject": request_body.subject,
+        "body": request_body.body,
+    }
+    try:
+        result = await fire_trigger(
+            trigger_id,
+            payload=payload,
+            source="connector.email",
+            auth_token=auth_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "trigger_id": trigger_id,
+        "job_id": result["job_id"],
+        "message_id": result["message_id"],
+        "run_id": result["run_id"],
+        "channel": trigger["channel"],
+        "source": "connector.email",
+    }
+
+
+@app.delete("/triggers/{trigger_id}")
+async def delete_trigger_endpoint(trigger_id: str):
+    removed = await hapus_trigger(trigger_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    await append_event("trigger.deleted", {"trigger_id": trigger_id})
+    return {"trigger_id": trigger_id, "status": "deleted"}
 
 
 @app.get("/connectors")

@@ -143,6 +143,41 @@ def test_upsert_experiment_validates_required_fields(monkeypatch):
             )
         )
 
+
+def test_record_experiment_variant_run_updates_metadata(monkeypatch):
+    _reset_fallback_store()
+    monkeypatch.setattr(experiments, "redis_client", _FailingRedis())
+
+    asyncio.run(
+        experiments.upsert_experiment(
+            "exp_variant",
+            {
+                "name": "Eksperimen Variant",
+                "job_id": "job_variant",
+                "variant_a_prompt": "A",
+                "variant_b_prompt": "B",
+                "enabled": True,
+            },
+        )
+    )
+
+    asyncio.run(
+        experiments.record_experiment_variant_run(
+            "exp_variant",
+            variant="b",
+            variant_name="treatment",
+            job_id="job_variant",
+            run_id="run_var_1",
+            bucket=37,
+        )
+    )
+
+    updated = asyncio.run(experiments.get_experiment("exp_variant"))
+    assert updated["last_variant"] == "b"
+    assert updated["last_variant_name"] == "treatment"
+    assert updated["last_variant_bucket"] == 37
+    assert updated["last_variant_run_at"] is not None
+
     with pytest.raises(ValueError):
         asyncio.run(
             experiments.upsert_experiment(
@@ -166,3 +201,86 @@ def test_upsert_experiment_validates_required_fields(monkeypatch):
                 },
             )
         )
+
+
+def test_resolve_experiment_prompt_for_job_applies_enabled_experiment(monkeypatch):
+    _reset_fallback_store()
+    monkeypatch.setattr(experiments, "redis_client", _FailingRedis())
+
+    asyncio.run(
+        experiments.upsert_experiment(
+            "exp_prompt",
+            {
+                "name": "Eksperimen Prompt",
+                "job_id": "job_growth",
+                "variant_a_prompt": "Prompt A",
+                "variant_b_prompt": "Prompt B",
+                "traffic_split_b": 100,
+                "enabled": True,
+            },
+        )
+    )
+
+    resolved = asyncio.run(
+        experiments.resolve_experiment_prompt_for_job(
+            "job_growth",
+            run_id="run_001",
+            base_prompt="Prompt Dasar",
+        )
+    )
+
+    assert resolved["applied"] is True
+    assert resolved["experiment_id"] == "exp_prompt"
+    assert resolved["variant"] == "b"
+    assert resolved["prompt"] == "Prompt B"
+    assert resolved["reason"] == "traffic_split"
+
+
+def test_resolve_experiment_prompt_for_job_forced_variant_fallback(monkeypatch):
+    _reset_fallback_store()
+    monkeypatch.setattr(experiments, "redis_client", _FailingRedis())
+
+    asyncio.run(
+        experiments.upsert_experiment(
+            "exp_force",
+            {
+                "name": "Eksperimen Force",
+                "job_id": "job_force",
+                "variant_a_prompt": "Prompt A",
+                "variant_b_prompt": "",
+                "enabled": True,
+            },
+        )
+    )
+
+    resolved = asyncio.run(
+        experiments.resolve_experiment_prompt_for_job(
+            "job_force",
+            run_id="run_002",
+            base_prompt="Prompt Dasar",
+            experiment_id="exp_force",
+            preferred_variant="b",
+        )
+    )
+
+    assert resolved["applied"] is True
+    assert resolved["variant"] == "a"
+    assert resolved["prompt"] == "Prompt A"
+    assert resolved["reason"] == "forced_variant_prompt_fallback"
+
+
+def test_resolve_experiment_prompt_for_job_returns_base_prompt_when_no_match(monkeypatch):
+    _reset_fallback_store()
+    monkeypatch.setattr(experiments, "redis_client", _FailingRedis())
+
+    resolved = asyncio.run(
+        experiments.resolve_experiment_prompt_for_job(
+            "job_not_found",
+            run_id="run_003",
+            base_prompt="Prompt Cadangan",
+        )
+    )
+
+    assert resolved["applied"] is False
+    assert resolved["prompt"] == "Prompt Cadangan"
+    assert resolved["reason"] == "no_matching_experiment"

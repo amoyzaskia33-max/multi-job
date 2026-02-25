@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -59,6 +60,34 @@ def _normalisasi_split_b(raw: Any, default: int = 50) -> int:
     except Exception:
         value = default
     return max(0, min(100, value))
+
+
+def _normalisasi_job_id(raw: Any) -> str:
+    return str(raw or "").strip().lower()
+
+
+def _normalisasi_variant(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"a", "control", "variant_a"}:
+        return "a"
+    if value in {"b", "treatment", "variant_b"}:
+        return "b"
+    return ""
+
+
+def _bucket_traffic(seed: str) -> int:
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % 100
+
+
+def _pilih_variant_dari_split(traffic_split_b: int, seed: str) -> Dict[str, Any]:
+    split_b = _normalisasi_split_b(traffic_split_b, default=50)
+    if split_b <= 0:
+        return {"variant": "a", "bucket": 0}
+    if split_b >= 100:
+        return {"variant": "b", "bucket": 99}
+    bucket = _bucket_traffic(seed)
+    return {"variant": "b" if bucket < split_b else "a", "bucket": bucket}
 
 
 def _payload_tampilan(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -162,6 +191,10 @@ async def upsert_experiment(experiment_id: str, payload: Dict[str, Any]) -> Dict
         "notes": str(data.get("notes", existing.get("notes", ""))).strip(),
         "created_at": existing.get("created_at", now),
         "updated_at": now,
+        "last_variant": str(existing.get("last_variant") or ""),
+        "last_variant_name": str(existing.get("last_variant_name") or ""),
+        "last_variant_bucket": existing.get("last_variant_bucket"),
+        "last_variant_run_at": str(existing.get("last_variant_run_at") or ""),
     }
 
     try:
@@ -204,3 +237,151 @@ async def delete_experiment(experiment_id: str) -> bool:
         _fallback_experiments.pop(normalized_id, None)
 
     return removed
+
+
+async def record_experiment_variant_run(
+    experiment_id: str,
+    variant: str,
+    variant_name: str,
+    job_id: str,
+    run_id: str,
+    bucket: Optional[int] = None,
+) -> None:
+    normalized_id = _normalisasi_experiment_id(experiment_id)
+    try:
+        row = await _ambil_experiment_raw(normalized_id)
+    except ValueError:
+        return
+
+    if not row:
+        return
+
+    now = _sekarang_iso()
+    row["last_variant"] = _normalisasi_variant(variant) or row.get("last_variant") or "a"
+    row["last_variant_name"] = str(variant_name or row.get("last_variant_name") or "").strip()
+    row["last_variant_bucket"] = bucket
+    row["last_variant_run_at"] = now
+    row["updated_at"] = now
+
+    try:
+        await redis_client.set(_kunci_experiment(normalized_id), json.dumps(row))
+        await redis_client.sadd(EXPERIMENTS_SET, normalized_id)
+    except RedisError:
+        _fallback_experiments[normalized_id] = dict(row)
+
+
+async def resolve_experiment_prompt_for_job(
+    job_id: str,
+    *,
+    run_id: str = "",
+    base_prompt: str = "",
+    experiment_id: str = "",
+    preferred_variant: str = "",
+) -> Dict[str, Any]:
+    normalized_job_id = _normalisasi_job_id(job_id)
+    normalized_experiment_id = str(experiment_id or "").strip().lower()
+    normalized_preferred_variant = _normalisasi_variant(preferred_variant)
+    base_prompt_clean = str(base_prompt or "").strip()
+
+    result: Dict[str, Any] = {
+        "applied": False,
+        "reason": "no_matching_experiment",
+        "job_id": normalized_job_id,
+        "experiment_id": normalized_experiment_id,
+        "variant": "",
+        "variant_name": "",
+        "traffic_split_b": 0,
+        "bucket": None,
+        "prompt": base_prompt_clean,
+    }
+
+    row: Optional[Dict[str, Any]] = None
+    if normalized_experiment_id:
+        try:
+            row = await get_experiment(normalized_experiment_id)
+        except ValueError:
+            result["reason"] = "invalid_experiment_id"
+            return result
+
+        if not row:
+            result["reason"] = "experiment_not_found"
+            return result
+        if not bool(row.get("enabled", False)):
+            result["reason"] = "experiment_disabled"
+            return result
+
+        experiment_job_id = _normalisasi_job_id(row.get("job_id"))
+        if normalized_job_id and experiment_job_id and experiment_job_id != normalized_job_id:
+            result["reason"] = "experiment_job_mismatch"
+            return result
+    else:
+        if not normalized_job_id:
+            result["reason"] = "job_id_required"
+            return result
+
+        candidates = await list_experiments(enabled=True, limit=EXPERIMENT_MAX_LIMIT)
+        for candidate in candidates:
+            if _normalisasi_job_id(candidate.get("job_id")) == normalized_job_id:
+                row = candidate
+                break
+
+        if not row:
+            result["reason"] = "no_matching_experiment"
+            return result
+
+    normalized_experiment_id = str(row.get("experiment_id") or "").strip().lower()
+    traffic_split_b = _normalisasi_split_b(row.get("traffic_split_b", 50), default=50)
+
+    result["experiment_id"] = normalized_experiment_id
+    result["traffic_split_b"] = traffic_split_b
+
+    chosen_variant = normalized_preferred_variant
+    if not chosen_variant:
+        seed = "|".join(
+            [
+                normalized_experiment_id,
+                str(run_id or "").strip(),
+                normalized_job_id,
+                base_prompt_clean[:120],
+            ]
+        )
+        split_choice = _pilih_variant_dari_split(traffic_split_b, seed)
+        chosen_variant = str(split_choice.get("variant") or "a")
+        result["bucket"] = split_choice.get("bucket")
+
+    prompt_a = str(row.get("variant_a_prompt") or "").strip()
+    prompt_b = str(row.get("variant_b_prompt") or "").strip()
+
+    effective_variant = chosen_variant if chosen_variant == "b" else "a"
+    if effective_variant == "a" and not prompt_a and prompt_b:
+        effective_variant = "b"
+    elif effective_variant == "b" and not prompt_b and prompt_a:
+        effective_variant = "a"
+
+    selected_prompt = prompt_b if effective_variant == "b" else prompt_a
+    if not selected_prompt:
+        result["variant"] = effective_variant
+        result["variant_name"] = str(
+            row.get("variant_b_name" if effective_variant == "b" else "variant_a_name")
+            or ("treatment" if effective_variant == "b" else "control")
+        ).strip()
+        result["reason"] = "experiment_prompt_empty"
+        return result
+
+    result["applied"] = True
+    result["variant"] = effective_variant
+    result["variant_name"] = str(
+        row.get("variant_b_name" if effective_variant == "b" else "variant_a_name")
+        or ("treatment" if effective_variant == "b" else "control")
+    ).strip()
+    result["prompt"] = selected_prompt
+    if normalized_preferred_variant:
+        result["reason"] = (
+            "forced_variant"
+            if effective_variant == normalized_preferred_variant
+            else "forced_variant_prompt_fallback"
+        )
+    else:
+        result["reason"] = "traffic_split"
+
+    return result
