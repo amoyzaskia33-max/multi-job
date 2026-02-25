@@ -39,6 +39,10 @@ export default defineConfig({
       command: uiCommand,
       cwd: ".",
       url: uiUrl,
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_API_BASE: apiUrl,
+      },
       reuseExistingServer: true,
       timeout: 180_000,
     },
