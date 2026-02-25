@@ -357,6 +357,42 @@ Solusi:
    - `npm run e2e`
    - (opsional) `Load Simulation`
 
+### 12.7 Contoh Kondisi Normal (Baseline Sehat)
+
+| Area | Contoh Kondisi Normal | Cara Cek |
+| --- | --- | --- |
+| API health | `GET /healthz` dan `GET /readyz` mengembalikan `200` | `curl http://127.0.0.1:8000/healthz` |
+| UI | Dashboard bisa dibuka, halaman jobs/runs/settings terbuka normal | Buka `http://127.0.0.1:3000` |
+| Worker | Run bergerak dari `queued -> running -> success` | `GET /runs?limit=20` |
+| Queue | `depth` kecil/stabil, tidak naik terus menerus | `GET /queue` |
+| Scheduler | Event dispatch muncul periodik, tidak spam error | `GET /events?limit=50` |
+| CI E2E | Workflow `UI E2E` status `completed success` | GitHub Actions / `gh run list` |
+| Security UI | `npm audit` tidak ada `high/critical` | `cd ui && npm audit --audit-level=high` |
+
+Contoh output normal cepat:
+
+```text
+/healthz => 200
+/readyz  => 200
+/queue   => {"depth": 0, "delayed": 0}
+pytest   => 77 passed
+e2e      => 7 passed
+```
+
+Contoh pola runs normal saat load:
+
+```text
+t=10s  queued=10  running=30  success=20  failed=0
+t=20s  queued=5   running=20  success=60  failed=0
+t=30s  queued=2   running=10  success=90  failed=0
+```
+
+Interpretasi:
+1. `success` terus naik.
+2. `failed` tetap `0` atau sangat kecil.
+3. `queued` tidak menumpuk tanpa turun.
+4. Queue depth tidak runaway.
+
 ## 13) Keamanan Operasional
 
 1. Aktifkan Auth RBAC untuk environment non-local:
