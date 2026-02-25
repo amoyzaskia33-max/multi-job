@@ -327,6 +327,36 @@ Solusi:
 1. Matikan proses yang pakai port (`3000` atau `5174`).
 2. Jalankan ulang `stop-local.ps1` lalu `start-local.ps1`.
 
+### 12.5 Kamus Error Cepat (Error -> Akar Masalah -> Perbaikan)
+
+| Gejala/Error (contoh pesan) | Akar Masalah Paling Umum | Cara Perbaikan Cepat |
+| --- | --- | --- |
+| `gh : The term 'gh' is not recognized` | GitHub CLI belum ter-install atau PATH belum reload | Install `gh`, restart terminal, atau pakai full path `C:\\Program Files\\GitHub CLI\\gh.exe` |
+| `gh auth status` belum login / token invalid | Sesi auth GitHub belum aktif | Jalankan `gh auth login`, lalu cek `gh auth status` |
+| `error connecting to api.github.com` | Gangguan internet/DNS sementara | Cek koneksi, retry 1-2 menit, cek `githubstatus.com` |
+| `unknown command 'XGROUP'` | Redis lama, tidak support Streams | Upgrade Redis modern (disarankan), sistem akan fallback ke legacy queue mode |
+| `Process from config.webServer ... Exit code: 3` | Web server Playwright gagal start | Lihat log webServer, biasanya dependency/port issue |
+| `missing required package @types/node` | Dependency TypeScript belum terpasang di UI | `cd ui && npm i -D @types/node` lalu rerun E2E |
+| `EADDRINUSE: address already in use` | Port sudah dipakai proses lain | Stop proses lama (`3000/5174/8000`), lalu start ulang service |
+| Run status banyak `queued` tapi tidak diproses | Worker tidak jalan, crash, atau tidak konsumsi queue | Cek `runtime-logs/worker.err.log`, cek process worker, cek Redis koneksi |
+| Worker log `No handler found for job type: ...` | Tipe job tidak terdaftar di handler registry | Perbaiki `type` pada spec job atau daftarkan handler job tersebut |
+| `npm audit` ada `high/critical` | Dependency rentan keamanan | Upgrade package terdampak (misal `next`) hingga audit bersih |
+| `npm list next ... invalid` | Instalasi npm terputus/corrupt lockfile state | Jalankan ulang `npm install`, bila perlu `npm ci` |
+| `API /healthz` gagal atau timeout | API belum start / port bentrok / error startup | Cek `runtime-logs/api.err.log`, pastikan port 8000 bebas |
+| `UI E2E` merah, lokal hijau | Perbedaan env CI (timing/dependency) | Cek artifact Playwright + log run CI, perketat locator dan wait logic |
+| `scheduler.dispatch_skipped_overlap` berulang | Guard overlap aktif, run lama belum selesai | Naikkan interval, optimasi job duration, atau set `allow_overlap=true` bila memang aman |
+| Queue depth terus naik saat load test | Worker concurrency kurang vs beban masuk | Naikkan `WORKER_CONCURRENCY`, review `work_ms`, cek pressure settings scheduler |
+
+### 12.6 Cara Pakai Kamus Error
+
+1. Ambil 1 baris error paling jelas dari log (`api.err.log`, `worker.err.log`, CI log, atau UI console).
+2. Cocokkan ke tabel di atas.
+3. Lakukan perbaikan cepat sesuai kolom kanan.
+4. Verifikasi ulang dengan:
+   - `pytest -q`
+   - `npm run e2e`
+   - (opsional) `Load Simulation`
+
 ## 13) Keamanan Operasional
 
 1. Aktifkan Auth RBAC untuk environment non-local:
@@ -356,4 +386,3 @@ Setelah rilis:
 - Workflow CI E2E: [ui-e2e.yml](../.github/workflows/ui-e2e.yml)
 - Workflow Load test: [load-simulation.yml](../.github/workflows/load-simulation.yml)
 - Script load: [simulate_safe_load.py](../simulate_safe_load.py)
-
