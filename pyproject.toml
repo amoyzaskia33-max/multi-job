@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Multi-Job Platform with Python and Redis"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
+packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = "^3.9"
