@@ -56,9 +56,9 @@ test("halaman jobs mendukung pagination server-side", async ({ page }) => {
 
     await expect(page.getByRole("heading", { level: 1, name: "Daftar Tugas" })).toBeVisible();
     await expect(
-      page.getByText(new RegExp(`Halaman 1, menampilkan ${expectedPage1Count} job\\.`)),
+      page.getByText(new RegExp(`Halaman 1, menampilkan ${expectedPage1Count} job\\.`)).first(),
     ).toBeVisible();
-    await expect(page.getByRole("cell", { name: `${prefix}-19` })).toBeVisible();
+    await expect(page.getByRole("cell", { name: `${prefix}-19` }).first()).toBeVisible();
 
     const tombolBerikutnya = page.getByRole("button", { name: "Berikutnya" });
     if (expectedPage2Count > 0) {
@@ -69,11 +69,11 @@ test("halaman jobs mendukung pagination server-side", async ({ page }) => {
     }
     await tombolBerikutnya.click();
 
-    await expect(page.getByText(/^Halaman 2$/)).toBeVisible();
+    await expect(page.getByText(/^Halaman 2$/).first()).toBeVisible();
     await expect(
-      page.getByText(new RegExp(`Halaman 2, menampilkan ${expectedPage2Count} job\\.`)),
+      page.getByText(new RegExp(`Halaman 2, menampilkan ${expectedPage2Count} job\\.`)).first(),
     ).toBeVisible();
-    await expect(page.getByRole("cell", { name: `${prefix}-20` })).toBeVisible();
+    await expect(page.getByRole("cell", { name: `${prefix}-20` }).first()).toBeVisible();
     await expect(page.getByRole("cell", { name: new RegExp(`^${escapeRegex(prefix)}-00$`) })).not.toBeVisible();
   } finally {
     await Promise.all(
@@ -116,7 +116,7 @@ test("halaman runs mendukung pagination server-side", async ({ page }) => {
 
     await expect(page.getByRole("heading", { level: 1, name: "Riwayat Eksekusi" })).toBeVisible();
     await expect(
-      page.getByText(new RegExp(`Halaman 1, menampilkan ${expectedPage1Count} run\\.`)),
+      page.getByText(new RegExp(`Halaman 1, menampilkan ${expectedPage1Count} run\\.`)).first(),
     ).toBeVisible();
     await expect(page.getByRole("cell", { name: jobId }).first()).toBeVisible();
 
@@ -129,9 +129,9 @@ test("halaman runs mendukung pagination server-side", async ({ page }) => {
     }
     await tombolBerikutnya.click();
 
-    await expect(page.getByText(/^Halaman 2$/)).toBeVisible();
+    await expect(page.getByText(/^Halaman 2$/).first()).toBeVisible();
     await expect(
-      page.getByText(new RegExp(`Halaman 2, menampilkan ${expectedPage2Count} run\\.`)),
+      page.getByText(new RegExp(`Halaman 2, menampilkan ${expectedPage2Count} run\\.`)).first(),
     ).toBeVisible();
     await expect(page.locator("tbody tr")).toHaveCount(expectedPage2Count);
   } finally {
