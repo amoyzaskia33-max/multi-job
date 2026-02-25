@@ -38,3 +38,4 @@ Thumbs.db
 # Local agent artifacts
 .clawhub/
 skills/
+!ui/src/app/skills/

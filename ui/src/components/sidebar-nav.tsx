@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Building2, Cable, FlaskConical, Gauge, History, Sparkles, Settings2, ShieldCheck, Users2, Workflow } from "lucide-react";
+import { Bot, Building2, Cable, FlaskConical, Gauge, History, Layers, Sparkles, Settings2, ShieldCheck, Users2, Workflow } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,7 @@ const navItems = [
   { href: "/team", label: "Tim", icon: Users2 },
   { href: "/office", label: "Kantor", icon: Building2 },
   { href: "/connectors", label: "Koneksi", icon: Cable },
+  { href: "/skills", label: "Skill", icon: Layers },
   { href: "/settings", label: "Setelan", icon: Settings2 },
 ];
 

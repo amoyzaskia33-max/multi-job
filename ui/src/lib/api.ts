@@ -406,6 +406,39 @@ export interface TriggerFireResponse {
   source: string;
 }
 
+export interface Skill {
+  skill_id: string;
+  name: string;
+  description: string;
+  job_type: string;
+  version: string;
+  runbook: string;
+  source: string;
+  default_inputs: Record<string, unknown>;
+  command_allow_prefixes: string[];
+  allowed_channels: string[];
+  tags: string[];
+  allow_sensitive_commands: boolean;
+  require_approval: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SkillSpecRequest {
+  name: string;
+  description?: string;
+  job_type: string;
+  version?: string;
+  runbook?: string;
+  source?: string;
+  default_inputs?: Record<string, unknown>;
+  command_allow_prefixes?: string[];
+  allowed_channels?: string[];
+  tags?: string[];
+  allow_sensitive_commands?: boolean;
+  require_approval?: boolean;
+}
+
 const handleApiError = <T>(error: unknown, message: string, fallback: T): T => {
   console.error(`${message}:`, error);
   toast.error(message);
@@ -758,6 +791,36 @@ export const fireTriggerVoice = async (
     body: JSON.stringify(data),
   });
   return await parseTriggerResponse(response);
+};
+
+export const getSkills = async (tags?: string[]): Promise<Skill[]> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (tags?.length) {
+      queryParams.append("tags", tags.join(","));
+    }
+    const path = `/skills${queryParams.size ? `?${queryParams.toString()}` : ""}`;
+    return await getJson<Skill[]>(path);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat skill", []);
+  }
+};
+
+export const upsertSkill = async (skillId: string, payload: SkillSpecRequest): Promise<Skill | undefined> => {
+  try {
+    return await send<Skill>(`/skills/${encodeURIComponent(skillId)}`, "PUT", payload);
+  } catch (error) {
+    return handleApiError(error, `Gagal menyimpan skill ${skillId}`, undefined);
+  }
+};
+
+export const deleteSkill = async (skillId: string): Promise<boolean> => {
+  try {
+    await send(`/skills/${encodeURIComponent(skillId)}`, "DELETE");
+    return true;
+  } catch (error) {
+    return handleApiError(error, `Gagal menghapus skill ${skillId}`, false);
+  }
 };
 
 export const getTelegramConnectorAccounts = async (): Promise<TelegramConnectorAccount[]> => {

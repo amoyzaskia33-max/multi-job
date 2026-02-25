@@ -63,3 +63,12 @@ python scripts/spio_skill.py delete skill_content_brief
 ```
 
 `install` mendukung file JSON/YAML atau folder berisi beberapa definisi. Tambahkan `--dry-run` untuk simulasi tanpa menyimpan. CLI memakai `PyYAML` jadi pastikan dependency terpasang.
+
+## Dashboard Skill (UI)
+
+Halaman skill registry tersedia di UI Next.js (`/skills`). Pada halaman tersebut pengguna dapat:
+
+- Melihat statistik total skill, status approval, dan sensitifitas secara sekilas.
+- Mengisi form untuk membuat skill baru atau mengedit skill yang sudah ada (klik baris tabel untuk memuat data ke form).
+- Mengonfigurasi command prefix, kanal yang boleh memicu skill, tags, dan default inputs tanpa harus menulis YAML manual.
+- Menghapus skill melalui tombol di bagian form.
