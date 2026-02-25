@@ -65,6 +65,12 @@ from app.core.experiments import (
     upsert_experiment,
 )
 from app.core.models import JobSpec, QueueEvent, RetryPolicy, Run, RunStatus, Schedule
+from app.core.skills import (
+    delete_skill as hapus_skill,
+    get_skill,
+    list_skills as list_skill_specs,
+    upsert_skill,
+)
 from app.core.triggers import (
     delete_trigger as hapus_trigger,
     fire_trigger,
@@ -580,6 +586,31 @@ class ConnectorEmailRequest(BaseModel):
     subject: str
     body: str
     payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SkillSpecRequest(BaseModel):
+    skill_id: str = Field(min_length=1, max_length=64)
+    name: str
+    job_type: str
+    description: str = ""
+    version: str = "1.0.0"
+    runbook: str = ""
+    source: str = ""
+    default_inputs: Dict[str, Any] = Field(default_factory=dict)
+    command_allow_prefixes: List[str] = Field(default_factory=list)
+    allowed_channels: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    allow_sensitive_commands: bool = False
+    require_approval: bool = False
+
+
+class SkillView(SkillSpecRequest):
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class SkillSyncRequest(BaseModel):
+    skills: List[SkillSpecRequest] = Field(default_factory=list)
 
 
 class AgentWorkflowAutomationRequest(BaseModel):
@@ -1718,6 +1749,57 @@ async def delete_trigger_endpoint(trigger_id: str):
         raise HTTPException(status_code=404, detail="Trigger not found")
     await append_event("trigger.deleted", {"trigger_id": trigger_id})
     return {"trigger_id": trigger_id, "status": "deleted"}
+
+
+def _parse_skill_tags(tags: Optional[str]) -> Optional[List[str]]:
+    if not tags:
+        return None
+    tokens = [token.strip() for token in tags.split(",")]
+    return [token for token in tokens if token]
+
+
+@app.get("/skills", response_model=List[SkillView])
+async def list_skills_endpoint(tags: Optional[str] = Query(None, description="Filter berdasarkan comma-separated tags")):
+    tag_list = _parse_skill_tags(tags)
+    return await list_skill_specs(tags=tag_list)
+
+
+@app.get("/skills/{skill_id}", response_model=SkillView)
+async def get_skill_endpoint(skill_id: str):
+    row = await get_skill(skill_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return row
+
+
+@app.put("/skills/{skill_id}", response_model=SkillView)
+async def upsert_skill_endpoint(skill_id: str, request: SkillSpecRequest):
+    try:
+        row = await upsert_skill(skill_id, request.model_dump(exclude={"skill_id"}))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return row
+
+
+@app.post("/skills/sync", response_model=List[SkillView])
+async def sync_skills_endpoint(request: SkillSyncRequest):
+    hasil: List[Dict[str, Any]] = []
+    for spec in request.skills:
+        try:
+            row = await upsert_skill(spec.skill_id, spec.model_dump(exclude={"skill_id"}))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"{spec.skill_id}: {exc}")
+        hasil.append(row)
+    return hasil
+
+
+@app.delete("/skills/{skill_id}")
+async def delete_skill_endpoint(skill_id: str):
+    removed = await hapus_skill(skill_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    await append_event("skill.deleted", {"skill_id": skill_id})
+    return {"skill_id": skill_id, "status": "deleted"}
 
 
 @app.get("/connectors")

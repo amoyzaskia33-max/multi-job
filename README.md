@@ -8,6 +8,7 @@ A scalable job processing platform built with Python and Redis.
 - Checklist operasional harian: [docs/CHECKLIST_OPERASIONAL_HARIAN.md](docs/CHECKLIST_OPERASIONAL_HARIAN.md)
 - Template insiden/postmortem: [docs/TEMPLATE_INSIDEN_POSTMORTEM.md](docs/TEMPLATE_INSIDEN_POSTMORTEM.md)
 - FAQ operasional: [docs/FAQ_OPERASIONAL.md](docs/FAQ_OPERASIONAL.md)
+- Skill registry & CLI: [docs/skill-registry.md](docs/skill-registry.md)
 
 ## Architecture
 
