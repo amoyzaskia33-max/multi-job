@@ -343,6 +343,41 @@ export interface ApprovalRequest {
   decision_note?: string;
 }
 
+export interface Experiment {
+  experiment_id: string;
+  name: string;
+  description: string;
+  job_id: string;
+  hypothesis: string;
+  variant_a_name: string;
+  variant_b_name: string;
+  variant_a_prompt: string;
+  variant_b_prompt: string;
+  traffic_split_b: number;
+  enabled: boolean;
+  tags: string[];
+  owner: string;
+  notes: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ExperimentUpsertRequest {
+  name: string;
+  description?: string;
+  job_id?: string;
+  hypothesis?: string;
+  variant_a_name?: string;
+  variant_b_name?: string;
+  variant_a_prompt: string;
+  variant_b_prompt: string;
+  traffic_split_b?: number;
+  enabled?: boolean;
+  tags?: string[];
+  owner?: string;
+  notes?: string;
+}
+
 const handleApiError = <T>(error: unknown, message: string, fallback: T): T => {
   console.error(`${message}:`, error);
   toast.error(message);
@@ -554,6 +589,54 @@ export const getRuns = async (params?: {
     return await getJson<Run[]>(path);
   } catch (error) {
     return handleApiError(error, "Gagal memuat riwayat eksekusi", []);
+  }
+};
+
+export const getExperiments = async (params?: {
+  enabled?: boolean;
+  search?: string;
+  limit?: number;
+}): Promise<Experiment[]> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (typeof params?.enabled === "boolean") queryParams.append("enabled", params.enabled ? "true" : "false");
+    if (params?.search) queryParams.append("search", params.search);
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    const path = `/experiments${queryParams.size ? `?${queryParams.toString()}` : ""}`;
+    return await getJson<Experiment[]>(path);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat eksperimen", []);
+  }
+};
+
+export const upsertExperiment = async (
+  experimentId: string,
+  payload: ExperimentUpsertRequest,
+): Promise<Experiment | undefined> => {
+  try {
+    return await send<Experiment>(`/experiments/${encodeURIComponent(experimentId)}`, "PUT", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menyimpan eksperimen", undefined);
+  }
+};
+
+export const setExperimentEnabled = async (
+  experimentId: string,
+  enabled: boolean,
+): Promise<Experiment | undefined> => {
+  try {
+    return await send<Experiment>(`/experiments/${encodeURIComponent(experimentId)}/enabled`, "POST", { enabled });
+  } catch (error) {
+    return handleApiError(error, "Gagal mengubah status eksperimen", undefined);
+  }
+};
+
+export const deleteExperiment = async (experimentId: string): Promise<boolean> => {
+  try {
+    await send<{ experiment_id: string; status: string }>(`/experiments/${encodeURIComponent(experimentId)}`, "DELETE");
+    return true;
+  } catch (error) {
+    return handleApiError(error, "Gagal menghapus eksperimen", false);
   }
 };
 

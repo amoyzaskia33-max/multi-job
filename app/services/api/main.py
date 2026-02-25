@@ -57,6 +57,13 @@ from app.core.integration_catalog import (
     list_mcp_server_templates,
     list_provider_templates,
 )
+from app.core.experiments import (
+    delete_experiment as hapus_experiment,
+    get_experiment,
+    list_experiments,
+    set_experiment_enabled,
+    upsert_experiment,
+)
 from app.core.models import JobSpec, QueueEvent, RetryPolicy, Run, RunStatus, Schedule
 from app.core.observability import expose_metrics, logger
 from app.core.queue import (
@@ -472,6 +479,45 @@ class IntegrationsBootstrapResponse(BaseModel):
     mcp_created: List[str] = Field(default_factory=list)
     mcp_updated: List[str] = Field(default_factory=list)
     mcp_skipped: List[str] = Field(default_factory=list)
+
+
+class ExperimentUpsertRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    job_id: str = ""
+    hypothesis: str = ""
+    variant_a_name: str = "control"
+    variant_b_name: str = "treatment"
+    variant_a_prompt: str = ""
+    variant_b_prompt: str = ""
+    traffic_split_b: int = Field(default=50, ge=0, le=100)
+    enabled: bool = False
+    tags: List[str] = Field(default_factory=list)
+    owner: str = ""
+    notes: str = ""
+
+
+class ExperimentView(BaseModel):
+    experiment_id: str
+    name: str
+    description: str = ""
+    job_id: str = ""
+    hypothesis: str = ""
+    variant_a_name: str = "control"
+    variant_b_name: str = "treatment"
+    variant_a_prompt: str = ""
+    variant_b_prompt: str = ""
+    traffic_split_b: int = 50
+    enabled: bool = False
+    tags: List[str] = Field(default_factory=list)
+    owner: str = ""
+    notes: str = ""
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ExperimentEnabledRequest(BaseModel):
+    enabled: bool
 
 
 class AgentWorkflowAutomationRequest(BaseModel):
@@ -1385,6 +1431,80 @@ async def bootstrap_integrations_catalog(request: IntegrationsBootstrapRequest):
         "mcp_updated": mcp_updated,
         "mcp_skipped": mcp_skipped,
     }
+
+
+@app.get("/experiments", response_model=List[ExperimentView])
+async def list_experiments_endpoint(
+    enabled: Optional[bool] = None,
+    search: Optional[str] = Query(default=None, max_length=120),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    return await list_experiments(enabled=enabled, search=search, limit=limit)
+
+
+@app.get("/experiments/{experiment_id}", response_model=ExperimentView)
+async def get_experiment_endpoint(experiment_id: str):
+    try:
+        row = await get_experiment(experiment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return row
+
+
+@app.put("/experiments/{experiment_id}", response_model=ExperimentView)
+async def upsert_experiment_endpoint(experiment_id: str, request: ExperimentUpsertRequest):
+    try:
+        row = await upsert_experiment(experiment_id, request.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await append_event(
+        "experiment.saved",
+        {
+            "experiment_id": row.get("experiment_id"),
+            "name": row.get("name"),
+            "job_id": row.get("job_id"),
+            "enabled": row.get("enabled", False),
+        },
+    )
+    return row
+
+
+@app.post("/experiments/{experiment_id}/enabled", response_model=ExperimentView)
+async def set_experiment_enabled_endpoint(experiment_id: str, request: ExperimentEnabledRequest):
+    try:
+        row = await set_experiment_enabled(experiment_id, enabled=request.enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    await append_event(
+        "experiment.enabled_changed",
+        {
+            "experiment_id": row.get("experiment_id"),
+            "enabled": row.get("enabled", False),
+        },
+    )
+    return row
+
+
+@app.delete("/experiments/{experiment_id}")
+async def delete_experiment_endpoint(experiment_id: str):
+    try:
+        removed = await hapus_experiment(experiment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not removed:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    await append_event("experiment.deleted", {"experiment_id": str(experiment_id or "").strip().lower()})
+    return {"experiment_id": str(experiment_id or "").strip().lower(), "status": "deleted"}
 
 
 @app.get("/connectors")
