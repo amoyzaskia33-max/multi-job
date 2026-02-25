@@ -13,6 +13,7 @@ class _MustNotCallRedis:
 
 def _reset_queue_fallback_state():
     queue.set_mode_fallback_redis(False)
+    queue.set_mode_legacy_redis_queue(False)
     queue._fallback_stream.clear()
     queue._fallback_delayed.clear()
     queue._fallback_job_specs.clear()

@@ -6,7 +6,14 @@ from datetime import datetime, timezone
 from app.core.config import settings
 from app.core.handlers_registry import get_handler
 from app.core.observability import logger, metrics_collector
-from app.core.queue import append_event, dequeue_job, get_job_spec, init_queue, is_mode_fallback_redis
+from app.core.queue import (
+    append_event,
+    dequeue_job,
+    get_job_spec,
+    init_queue,
+    is_mode_fallback_redis,
+    is_mode_legacy_redis_queue,
+)
 from app.core.redis_client import redis_client
 from app.core.registry import policy_manager, tool_registry
 from app.core.runner import handle_retry, process_job_event
@@ -143,11 +150,26 @@ async def worker_main():
 
     worker_id = f"worker_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     concurrency = _normalisasi_konkruensi()
-    logger.info("Worker started", extra={"worker_id": worker_id, "concurrency": concurrency})
-    await append_event(
-        "system.worker_started",
-        {"worker_id": worker_id, "concurrency": concurrency},
+    logger.info(
+        "Worker started",
+        extra={
+            "worker_id": worker_id,
+            "concurrency": concurrency,
+            "fallback_mode": is_mode_fallback_redis(),
+            "legacy_queue_mode": is_mode_legacy_redis_queue(),
+        },
     )
+    try:
+        await asyncio.wait_for(
+            append_event(
+                "system.worker_started",
+                {"worker_id": worker_id, "concurrency": concurrency},
+            ),
+            timeout=1.0,
+        )
+    except Exception:
+        # Startup event should not block worker execution in degraded Redis conditions.
+        pass
 
     tasks = [asyncio.create_task(_heartbeat_loop(worker_id), name=f"{worker_id}:heartbeat")]
     for index in range(concurrency):

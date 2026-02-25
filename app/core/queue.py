@@ -5,13 +5,15 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 
-from redis.exceptions import RedisError, ResponseError
+from redis.exceptions import RedisError, ResponseError, TimeoutError as RedisTimeoutError
 
 from .models import QueueEvent, Run
 from .redis_client import redis_client
 
 # Redis stream key for jobs
 STREAM_JOBS = "stream:jobs"
+# Redis list key for compatibility mode on older Redis without Streams support.
+LIST_JOBS = "list:jobs"
 # Consumer group for workers
 CG_WORKERS = "cg:workers"
 # ZSET for delayed jobs (score = unix timestamp)
@@ -48,11 +50,17 @@ _fallback_active_flow_runs: Dict[str, set] = defaultdict(set)
 _fallback_failure_state: Dict[str, Dict[str, Any]] = {}
 _fallback_events: List[Dict[str, Any]] = []
 _mode_fallback_redis = False
+_mode_legacy_redis_queue = False
 
 
 def set_mode_fallback_redis(enabled: bool) -> None:
     global _mode_fallback_redis
     _mode_fallback_redis = bool(enabled)
+
+
+def set_mode_legacy_redis_queue(enabled: bool) -> None:
+    global _mode_legacy_redis_queue
+    _mode_legacy_redis_queue = bool(enabled)
 
 
 def _sedang_mode_fallback_redis() -> bool:
@@ -63,8 +71,23 @@ def is_mode_fallback_redis() -> bool:
     return _mode_fallback_redis
 
 
+def is_mode_legacy_redis_queue() -> bool:
+    return _mode_legacy_redis_queue
+
+
 def _aktifkan_mode_fallback() -> None:
     set_mode_fallback_redis(True)
+
+
+def _aktifkan_mode_legacy_redis_queue() -> None:
+    set_mode_legacy_redis_queue(True)
+
+
+def _error_stream_tidak_didukung(exc: Exception) -> bool:
+    msg = str(exc or "").upper()
+    if "UNKNOWN COMMAND" not in msg:
+        return False
+    return any(cmd in msg for cmd in ("XGROUP", "XADD", "XREADGROUP", "XLEN"))
 
 
 def _sekarang_iso() -> str:
@@ -225,12 +248,18 @@ async def init_queue():
     """Initialize Redis streams and consumer group."""
     if _sedang_mode_fallback_redis():
         return
+    if is_mode_legacy_redis_queue():
+        return
 
     try:
         await redis_client.xgroup_create(name=STREAM_JOBS, groupname=CG_WORKERS, id="$", mkstream=True)
     except ResponseError as exc:
-        if "BUSYGROUP" not in str(exc):
-            raise
+        if "BUSYGROUP" in str(exc):
+            return
+        if _error_stream_tidak_didukung(exc):
+            _aktifkan_mode_legacy_redis_queue()
+            return
+        raise
     except RedisError:
         _aktifkan_mode_fallback()
         # Fallback mode: no setup required.
@@ -247,8 +276,32 @@ async def enqueue_job(event: Union[QueueEvent, Dict[str, Any]]) -> str:
         _fallback_stream.append({"id": message_id, "data": _salin_nilai(event_data)})
         return message_id
 
+    if is_mode_legacy_redis_queue():
+        try:
+            message_id = _id_pesan_fallback_berikutnya()
+            await redis_client.rpush(LIST_JOBS, json.dumps(event_data))
+            return message_id
+        except RedisError:
+            _aktifkan_mode_fallback()
+            message_id = _id_pesan_fallback_berikutnya()
+            _fallback_stream.append({"id": message_id, "data": _salin_nilai(event_data)})
+            return message_id
+
     try:
         return await redis_client.xadd(STREAM_JOBS, {"data": json.dumps(event_data)})
+    except ResponseError as exc:
+        if _error_stream_tidak_didukung(exc):
+            _aktifkan_mode_legacy_redis_queue()
+            try:
+                message_id = _id_pesan_fallback_berikutnya()
+                await redis_client.rpush(LIST_JOBS, json.dumps(event_data))
+                return message_id
+            except RedisError:
+                _aktifkan_mode_fallback()
+                message_id = _id_pesan_fallback_berikutnya()
+                _fallback_stream.append({"id": message_id, "data": _salin_nilai(event_data)})
+                return message_id
+        raise
     except RedisError:
         _aktifkan_mode_fallback()
         message_id = _id_pesan_fallback_berikutnya()
@@ -263,6 +316,26 @@ async def dequeue_job(worker_id: str) -> Optional[Dict[str, Any]]:
             return None
         item = _fallback_stream.pop(0)
         return {"message_id": item["id"], "data": _salin_nilai(item["data"])}
+
+    if is_mode_legacy_redis_queue():
+        try:
+            row = await redis_client.blpop(LIST_JOBS, timeout=1)
+            if not row:
+                return None
+            payload = row[1] if isinstance(row, (list, tuple)) and len(row) > 1 else None
+            if not payload:
+                return None
+            data = json.loads(payload)
+            return {"message_id": _id_pesan_fallback_berikutnya(), "data": data}
+        except RedisTimeoutError:
+            # Blocking pop may timeout when queue is empty; keep polling.
+            return None
+        except RedisError:
+            _aktifkan_mode_fallback()
+            if not _fallback_stream:
+                return None
+            item = _fallback_stream.pop(0)
+            return {"message_id": item["id"], "data": _salin_nilai(item["data"])}
 
     try:
         result = await redis_client.xreadgroup(
@@ -283,6 +356,14 @@ async def dequeue_job(worker_id: str) -> Optional[Dict[str, Any]]:
         data = json.loads(message_data["data"])
         await redis_client.xack(STREAM_JOBS, CG_WORKERS, message_id)
         return {"message_id": message_id, "data": data}
+    except RedisTimeoutError:
+        # Read timeout on blocking stream read should behave like no data.
+        return None
+    except ResponseError as exc:
+        if _error_stream_tidak_didukung(exc):
+            _aktifkan_mode_legacy_redis_queue()
+            return await dequeue_job(worker_id)
+        raise
     except RedisError:
         _aktifkan_mode_fallback()
         if not _fallback_stream:
@@ -740,10 +821,24 @@ async def get_queue_metrics() -> Dict[str, int]:
     if _sedang_mode_fallback_redis():
         return {"depth": len(_fallback_stream), "delayed": len(_fallback_delayed)}
 
+    if is_mode_legacy_redis_queue():
+        try:
+            depth = await redis_client.llen(LIST_JOBS)
+            delayed = await redis_client.zcard(ZSET_DELAYED)
+            return {"depth": int(depth), "delayed": int(delayed)}
+        except RedisError:
+            _aktifkan_mode_fallback()
+            return {"depth": len(_fallback_stream), "delayed": len(_fallback_delayed)}
+
     try:
         depth = await redis_client.xlen(STREAM_JOBS)
         delayed = await redis_client.zcard(ZSET_DELAYED)
         return {"depth": int(depth), "delayed": int(delayed)}
+    except ResponseError as exc:
+        if _error_stream_tidak_didukung(exc):
+            _aktifkan_mode_legacy_redis_queue()
+            return await get_queue_metrics()
+        raise
     except RedisError:
         _aktifkan_mode_fallback()
         return {"depth": len(_fallback_stream), "delayed": len(_fallback_delayed)}

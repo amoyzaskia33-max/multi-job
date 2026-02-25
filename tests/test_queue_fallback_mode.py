@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from redis.exceptions import RedisError
+from redis.exceptions import RedisError, ResponseError, TimeoutError as RedisTimeoutError
 
 from app.core import queue
 from app.core.models import Run, RunStatus
@@ -24,8 +24,42 @@ class _FailingRedisOnXadd:
         raise RedisError("redis unavailable")
 
 
+class _LegacyRedisNoStreams:
+    def __init__(self):
+        self._items = []
+
+    async def xgroup_create(self, *args, **kwargs):
+        raise ResponseError("unknown command 'XGROUP'")
+
+    async def rpush(self, key, payload):
+        self._items.append(payload)
+        return len(self._items)
+
+    async def blpop(self, key, timeout=0):
+        if not self._items:
+            return None
+        return (key, self._items.pop(0))
+
+    async def llen(self, key):
+        return len(self._items)
+
+    async def zcard(self, key):
+        return 0
+
+
+class _LegacyRedisTimeoutOnBlpop:
+    async def blpop(self, key, timeout=0):
+        raise RedisTimeoutError("socket timeout")
+
+
+class _RedisTimeoutOnXreadgroup:
+    async def xreadgroup(self, *args, **kwargs):
+        raise RedisTimeoutError("socket timeout")
+
+
 def _reset_queue_fallback_state():
     queue.set_mode_fallback_redis(False)
+    queue.set_mode_legacy_redis_queue(False)
     queue._fallback_stream.clear()
     queue._fallback_delayed.clear()
     queue._fallback_job_specs.clear()
@@ -126,6 +160,57 @@ def test_queue_auto_switches_to_fallback_after_redis_error(monkeypatch):
     )
     assert second_id
     assert redis_fail.xadd_calls == 1
+
+
+def test_queue_switches_to_legacy_mode_when_stream_not_supported(monkeypatch):
+    _reset_queue_fallback_state()
+    legacy_redis = _LegacyRedisNoStreams()
+    monkeypatch.setattr(queue, "redis_client", legacy_redis)
+
+    asyncio.run(queue.init_queue())
+    assert queue.is_mode_fallback_redis() is False
+    assert queue.is_mode_legacy_redis_queue() is True
+
+    message_id = asyncio.run(
+        queue.enqueue_job(
+            {
+                "run_id": "run_legacy_1",
+                "job_id": "job_legacy_1",
+                "type": "monitor.channel",
+                "inputs": {},
+                "attempt": 0,
+            }
+        )
+    )
+    assert message_id
+
+    dequeued = asyncio.run(queue.dequeue_job("worker_legacy"))
+    assert dequeued is not None
+    assert dequeued["data"]["job_id"] == "job_legacy_1"
+
+    metrics = asyncio.run(queue.get_queue_metrics())
+    assert metrics == {"depth": 0, "delayed": 0}
+
+
+def test_legacy_dequeue_timeout_does_not_trigger_fallback(monkeypatch):
+    _reset_queue_fallback_state()
+    queue.set_mode_legacy_redis_queue(True)
+    monkeypatch.setattr(queue, "redis_client", _LegacyRedisTimeoutOnBlpop())
+
+    row = asyncio.run(queue.dequeue_job("worker_legacy_timeout"))
+    assert row is None
+    assert queue.is_mode_fallback_redis() is False
+    assert queue.is_mode_legacy_redis_queue() is True
+
+
+def test_stream_dequeue_timeout_does_not_trigger_fallback(monkeypatch):
+    _reset_queue_fallback_state()
+    monkeypatch.setattr(queue, "redis_client", _RedisTimeoutOnXreadgroup())
+
+    row = asyncio.run(queue.dequeue_job("worker_stream_timeout"))
+    assert row is None
+    assert queue.is_mode_fallback_redis() is False
+    assert queue.is_mode_legacy_redis_queue() is False
 
 
 def test_active_runs_index_updates_in_fallback_mode(monkeypatch):
