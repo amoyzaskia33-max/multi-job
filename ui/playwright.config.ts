@@ -12,6 +12,8 @@ const uiCommand = isWindows
 
 export default defineConfig({
   testDir: "./e2e",
+  workers: process.env.CI ? 1 : undefined,
+  retries: process.env.CI ? 1 : 0,
   timeout: 45_000,
   expect: {
     timeout: 10_000,
