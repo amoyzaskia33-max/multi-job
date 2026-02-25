@@ -44,10 +44,18 @@ jobs:
           python -m venv .venv
           ./.venv/bin/python -m pip install --upgrade pip
           ./.venv/bin/python -m pip install -e .
+          ./.venv/bin/python -m pip install pytest
+
+      - name: Run backend unit tests
+        run: ./.venv/bin/python -m pytest -q
 
       - name: Install UI dependencies
         working-directory: ui
         run: npm ci
+
+      - name: Run UI dependency audit (high+)
+        working-directory: ui
+        run: npm audit --audit-level=high
 
       - name: Install Playwright browser
         working-directory: ui
