@@ -7,7 +7,7 @@ test("halaman prompt bisa eksekusi dan menampilkan hasil", async ({ page }) => {
   await page.getByRole("button", { name: "Jalankan Sekarang" }).click();
 
   await expect(page.getByRole("heading", { name: "Hasil Eksekusi" })).toBeVisible();
-  await expect(page.getByText("Total Job")).toBeVisible();
+  await expect(page.getByText("Total Job").first()).toBeVisible();
   await expect(page.locator("tbody tr").first()).toBeVisible();
 });
 
@@ -15,15 +15,15 @@ test("halaman team menampilkan struktur tim dan runtime", async ({ page }) => {
   await page.goto("/team");
 
   await expect(page.getByRole("heading", { name: "Tim & Flow" })).toBeVisible();
-  await expect(page.getByText("Flow Kerja Aktif")).toBeVisible();
-  await expect(page.getByText("Runtime Sistem")).toBeVisible();
+  await expect(page.getByText("Flow Kerja Aktif").first()).toBeVisible();
+  await expect(page.getByText("Runtime Sistem").first()).toBeVisible();
 });
 
 test("halaman office menampilkan quick status board", async ({ page }) => {
   await page.goto("/office");
 
   await expect(page.getByRole("heading", { name: "Kantor Digital" })).toBeVisible();
-  await expect(page.getByText("Papan Status Cepat")).toBeVisible();
+  await expect(page.getByText("Papan Status Cepat").first()).toBeVisible();
   await expect(page.getByText("Astra Prime").first()).toBeVisible();
 });
 
