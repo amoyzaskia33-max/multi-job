@@ -5,6 +5,9 @@ A scalable job processing platform built with Python and Redis.
 ## Dokumentasi Utama
 
 - Buku panduan sistem end-to-end: [docs/BUKU_PANDUAN_SISTEM.md](docs/BUKU_PANDUAN_SISTEM.md)
+- Checklist operasional harian: [docs/CHECKLIST_OPERASIONAL_HARIAN.md](docs/CHECKLIST_OPERASIONAL_HARIAN.md)
+- Template insiden/postmortem: [docs/TEMPLATE_INSIDEN_POSTMORTEM.md](docs/TEMPLATE_INSIDEN_POSTMORTEM.md)
+- FAQ operasional: [docs/FAQ_OPERASIONAL.md](docs/FAQ_OPERASIONAL.md)
 
 ## Architecture
 

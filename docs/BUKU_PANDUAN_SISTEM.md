@@ -484,3 +484,6 @@ Setelah rilis:
 - Workflow CI E2E: [ui-e2e.yml](../.github/workflows/ui-e2e.yml)
 - Workflow Load test: [load-simulation.yml](../.github/workflows/load-simulation.yml)
 - Script load: [simulate_safe_load.py](../simulate_safe_load.py)
+- Checklist harian ops: [CHECKLIST_OPERASIONAL_HARIAN.md](./CHECKLIST_OPERASIONAL_HARIAN.md)
+- Template insiden: [TEMPLATE_INSIDEN_POSTMORTEM.md](./TEMPLATE_INSIDEN_POSTMORTEM.md)
+- FAQ operasional: [FAQ_OPERASIONAL.md](./FAQ_OPERASIONAL.md)
