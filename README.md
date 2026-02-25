@@ -2,6 +2,10 @@
 
 A scalable job processing platform built with Python and Redis.
 
+## Dokumentasi Utama
+
+- Buku panduan sistem end-to-end: [docs/BUKU_PANDUAN_SISTEM.md](docs/BUKU_PANDUAN_SISTEM.md)
+
 ## Architecture
 
 The platform consists of four main services:
