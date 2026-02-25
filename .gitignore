@@ -34,3 +34,7 @@ runtime-logs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local agent artifacts
+.clawhub/
+skills/
