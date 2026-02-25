@@ -1,5 +1,7 @@
 # Multi-Job Platform
 
+![CI](https://github.com/amoyzaskia33-max/multi-job/actions/workflows/ci.yml/badge.svg)
+
 A scalable job processing platform built with Python and Redis.
 
 ## Dokumentasi Utama
