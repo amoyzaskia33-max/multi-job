@@ -24,7 +24,7 @@ test("halaman office menampilkan quick status board", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Kantor Digital" })).toBeVisible();
   await expect(page.getByText("Papan Status Cepat")).toBeVisible();
-  await expect(page.getByText("Astra Prime")).toBeVisible();
+  await expect(page.getByText("Astra Prime").first()).toBeVisible();
 });
 
 test("halaman otomasi menampilkan panel job dan approval", async ({ page }) => {
