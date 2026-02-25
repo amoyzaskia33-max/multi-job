@@ -25,6 +25,14 @@ poetry run spio-skill delete skill_content_brief
 
 `spio-skill` adalah alias ke `scripts/spio_skill.py`, jadi perintah yang sama bisa dijalankan via `python scripts/spio_skill.py ...` jika tidak menggunakan Poetry.
 
+## Release Automation
+
+GitHub Actions akan membuat release otomatis setiap kali tag `v*.*.*` (semver) dipush:
+
+1. Workflow `ci.yml` tetap berjalan untuk `pytest` backend + Playwright e2e.
+2. Workflow `release.yml` membangun artefak (backend ZIP, produksi Next.js UI) dan membuat GitHub Release dengan file tersebut.
+3. Tag baru juga memudahkan milestone & changelog, jadi cukup `git tag -a v1.0.0 -m "Release v1.0.0"` lalu push.
+
 ## Architecture
 
 The platform consists of four main services:
