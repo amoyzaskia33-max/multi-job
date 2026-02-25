@@ -18,7 +18,12 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
-  reporter: "list",
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        ["html", { outputFolder: "playwright-report", open: "never" }],
+      ]
+    : "list",
   use: {
     baseURL: uiUrl,
     trace: "on-first-retry",
