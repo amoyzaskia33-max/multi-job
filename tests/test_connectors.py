@@ -7,9 +7,11 @@ from fastapi import HTTPException
 from app.services.api.main import (
     ConnectorEmailRequest,
     ConnectorTelegramRequest,
+    ConnectorVoiceRequest,
     ConnectorWebhookRequest,
     connector_email,
     connector_telegram,
+    connector_voice,
     connector_webhook,
 )
 
@@ -125,3 +127,30 @@ def test_email_connector_payload(monkeypatch):
     assert captured["payload"]["subject"] == "hi"
     assert captured["payload"]["body"] == "ok"
     assert captured["payload"]["sender"] == "alice@test"
+
+
+def test_voice_connector_payload(monkeypatch):
+    _setup_trigger(monkeypatch, "voice")
+    captured = {}
+    monkeypatch.setattr("app.services.api.main.fire_trigger", _fire_stub(captured, "connector.voice"))
+
+    with pytest.raises(HTTPException):
+        asyncio.run(
+            connector_voice(
+                "alert-webhook",
+                ConnectorVoiceRequest(caller="123", transcript="Hi there"),
+                _FakeRequest({}),
+            )
+        )
+
+    result = asyncio.run(
+        connector_voice(
+            "alert-webhook",
+            ConnectorVoiceRequest(caller="123", transcript="Hai tim", call_id="call-1"),
+            _FakeRequest({"x-trigger-auth": "secret"}),
+        )
+    )
+    assert result["source"] == "connector.voice"
+    assert captured["payload"]["caller"] == "123"
+    assert captured["payload"]["transcript"] == "Hai tim"
+    assert captured["payload"]["call_id"] == "call-1"

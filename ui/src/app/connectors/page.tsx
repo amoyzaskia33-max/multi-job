@@ -15,6 +15,7 @@ import {
   approveApprovalRequest,
   fireTriggerEmail,
   fireTriggerTelegram,
+  fireTriggerVoice,
   fireTriggerWebhook,
   getApprovalRequests,
   getConnectors,
@@ -82,6 +83,9 @@ export default function ConnectorsPage() {
   const [emailSender, setEmailSender] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
+  const [voiceCaller, setVoiceCaller] = useState("");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceCallId, setVoiceCallId] = useState("");
   const [triggerApprovalFilter, setTriggerApprovalFilter] = useState<TriggerApprovalFilter>("pending");
   const [approverName, setApproverName] = useState("ops");
   const [busyApprovalId, setBusyApprovalId] = useState<string | null>(null);
@@ -202,6 +206,20 @@ export default function ConnectorsPage() {
           return await fireTriggerEmail(
             selectedTrigger.trigger_id,
             { sender: emailSender.trim(), subject: emailSubject.trim(), body: emailBody.trim() },
+            secret,
+          );
+        }
+        case "voice": {
+          if (!voiceCaller.trim() || !voiceTranscript.trim()) {
+            throw new Error("Caller dan transkrip voice wajib diisi.");
+          }
+          return await fireTriggerVoice(
+            selectedTrigger.trigger_id,
+            {
+              caller: voiceCaller.trim(),
+              transcript: voiceTranscript.trim(),
+              call_id: voiceCallId.trim() || undefined,
+            },
             secret,
           );
         }
@@ -412,6 +430,37 @@ export default function ConnectorsPage() {
                       onChange={(event) => setEmailBody(event.target.value)}
                       rows={3}
                     />
+                  </div>
+                </div>
+              )}
+              {selectedTrigger.channel === "voice" && (
+                <div className="space-y-3">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="trigger-voice-caller">Nomor/Caller</Label>
+                      <Input
+                        id="trigger-voice-caller"
+                        value={voiceCaller}
+                        onChange={(event) => setVoiceCaller(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trigger-voice-transcript">Transkrip</Label>
+                      <Textarea
+                        id="trigger-voice-transcript"
+                        rows={3}
+                        value={voiceTranscript}
+                        onChange={(event) => setVoiceTranscript(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trigger-voice-callid">Call ID (opsional)</Label>
+                      <Input
+                        id="trigger-voice-callid"
+                        value={voiceCallId}
+                        onChange={(event) => setVoiceCallId(event.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}

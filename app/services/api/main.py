@@ -588,6 +588,13 @@ class ConnectorEmailRequest(BaseModel):
     payload: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ConnectorVoiceRequest(BaseModel):
+    caller: str
+    transcript: str
+    call_id: Optional[str] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
 class SkillSpecRequest(BaseModel):
     skill_id: str = Field(min_length=1, max_length=64)
     name: str
@@ -1739,6 +1746,38 @@ async def connector_email(trigger_id: str, request_body: ConnectorEmailRequest, 
         "run_id": result["run_id"],
         "channel": trigger["channel"],
         "source": "connector.email",
+    }
+
+
+@app.post("/connectors/voice/{trigger_id}", response_model=TriggerFireResponse)
+async def connector_voice(trigger_id: str, request_body: ConnectorVoiceRequest, http_request: Request):
+    trigger = await get_trigger(trigger_id)
+    if not trigger or trigger.get("channel") != "voice":
+        raise HTTPException(status_code=404, detail="Voice trigger not found")
+    auth_token = _resolve_trigger_auth(http_request)
+    payload = {
+        **request_body.payload,
+        "caller": request_body.caller,
+        "transcript": request_body.transcript,
+    }
+    if request_body.call_id:
+        payload["call_id"] = request_body.call_id
+    try:
+        result = await fire_trigger(
+            trigger_id,
+            payload=payload,
+            source="connector.voice",
+            auth_token=auth_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "trigger_id": trigger_id,
+        "job_id": result["job_id"],
+        "message_id": result["message_id"],
+        "run_id": result["run_id"],
+        "channel": trigger["channel"],
+        "source": "connector.voice",
     }
 
 

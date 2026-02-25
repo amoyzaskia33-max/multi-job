@@ -747,6 +747,19 @@ export const fireTriggerEmail = async (
   return await parseTriggerResponse(response);
 };
 
+export const fireTriggerVoice = async (
+  triggerId: string,
+  data: { caller: string; transcript: string; call_id?: string },
+  secret?: string,
+): Promise<TriggerFireResponse> => {
+  const response = await fetch(`${API_BASE}/connectors/voice/${encodeURIComponent(triggerId)}`, {
+    method: "POST",
+    headers: buildTriggerHeaders(true, secret),
+    body: JSON.stringify(data),
+  });
+  return await parseTriggerResponse(response);
+};
+
 export const getTelegramConnectorAccounts = async (): Promise<TelegramConnectorAccount[]> => {
   try {
     return await getJson<TelegramConnectorAccount[]>("/connector/telegram/accounts");
