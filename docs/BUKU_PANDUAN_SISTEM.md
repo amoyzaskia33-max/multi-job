@@ -393,6 +393,68 @@ Interpretasi:
 3. `queued` tidak menumpuk tanpa turun.
 4. Queue depth tidak runaway.
 
+### 12.8 Tabel Baseline Endpoint (Normal vs Warning vs Kritis)
+
+| Indikator | Normal | Warning | Kritis | Tindakan Awal |
+| --- | --- | --- | --- | --- |
+| `GET /healthz` | `200` < 500 ms | `200` tapi lambat (>2 detik) | Timeout / non-200 | Cek `api.err.log`, cek CPU/RAM, cek port 8000 collision |
+| `GET /readyz` | `200` | Flapping (kadang 200 kadang gagal) | Gagal terus | Cek dependency runtime (Redis, startup hook, env var) |
+| `GET /queue` depth | `0-20` stabil | `20-100` naik pelan | `>100` naik terus | Naikkan `WORKER_CONCURRENCY`, cek worker hidup, cek run stuck |
+| `GET /runs` failed ratio | `<1%` | `1-5%` | `>5%` | Cek error dominan per job type, cek retry policy/cooldown |
+| `GET /events` | Event periodik normal | Banyak `dispatch_skipped_*` | Spam error tanpa `run.completed` | Cek guard scheduler, cek bottleneck worker |
+| UI dashboard | Semua halaman kebuka | Ada halaman lambat | Tidak bisa load / blank | Cek `ui` process, port 3000/5174, `ui.err.log` |
+
+Penjelasan:
+1. `Warning` bukan langsung down, tapi tanda awal perlu tuning.
+2. `Kritis` butuh tindakan cepat, minimal stabilkan health endpoint dulu.
+3. Selalu cek tren (5-15 menit), jangan hanya 1 snapshot.
+
+### 12.9 Tabel Perintah Operasional Harian (Cheat Sheet)
+
+| Tujuan | Windows (PowerShell) | Hasil Normal | Jika Tidak Normal |
+| --- | --- | --- | --- |
+| Start stack lokal | `powershell -ExecutionPolicy Bypass -File .\\start-local.ps1` | Semua service `Ya` di status | Jalankan stop, bersihkan port conflict, start ulang |
+| Cek status stack | `powershell -ExecutionPolicy Bypass -File .\\status-local.ps1` | API/UI `200`, error log minim | Buka log service terkait (api/worker/scheduler/ui) |
+| Stop stack | `powershell -ExecutionPolicy Bypass -File .\\stop-local.ps1` | Semua pid berhenti | Stop manual proses yang tersisa |
+| Unit test backend | `.\\.venv\\Scripts\\python.exe -m pytest -q` | Semua test pass | Perbaiki test gagal sebelum lanjut |
+| E2E UI | `cd ui; $env:CI='1'; npm run e2e` | `7 passed` (atau sesuai total test) | Cek log webServer + artifact playwright |
+| Audit UI | `cd ui; npm audit --audit-level=high` | `found 0 vulnerabilities` | Upgrade package rentan dan re-test |
+| Cek workflow CI | `& \"C:\\Program Files\\GitHub CLI\\gh.exe\" run list --limit 5` | Run terbaru `completed success` | Ambil log run gagal dan patch |
+| Trigger load test CI | `gh workflow run \"Load Simulation\" -f jobs=100 ...` | Run `Load Simulation` success | Cek artifact log, tuning concurrency |
+
+Penjelasan:
+1. Urutan aman: `status -> test -> audit -> CI`.
+2. Jangan deploy kalau `pytest` atau `e2e` masih merah.
+3. Load simulation dipakai saat ada perubahan scheduler/worker/queue.
+
+### 12.10 Tabel Prioritas Insiden dan Respon
+
+| Prioritas | Kriteria | Dampak | Target Respon | Langkah Pertama |
+| --- | --- | --- | --- | --- |
+| P0 | API down total, queue runaway besar, banyak failed kritis | Sistem utama terhenti | <=15 menit | Stabilkan service dulu (health 200), batasi traffic/job baru |
+| P1 | Fungsi inti degradasi (runs stuck, latency tinggi) | Operasi terganggu | <=30 menit | Isolasi komponen rusak (worker/scheduler/redis) dan rollback jika perlu |
+| P2 | Error parsial fitur non-kritis | Dampak terbatas | <=4 jam | Patch terarah + monitor metrik |
+| P3 | Minor issue / cosmetic / log noise | Dampak kecil | <=1-2 hari | Jadwalkan di sprint berikutnya |
+
+Penjelasan:
+1. Fokus pertama insiden adalah `recover service`, bukan langsung refactor.
+2. Setelah stabil, baru lakukan perbaikan akar masalah permanen.
+3. Simpan jejak aksi di commit message dan catatan runbook.
+
+### 12.11 Contoh Skenario Cepat dan Cara Baca
+
+| Skenario | Tanda Utama | Analisis Cepat | Aksi Disarankan |
+| --- | --- | --- | --- |
+| API `200`, tapi runs banyak `queued` | Queue depth naik, `success` stagnan | Worker tidak konsumsi queue optimal | Cek worker process/log, naikkan concurrency, cek mode queue |
+| CI `UI E2E` gagal, lokal pass | Hanya gagal di Actions | Timing/env CI berbeda | Perketat wait/assertion, cek artifact Playwright |
+| Banyak `dispatch_skipped_overlap` | Event overlap berulang | Interval terlalu rapat vs durasi kerja | Naikkan interval atau optimasi job runtime |
+| `npm audit` merah setelah update dep | High/critical muncul | Dependency regression | Pin versi aman, jalankan build + e2e ulang |
+
+Penjelasan:
+1. Gunakan tabel ini untuk triage 5 menit pertama.
+2. Ambil satu hipotesis terbesar, uji cepat, lalu iterasi.
+3. Hindari ubah banyak variabel sekaligus saat debugging.
+
 ## 13) Keamanan Operasional
 
 1. Aktifkan Auth RBAC untuk environment non-local:
