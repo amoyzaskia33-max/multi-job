@@ -1,0 +1,205 @@
+name: Load Simulation
+
+on:
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: "Number of recurring simulation jobs"
+        required: true
+        default: 100
+        type: number
+      interval_sec:
+        description: "Schedule interval per job (seconds)"
+        required: true
+        default: 30
+        type: number
+      work_ms:
+        description: "Synthetic work duration per run (ms)"
+        required: true
+        default: 8000
+        type: number
+      jitter_sec:
+        description: "Dispatch jitter per job (seconds)"
+        required: true
+        default: 25
+        type: number
+      duration_sec:
+        description: "Simulation monitoring duration (seconds)"
+        required: true
+        default: 60
+        type: number
+      tick_sec:
+        description: "Snapshot tick period (seconds)"
+        required: true
+        default: 10
+        type: number
+      worker_concurrency:
+        description: "Worker concurrency for this run"
+        required: true
+        default: 40
+        type: number
+      prefix:
+        description: "Simulation prefix label (run id will be appended)"
+        required: true
+        default: gha-load
+        type: string
+      cleanup:
+        description: "Disable generated jobs at the end"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  stress-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      PYTHONUNBUFFERED: "1"
+      WORKER_CONCURRENCY: ${{ inputs.worker_concurrency }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install -e .
+
+      - name: Prepare simulation prefix
+        run: echo "SIM_PREFIX=${{ inputs.prefix }}-${{ github.run_id }}" >> "$GITHUB_ENV"
+
+      - name: Start API, worker, scheduler
+        run: |
+          mkdir -p runtime-logs
+
+          nohup ./.venv/bin/python -m uvicorn app.services.api.main:app --host 127.0.0.1 --port 8000 > runtime-logs/api.out.log 2> runtime-logs/api.err.log &
+          echo $! > runtime-logs/api.pid
+
+          nohup ./.venv/bin/python -m app.services.worker.main > runtime-logs/worker.out.log 2> runtime-logs/worker.err.log &
+          echo $! > runtime-logs/worker.pid
+
+          nohup ./.venv/bin/python -m app.services.scheduler.main > runtime-logs/scheduler.out.log 2> runtime-logs/scheduler.err.log &
+          echo $! > runtime-logs/scheduler.pid
+
+      - name: Wait for API health
+        run: |
+          for i in {1..60}; do
+            if curl -fsS "http://127.0.0.1:8000/healthz" > /dev/null; then
+              echo "API healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy in time"
+          exit 1
+
+      - name: Run safe load simulation
+        run: |
+          CLEANUP_FLAG=""
+          if [ "${{ inputs.cleanup }}" = "true" ]; then
+            CLEANUP_FLAG="--cleanup"
+          fi
+
+          ./.venv/bin/python ./simulate_safe_load.py \
+            --api-base "http://127.0.0.1:8000" \
+            --jobs "${{ inputs.jobs }}" \
+            --interval-sec "${{ inputs.interval_sec }}" \
+            --work-ms "${{ inputs.work_ms }}" \
+            --jitter-sec "${{ inputs.jitter_sec }}" \
+            --duration-sec "${{ inputs.duration_sec }}" \
+            --tick-sec "${{ inputs.tick_sec }}" \
+            --prefix "${SIM_PREFIX}" \
+            ${CLEANUP_FLAG}
+
+      - name: Assert load test health
+        env:
+          SIM_PREFIX: ${{ env.SIM_PREFIX }}
+        run: |
+          ./.venv/bin/python - <<'PY'
+          import collections
+          import json
+          import os
+          import sys
+          import urllib.parse
+          import urllib.request
+
+          api_base = "http://127.0.0.1:8000"
+          prefix = os.environ["SIM_PREFIX"]
+
+          def fetch(path: str):
+              url = f"{api_base}{path}"
+              with urllib.request.urlopen(url, timeout=20) as resp:
+                  body = resp.read().decode("utf-8")
+              if not body:
+                  return {}
+              return json.loads(body)
+
+          encoded_prefix = urllib.parse.quote(prefix)
+          rows = fetch(f"/runs?limit=500&search={encoded_prefix}")
+          if isinstance(rows, dict):
+              rows = rows.get("value", [])
+          if not isinstance(rows, list):
+              raise SystemExit("Unexpected /runs response shape")
+
+          status_counter = collections.Counter(str(row.get("status") or "unknown") for row in rows)
+          failed = int(status_counter.get("failed", 0))
+          success = int(status_counter.get("success", 0))
+          queued = int(status_counter.get("queued", 0))
+          running = int(status_counter.get("running", 0))
+
+          print(f"prefix={prefix}")
+          print(f"status={dict(status_counter)}")
+
+          if success <= 0:
+              raise SystemExit("No successful run was observed during load simulation.")
+          if failed > 0:
+              raise SystemExit(f"Found failed runs during load simulation: {failed}")
+
+          queue_metrics = fetch("/queue")
+          if not isinstance(queue_metrics, dict):
+              raise SystemExit("Unexpected /queue response shape")
+
+          depth = int(queue_metrics.get("depth", 0))
+          delayed = int(queue_metrics.get("delayed", 0))
+          print(f"queue_depth={depth} queue_delayed={delayed} running={running} queued={queued}")
+
+          if depth > 200:
+              raise SystemExit(f"Queue depth too high after simulation: {depth}")
+          PY
+
+      - name: Print runtime logs on failure
+        if: failure()
+        run: |
+          for f in runtime-logs/*.log; do
+            echo "===== ${f} (tail 200) ====="
+            tail -n 200 "${f}" || true
+          done
+
+      - name: Upload runtime logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-simulation-logs
+          path: runtime-logs/
+          if-no-files-found: ignore
