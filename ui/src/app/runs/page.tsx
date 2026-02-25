@@ -70,7 +70,7 @@ export default function RunsPage() {
     refetchInterval: 10000,
   });
 
-  const daftarRun = dataRun ?? [];
+  const daftarRun = useMemo(() => dataRun ?? [], [dataRun]);
   const adaHalamanBerikutnya = daftarRun.length === BATAS_PER_HALAMAN;
 
   const statistik = useMemo(() => {

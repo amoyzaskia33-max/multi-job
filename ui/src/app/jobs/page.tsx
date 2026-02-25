@@ -81,7 +81,7 @@ export default function JobsPage() {
     refetchInterval: 10000,
   });
 
-  const daftarTugas = dataTugas ?? [];
+  const daftarTugas = useMemo(() => dataTugas ?? [], [dataTugas]);
   const adaHalamanBerikutnya = daftarTugas.length === BATAS_PER_HALAMAN;
 
   const statistik = useMemo(() => {

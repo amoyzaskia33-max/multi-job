@@ -411,3 +411,16 @@ Tool access is controlled by policies per job type.
 - Prometheus metrics endpoint
 - Health endpoints for monitoring
 - Redis-based heartbeat monitoring
+
+## Integrasi Sistem dan Referensi Kompetitif
+
+### Latar belakang pesaing
+- **OpenClaw** menerapkan `exec approvals`, allowlist per-agent, dan policy tool yang dijalankan di gateway/node host untuk mencegah perintah keluar tanpa verification human—semua request `system.run` dapat diblokir atau digantikan fallback `deny` jika UI tidak tersedia, sehingga operator bisa menahan perintah berbahaya sebelum menyentuh host.citeturn0search1turn0search0
+- **OpenClaw** juga telah menjadi contoh betapa marketplace skill yang terbuka bisa disusupi malware dan prompt injection; bahkan Microsoft memperingatkan bahwa runtime ini tidak tepat dijalankan di workstation standar karena akses credential penuh, sehingga isolasi dan monitoring ketat menjadi keharusan demi mencegah data leakage.citeturn0news12turn0news13turn0news14
+- **SuperAGI** menekankan orkestrasi multi-agen paralel, concurrent execution, dan monitoring per-agent (runs, token consumption, utilization), plus dashboard GUI, tool/plugin extensibility, dan shared memory/feedback loop sehingga agent terus belajar serta menyeimbangkan resources secara dinamis.citeturn1search1turn1search2turn1search3turn1search4turn1search5
+
+### Bagaimana Multi-Job menggabungkan kekuatan tersebut
+- CLI `spio-skill` + dashboard skill registry sudah menjalankan metadata skill (command prefix, channel, default inputs, tags, approval, sensitive) sehingga operator dapat mengatur agent blueprint seperti skill OpenClaw/SuperAGI, lengkap dengan filter channel/pengalaman dan statistik operasional yang baru ditambahkan. (lihat `docs/skill-registry.md`, ui/skills).
+- Fitur observability + retry policy + safety guardrails (pressure mode, failure memory, flow lanes) menjaga job/agent tetap terkendali tanpa harus memberi agent akses shell/domain tak terbatas, sambil tetap menyelesaikan job scheduling serta integration connectors untuk Telegram, Slack, SMS, WhatsApp, dan MCP service lain.
+- Release automation & CI sudah didefinisikan: `ci.yml` menjalankan Pytest backend + Playwright e2e; `release.yml` otomatis membuat artefak backend dan Next.js UI saat tag `v*.*.*` di-push sehingga `CD` tersinkronkan dengan `CI`. (lihat bagian `Release Automation` di README).
+- Dengan menautkan referensi ini (docs baru `docs/feature-integration-openclaw-superagi.md`), tim dapat melihat apa saja kemampuan yang kami samakan/perbaiki dari OpenClaw/SuperAGI dan mana yang dapat ditambah (sandbox policy, CICD keamanan, observability, channel analytics, experience registry).

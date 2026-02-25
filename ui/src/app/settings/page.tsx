@@ -550,8 +550,8 @@ export default function SettingsPage() {
     refetchInterval: 10000,
   });
 
-  const daftarProviderKatalog = katalogIntegrasi?.providers || [];
-  const daftarTemplateMcpKatalog = katalogIntegrasi?.mcp_servers || [];
+  const daftarProviderKatalog = useMemo(() => katalogIntegrasi?.providers || [], [katalogIntegrasi]);
+  const daftarTemplateMcpKatalog = useMemo(() => katalogIntegrasi?.mcp_servers || [], [katalogIntegrasi]);
 
   const petaTemplateProvider = useMemo(
     () => new Map(daftarProviderKatalog.map((row) => [row.provider, row])),

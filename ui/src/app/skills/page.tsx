@@ -105,6 +105,8 @@ export default function SkillsPage() {
   const [filterText, setFilterText] = useState("");
   const [formState, setFormState] = useState(initialForm);
   const [selectedSkillId, setSelectedSkillId] = useState<string>("");
+  const [channelFilter, setChannelFilter] = useState("");
+  const [experienceFilter, setExperienceFilter] = useState("");
   const queryClient = useQueryClient();
   const [bulkSyncJson, setBulkSyncJson] = useState(JSON.stringify(SKILL_SYNC_TEMPLATES, null, 2));
 
@@ -113,18 +115,64 @@ export default function SkillsPage() {
     queryFn: () => getSkills(),
   });
 
+  const channelEntries = useMemo(() => {
+    const counts: Record<string, number> = {};
+    skills.forEach((skill) => {
+      (skill.allowed_channels || []).forEach((channel) => {
+        if (!channel) return;
+        counts[channel] = (counts[channel] || 0) + 1;
+      });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [skills]);
+
+  const experienceEntries = useMemo(() => {
+    const counts: Record<string, number> = {};
+    skills.forEach((skill) => {
+      (skill.tags || []).forEach((tag) => {
+        if (!tag) return;
+        counts[tag] = (counts[tag] || 0) + 1;
+      });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [skills]);
+
+  const topChannels = channelEntries.slice(0, 5);
+  const topExperiences = experienceEntries.slice(0, 5);
+  const mostUsedChannel = topChannels[0]?.[0] || "-";
+  const mostUsedChannelCount = topChannels[0]?.[1] || 0;
+  const mostUsedExperience = topExperiences[0]?.[0] || "-";
+  const mostUsedExperienceCount = topExperiences[0]?.[1] || 0;
+  const uniqueChannelCount = channelEntries.length;
+  const uniqueExperienceCount = experienceEntries.length;
+
   const filteredSkills = useMemo(() => {
     const token = filterText.trim().toLowerCase();
-    if (!token) return skills;
     return skills.filter((skill) => {
-      return (
-        skill.skill_id.toLowerCase().includes(token) ||
-        skill.name.toLowerCase().includes(token) ||
-        skill.job_type.toLowerCase().includes(token) ||
-        skill.tags.some((tag) => tag.toLowerCase().includes(token))
-      );
+      if (token) {
+        const matchesText =
+          skill.skill_id.toLowerCase().includes(token) ||
+          skill.name.toLowerCase().includes(token) ||
+          skill.job_type.toLowerCase().includes(token) ||
+          skill.tags.some((tag) => tag.toLowerCase().includes(token));
+        if (!matchesText) {
+          return false;
+        }
+      }
+
+      const channels = skill.allowed_channels || [];
+      const tags = skill.tags || [];
+
+      if (channelFilter && !channels.includes(channelFilter)) {
+        return false;
+      }
+      if (experienceFilter && !tags.includes(experienceFilter)) {
+        return false;
+      }
+
+      return true;
     });
-  }, [filterText, skills]);
+  }, [filterText, skills, channelFilter, experienceFilter]);
 
   const stats = useMemo(() => {
     return skills.reduce(
@@ -430,7 +478,7 @@ export default function SkillsPage() {
             <CardHeader>
               <CardTitle>Statistik skill</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
                 <p className="text-muted-foreground">Total skill</p>
                 <p className="text-xl font-semibold text-foreground">{stats.total}</p>
@@ -442,6 +490,105 @@ export default function SkillsPage() {
               <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
                 <p className="text-muted-foreground">Sensitif</p>
                 <p className="text-xl font-semibold text-foreground">{stats.allowSensitive}</p>
+              </div>
+              <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
+                <p className="text-muted-foreground">Kanal aktif</p>
+                <p className="text-xl font-semibold text-foreground">{uniqueChannelCount}</p>
+              </div>
+              <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
+                <p className="text-muted-foreground">Pengalaman unik</p>
+                <p className="text-xl font-semibold text-foreground">{uniqueExperienceCount}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card">
+            <CardHeader>
+              <CardTitle>Channel & Experience</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
+                  <p className="text-xs uppercase text-muted-foreground">Kanal unggulan</p>
+                  <p className="text-lg font-semibold text-foreground">{mostUsedChannel}</p>
+                  <p className="text-xs text-muted-foreground">{mostUsedChannelCount} skill</p>
+                </div>
+                <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
+                  <p className="text-xs uppercase text-muted-foreground">Pengalaman unggulan</p>
+                  <p className="text-lg font-semibold text-foreground">{mostUsedExperience}</p>
+                  <p className="text-xs text-muted-foreground">{mostUsedExperienceCount} skill</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs uppercase text-muted-foreground">Filter channel</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={channelFilter ? "outline" : "secondary"}
+                    size="sm"
+                    onClick={() => setChannelFilter("")}
+                  >
+                    Semua channel
+                  </Button>
+                  {topChannels.map(([channel, count]) => (
+                    <Button
+                      key={`channel-${channel}`}
+                      variant={channelFilter === channel ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => setChannelFilter(channelFilter === channel ? "" : channel)}
+                    >
+                      {channel} ({count})
+                    </Button>
+                  ))}
+                  {!topChannels.length && (
+                    <span className="text-xs text-muted-foreground">Belum ada channel terdaftar.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs uppercase text-muted-foreground">Filter pengalaman</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={experienceFilter ? "outline" : "secondary"}
+                    size="sm"
+                    onClick={() => setExperienceFilter("")}
+                  >
+                    Semua pengalaman
+                  </Button>
+                  {topExperiences.map(([tag, count]) => (
+                    <Button
+                      key={`experience-${tag}`}
+                      variant={experienceFilter === tag ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => setExperienceFilter(experienceFilter === tag ? "" : tag)}
+                    >
+                      {tag} ({count})
+                    </Button>
+                  ))}
+                  {!topExperiences.length && (
+                    <span className="text-xs text-muted-foreground">Belum ada tag pengalaman.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setChannelFilter("");
+                    setExperienceFilter("");
+                  }}
+                >
+                  Reset filter
+                </Button>
+                <p className="text-xs">
+                  Filter aktif:{" "}
+                  <span className="font-semibold text-foreground">
+                    {channelFilter || "semua channel"} / {experienceFilter || "semua pengalaman"}
+                  </span>
+                </p>
               </div>
             </CardContent>
           </Card>
