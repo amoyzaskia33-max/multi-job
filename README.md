@@ -10,6 +10,19 @@ A scalable job processing platform built with Python and Redis.
 - FAQ operasional: [docs/FAQ_OPERASIONAL.md](docs/FAQ_OPERASIONAL.md)
 - Skill registry & CLI: [docs/skill-registry.md](docs/skill-registry.md)
 
+## CLI Integration
+
+Poetry exposes `poetry run spio-skill` sebagai entry point supaya skill registry bisa dioperasikan dari terminal:
+
+```bash
+poetry run spio-skill install ./skills/content-brief.yaml
+poetry run spio-skill list
+poetry run spio-skill describe skill_content_brief
+poetry run spio-skill delete skill_content_brief
+```
+
+`spio-skill` adalah alias ke `scripts/spio_skill.py`, jadi perintah yang sama bisa dijalankan via `python scripts/spio_skill.py ...` jika tidak menggunakan Poetry.
+
 ## Architecture
 
 The platform consists of four main services:
