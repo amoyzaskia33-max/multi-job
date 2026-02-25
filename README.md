@@ -17,7 +17,7 @@ The platform consists of four main services:
 1. **API Service** - FastAPI for CRUD operations, health checks, and metrics
 2. **Scheduler Service** - Manages scheduled jobs (interval/cron)
 3. **Worker Service** - Executes jobs from the queue
-4. **Connector Service** - Manages external connections (Telegram, WhatsApp, etc.)
+4. **Connector Service** - Manages external connections (webhook, Telegram, email, voice, Slack, SMS) and approval-aware triggers
 
 ## Key Features
 

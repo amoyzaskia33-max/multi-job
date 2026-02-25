@@ -780,6 +780,32 @@ export const fireTriggerEmail = async (
   return await parseTriggerResponse(response);
 };
 
+export const fireTriggerSlack = async (
+  triggerId: string,
+  data: { channel_id: string; user_id: string; command: string; text: string; response_url?: string },
+  secret?: string,
+): Promise<TriggerFireResponse> => {
+  const response = await fetch(`${API_BASE}/connectors/slack/${encodeURIComponent(triggerId)}`, {
+    method: "POST",
+    headers: buildTriggerHeaders(true, secret),
+    body: JSON.stringify(data),
+  });
+  return await parseTriggerResponse(response);
+};
+
+export const fireTriggerSms = async (
+  triggerId: string,
+  data: { phone_number: string; message: string },
+  secret?: string,
+): Promise<TriggerFireResponse> => {
+  const response = await fetch(`${API_BASE}/connectors/sms/${encodeURIComponent(triggerId)}`, {
+    method: "POST",
+    headers: buildTriggerHeaders(true, secret),
+    body: JSON.stringify(data),
+  });
+  return await parseTriggerResponse(response);
+};
+
 export const fireTriggerVoice = async (
   triggerId: string,
   data: { caller: string; transcript: string; call_id?: string },
@@ -820,6 +846,14 @@ export const deleteSkill = async (skillId: string): Promise<boolean> => {
     return true;
   } catch (error) {
     return handleApiError(error, `Gagal menghapus skill ${skillId}`, false);
+  }
+};
+
+export const syncSkills = async (skills: SkillSpecRequest[]): Promise<Skill[] | undefined> => {
+  try {
+    return await send<Skill[]>("/skills/sync", "POST", { skills });
+  } catch (error) {
+    return handleApiError(error, "Gagal sinkron skill", undefined);
   }
 };
 

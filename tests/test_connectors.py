@@ -6,14 +6,19 @@ from fastapi import HTTPException
 
 from app.services.api.main import (
     ConnectorEmailRequest,
+    ConnectorSlackRequest,
+    ConnectorSmsRequest,
     ConnectorTelegramRequest,
     ConnectorVoiceRequest,
     ConnectorWebhookRequest,
     connector_email,
+    connector_slack,
+    connector_sms,
     connector_telegram,
     connector_voice,
     connector_webhook,
 )
+from app.services.api.main import ConnectorSlackRequest, ConnectorSmsRequest, connector_slack, connector_sms
 
 
 class _FakeRequest:
@@ -154,3 +159,61 @@ def test_voice_connector_payload(monkeypatch):
     assert captured["payload"]["caller"] == "123"
     assert captured["payload"]["transcript"] == "Hai tim"
     assert captured["payload"]["call_id"] == "call-1"
+
+
+def test_slack_connector_payload(monkeypatch):
+    _setup_trigger(monkeypatch, "slack")
+    captured = {}
+    monkeypatch.setattr("app.services.api.main.fire_trigger", _fire_stub(captured, "connector.slack"))
+
+    with pytest.raises(HTTPException):
+        asyncio.run(
+            connector_slack(
+                "alert-webhook",
+                ConnectorSlackRequest(channel_id="C123", user_id="U123", command="/run", text=""),
+                _FakeRequest({}),
+            )
+        )
+
+    result = asyncio.run(
+        connector_slack(
+            "alert-webhook",
+            ConnectorSlackRequest(
+                channel_id="C123",
+                user_id="U123",
+                command="/deploy",
+                text="jalankan build",
+                response_url="https://hooks.slack.com/actions",
+            ),
+            _FakeRequest({"x-trigger-auth": "secret"}),
+        )
+    )
+    assert result["source"] == "connector.slack"
+    assert captured["payload"]["command"] == "/deploy"
+    assert captured["payload"]["response_url"] == "https://hooks.slack.com/actions"
+
+
+def test_sms_connector_payload(monkeypatch):
+    _setup_trigger(monkeypatch, "sms")
+    captured = {}
+    monkeypatch.setattr("app.services.api.main.fire_trigger", _fire_stub(captured, "connector.sms"))
+
+    with pytest.raises(HTTPException):
+        asyncio.run(
+            connector_sms(
+                "alert-webhook",
+                ConnectorSmsRequest(phone_number="", message=""),
+                _FakeRequest({}),
+            )
+        )
+
+    result = asyncio.run(
+        connector_sms(
+            "alert-webhook",
+            ConnectorSmsRequest(phone_number="+6281234567890", message="Cek status"),
+            _FakeRequest({"x-trigger-auth": "secret"}),
+        )
+    )
+    assert result["source"] == "connector.sms"
+    assert captured["payload"]["phone_number"] == "+6281234567890"
+    assert captured["payload"]["message"] == "Cek status"

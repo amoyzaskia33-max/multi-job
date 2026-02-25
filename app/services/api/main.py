@@ -579,7 +579,19 @@ class ConnectorTelegramRequest(BaseModel):
     text: str
     username: Optional[str] = None
     payload: Dict[str, Any] = Field(default_factory=dict)
+class ConnectorSlackRequest(BaseModel):
+    channel_id: str
+    user_id: str
+    command: str
+    text: str
+    response_url: Optional[str] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
+
+class ConnectorSmsRequest(BaseModel):
+    phone_number: str
+    message: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
 class ConnectorEmailRequest(BaseModel):
     sender: str
@@ -1778,6 +1790,70 @@ async def connector_voice(trigger_id: str, request_body: ConnectorVoiceRequest, 
         "run_id": result["run_id"],
         "channel": trigger["channel"],
         "source": "connector.voice",
+    }
+
+
+@app.post("/connectors/slack/{trigger_id}", response_model=TriggerFireResponse)
+async def connector_slack(trigger_id: str, request_body: ConnectorSlackRequest, http_request: Request):
+    trigger = await get_trigger(trigger_id)
+    if not trigger or trigger.get("channel") != "slack":
+        raise HTTPException(status_code=404, detail="Slack trigger not found")
+    auth_token = _resolve_trigger_auth(http_request)
+    payload = {
+        **request_body.payload,
+        "channel_id": request_body.channel_id,
+        "user_id": request_body.user_id,
+        "command": request_body.command,
+        "text": request_body.text,
+    }
+    if request_body.response_url:
+        payload["response_url"] = request_body.response_url
+    try:
+        result = await fire_trigger(
+            trigger_id,
+            payload=payload,
+            source="connector.slack",
+            auth_token=auth_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "trigger_id": trigger_id,
+        "job_id": result["job_id"],
+        "message_id": result["message_id"],
+        "run_id": result["run_id"],
+        "channel": trigger["channel"],
+        "source": "connector.slack",
+    }
+
+
+@app.post("/connectors/sms/{trigger_id}", response_model=TriggerFireResponse)
+async def connector_sms(trigger_id: str, request_body: ConnectorSmsRequest, http_request: Request):
+    trigger = await get_trigger(trigger_id)
+    if not trigger or trigger.get("channel") != "sms":
+        raise HTTPException(status_code=404, detail="SMS trigger not found")
+    auth_token = _resolve_trigger_auth(http_request)
+    payload = {
+        **request_body.payload,
+        "phone_number": request_body.phone_number,
+        "message": request_body.message,
+    }
+    try:
+        result = await fire_trigger(
+            trigger_id,
+            payload=payload,
+            source="connector.sms",
+            auth_token=auth_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "trigger_id": trigger_id,
+        "job_id": result["job_id"],
+        "message_id": result["message_id"],
+        "run_id": result["run_id"],
+        "channel": trigger["channel"],
+        "source": "connector.sms",
     }
 
 

@@ -14,6 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   approveApprovalRequest,
   fireTriggerEmail,
+  fireTriggerSlack,
+  fireTriggerSms,
   fireTriggerTelegram,
   fireTriggerVoice,
   fireTriggerWebhook,
@@ -86,6 +88,13 @@ export default function ConnectorsPage() {
   const [voiceCaller, setVoiceCaller] = useState("");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceCallId, setVoiceCallId] = useState("");
+  const [slackChannelId, setSlackChannelId] = useState("");
+  const [slackUserId, setSlackUserId] = useState("");
+  const [slackCommand, setSlackCommand] = useState("");
+  const [slackText, setSlackText] = useState("");
+  const [slackResponseUrl, setSlackResponseUrl] = useState("");
+  const [smsPhoneNumber, setSmsPhoneNumber] = useState("");
+  const [smsMessage, setSmsMessage] = useState("");
   const [triggerApprovalFilter, setTriggerApprovalFilter] = useState<TriggerApprovalFilter>("pending");
   const [approverName, setApproverName] = useState("ops");
   const [busyApprovalId, setBusyApprovalId] = useState<string | null>(null);
@@ -206,6 +215,32 @@ export default function ConnectorsPage() {
           return await fireTriggerEmail(
             selectedTrigger.trigger_id,
             { sender: emailSender.trim(), subject: emailSubject.trim(), body: emailBody.trim() },
+            secret,
+          );
+        }
+        case "slack": {
+          if (!slackChannelId.trim() || !slackUserId.trim() || !slackCommand.trim()) {
+            throw new Error("Channel, user, dan command Slack wajib diisi.");
+          }
+          return await fireTriggerSlack(
+            selectedTrigger.trigger_id,
+            {
+              channel_id: slackChannelId.trim(),
+              user_id: slackUserId.trim(),
+              command: slackCommand.trim(),
+              text: slackText.trim(),
+              response_url: slackResponseUrl.trim() || undefined,
+            },
+            secret,
+          );
+        }
+        case "sms": {
+          if (!smsPhoneNumber.trim() || !smsMessage.trim()) {
+            throw new Error("Nomor dan pesan SMS wajib diisi.");
+          }
+          return await fireTriggerSms(
+            selectedTrigger.trigger_id,
+            { phone_number: smsPhoneNumber.trim(), message: smsMessage.trim() },
             secret,
           );
         }
@@ -374,8 +409,8 @@ export default function ConnectorsPage() {
                   />
                 </div>
               )}
-              {selectedTrigger.channel === "telegram" && (
-                <div className="grid gap-3 md:grid-cols-3">
+          {selectedTrigger.channel === "telegram" && (
+            <div className="grid gap-3 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="trigger-telegram-chat">Chat ID</Label>
                     <Input
@@ -424,17 +459,87 @@ export default function ConnectorsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="trigger-email-body">Isi Email</Label>
-                    <Textarea
-                      id="trigger-email-body"
-                      value={emailBody}
-                      onChange={(event) => setEmailBody(event.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                </div>
-              )}
-              {selectedTrigger.channel === "voice" && (
-                <div className="space-y-3">
+              <Textarea
+                id="trigger-email-body"
+                value={emailBody}
+                onChange={(event) => setEmailBody(event.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+        )}
+        {selectedTrigger.channel === "slack" && (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="trigger-slack-channel">Channel ID</Label>
+                <Input
+                  id="trigger-slack-channel"
+                  value={slackChannelId}
+                  onChange={(event) => setSlackChannelId(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="trigger-slack-user">User ID</Label>
+                <Input
+                  id="trigger-slack-user"
+                  value={slackUserId}
+                  onChange={(event) => setSlackUserId(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="trigger-slack-command">Command</Label>
+                <Input
+                  id="trigger-slack-command"
+                  value={slackCommand}
+                  onChange={(event) => setSlackCommand(event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="trigger-slack-text">Text</Label>
+              <Textarea
+                id="trigger-slack-text"
+                rows={2}
+                value={slackText}
+                onChange={(event) => setSlackText(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="trigger-slack-response">Response URL (opsional)</Label>
+              <Input
+                id="trigger-slack-response"
+                value={slackResponseUrl}
+                onChange={(event) => setSlackResponseUrl(event.target.value)}
+              />
+            </div>
+          </div>
+        )}
+        {selectedTrigger.channel === "sms" && (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="trigger-sms-phone">Nomor</Label>
+                <Input
+                  id="trigger-sms-phone"
+                  value={smsPhoneNumber}
+                  onChange={(event) => setSmsPhoneNumber(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="trigger-sms-message">Pesan</Label>
+                <Textarea
+                  id="trigger-sms-message"
+                  value={smsMessage}
+                  onChange={(event) => setSmsMessage(event.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+        {selectedTrigger.channel === "voice" && (
+          <div className="space-y-3">
                   <div className="grid gap-3 md:grid-cols-3">
                     <div className="space-y-2">
                       <Label htmlFor="trigger-voice-caller">Nomor/Caller</Label>

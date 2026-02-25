@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { deleteSkill, getSkills, Skill, SkillSpecRequest, upsertSkill } from "@/lib/api";
+import { deleteSkill, getSkills, Skill, SkillSpecRequest, syncSkills, upsertSkill } from "@/lib/api";
 
 const initialForm: SkillFormState = {
   skillId: "",
@@ -70,11 +70,43 @@ const normalizeDefaultInputs = (value: string) => {
   return JSON.parse(value);
 };
 
+const SKILL_SYNC_TEMPLATES: SkillSpecRequest[] = [
+  {
+    name: "Skill Alert Slack",
+    job_type: "agent.workflow",
+    description: "Lorem skill integrasi Slack.",
+    default_inputs: {
+      prompt: "Baca alert Slack, rangkum, kirim ke grup ops.",
+      flow_group: "ops",
+      flow_max_active_runs: 3,
+    },
+    command_allow_prefixes: ["python scripts/alert-slack"],
+    allowed_channels: ["slack"],
+    tags: ["alert", "slack"],
+    require_approval: true,
+  },
+  {
+    name: "Skill Followup SMS",
+    job_type: "agent.workflow",
+    description: "Kirim SMS follow-up pelanggan prioritas.",
+    default_inputs: {
+      prompt: "Persiapkan SMS sopan + kirim ke kontak prioritas.",
+      flow_group: "sales",
+      flow_max_active_runs: 4,
+    },
+    command_allow_prefixes: ["python scripts/sms-followup"],
+    allowed_channels: ["sms"],
+    tags: ["sms", "sales"],
+    allow_sensitive_commands: false,
+  },
+];
+
 export default function SkillsPage() {
   const [filterText, setFilterText] = useState("");
   const [formState, setFormState] = useState(initialForm);
   const [selectedSkillId, setSelectedSkillId] = useState<string>("");
   const queryClient = useQueryClient();
+  const [bulkSyncJson, setBulkSyncJson] = useState(JSON.stringify(SKILL_SYNC_TEMPLATES, null, 2));
 
   const { data: skills = [], isLoading: sedangMemuatSkills } = useQuery({
     queryKey: ["skills"],
@@ -143,6 +175,29 @@ export default function SkillsPage() {
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : "Gagal menyimpan skill.";
+      toast.error(message);
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      let parsed: SkillSpecRequest[] = [];
+      try {
+        parsed = JSON.parse(bulkSyncJson);
+      } catch {
+        throw new Error("JSON skill tidak valid.");
+      }
+      if (!Array.isArray(parsed)) {
+        throw new Error("Format sinkron harus array.");
+      }
+      return syncSkills(parsed);
+    },
+    onSuccess: () => {
+      toast.success("Skill disinkronkan.");
+      queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Gagal sinkron skill.";
       toast.error(message);
     },
   });
@@ -295,6 +350,12 @@ export default function SkillsPage() {
                 className="font-mono text-xs"
               />
             </div>
+            <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs">
+              <p className="text-[0.65rem] uppercase text-muted-foreground">Preview default inputs</p>
+              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[0.65rem] text-foreground">
+                {formState.defaultInputs || "{}"}
+              </pre>
+            </div>
             <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="skill-command-prefixes">Command prefix</Label>
@@ -381,6 +442,35 @@ export default function SkillsPage() {
               <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
                 <p className="text-muted-foreground">Sensitif</p>
                 <p className="text-xl font-semibold text-foreground">{stats.allowSensitive}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card">
+            <CardHeader>
+              <CardTitle>Bulk sync skill</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Tempel array JSON skill untuk langsung menyinkronkan. Data default menunjukkan contoh skill Slack/SMS
+                untuk mempercepat setup.
+              </p>
+              <Textarea
+                rows={6}
+                value={bulkSyncJson}
+                onChange={(event) => setBulkSyncJson(event.target.value)}
+                className="font-mono text-xs"
+              />
+              <div className="flex gap-2">
+                <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
+                  {syncMutation.isPending ? "Menyinkronkan..." : "Sync dari JSON"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setBulkSyncJson(JSON.stringify(SKILL_SYNC_TEMPLATES, null, 2))}
+                >
+                  Default template
+                </Button>
               </div>
             </CardContent>
           </Card>
