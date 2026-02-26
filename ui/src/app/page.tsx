@@ -86,6 +86,11 @@ export default function ChairmanDashboard() {
     mandateMutation.mutate(mandateText);
   };
 
+  const latestCeoMessage = useMemo(() => {
+    const ceoMsgs = [...chatHistory].reverse().filter(m => m.sender === "CEO");
+    return ceoMsgs[0]?.text || "Menunggu laporan pertama dari CEO...";
+  }, [chatHistory]);
+
   return (
     <div className="ux-rise-in space-y-6 max-w-[1600px] mx-auto">
       {/* Executive Header */}
@@ -206,6 +211,18 @@ export default function ChairmanDashboard() {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  {/* CEO Dynamic Briefing */}
+                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 relative overflow-hidden">
+                    <MessageSquareQuote className="absolute -right-2 -bottom-2 h-16 w-16 opacity-5" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-2 flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></span>
+                      CEO Executive Briefing
+                    </p>
+                    <p className="text-xs text-foreground leading-relaxed italic">
+                      &quot;{latestCeoMessage}&quot;
+                    </p>
                   </div>
 
                   <div className="space-y-4">

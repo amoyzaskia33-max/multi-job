@@ -43,3 +43,26 @@ async def process_chairman_mandate(text: str):
     await append_event("ceo.mandate_received", {"text": text})
     
     return {"status": "received", "message": "CEO is analyzing your mandate..."}
+
+async def notify_chairman(text: str, role: str = "CEO"):
+    """
+    Allows the CEO or system to proactively post a message to the Boardroom.
+    Includes smart suggestions if problems are detected.
+    """
+    # Self-healing logic: Add a helpful suggestion if NO AMMO is detected
+    suggestion = ""
+    if "NO AMMO" in text.upper() or "account" in text.lower():
+        suggestion = "\n\nSaran CEO: Segera input akun baru di menu 'The Armory' atau pindahkan akun dari unit bisnis yang sedang idle."
+    
+    final_text = f"{text}{suggestion}"
+    await send_message_to_ceo(final_text, sender=role)
+    
+    # Also trigger external notification (Telegram)
+    from app.jobs.handlers.agent_workflow import _kirim_notifikasi_eksternal
+    import uuid
+    await _kirim_notifikasi_eksternal(
+        title="Proactive CEO Update", 
+        impact="Actionable Insight", 
+        approval_id=f"auto_{uuid.uuid4().hex[:4]}",
+        role=role
+    )
