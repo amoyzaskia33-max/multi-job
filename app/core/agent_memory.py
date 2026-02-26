@@ -48,6 +48,8 @@ def _memori_default(agent_key: str) -> Dict[str, Any]:
         "run_history": [],
         "recent_failures": [],
         "recent_successes": [],
+        "episodic_events": [],
+        "tags": [],
         "updated_at": now,
     }
 
@@ -233,6 +235,8 @@ def build_agent_memory_context(memory: Optional[Dict[str, Any]]) -> Dict[str, An
         "avoid_signatures": avoid_signatures[:12],
         "top_failure_signatures": ordered_signatures[:12],
         "recent_failures": recent_failures,
+        "episodic_events": row.get("episodic_events") if isinstance(row.get("episodic_events"), list) else [],
+        "tags": row.get("tags") if isinstance(row.get("tags"), list) else [],
         "updated_at": str(row.get("updated_at") or ""),
     }
 
@@ -338,6 +342,21 @@ async def record_agent_workflow_outcome(
         },
     )
 
+    episodic_events = memory.get("episodic_events")
+    if not isinstance(episodic_events, list):
+        episodic_events = []
+    
+    # Store significant outcomes as episodic memory
+    episodic_events.insert(0, {
+        "timestamp": now,
+        "type": "workflow_run",
+        "description": f"Workflow {'succeeded' if success else 'failed'}: {_ringkas_text(summary, 100)}",
+        "context": {
+            "success": success,
+            "error": _ringkas_text(error, 100) if error else None
+        }
+    })
+
     memory["agent_key"] = normalized
     memory["total_runs"] = total_runs
     memory["success_runs"] = success_runs
@@ -351,6 +370,8 @@ async def record_agent_workflow_outcome(
     memory["run_history"] = _trim_list(history, 30)
     memory["recent_failures"] = _trim_list(recent_failures, 20)
     memory["recent_successes"] = _trim_list(recent_successes, 20)
+    memory["episodic_events"] = _trim_list(episodic_events, 50)
+    memory["tags"] = memory.get("tags") if isinstance(memory.get("tags"), list) else []
     memory["updated_at"] = now
 
     await _save_agent_memory(normalized, memory)

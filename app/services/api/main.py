@@ -741,6 +741,11 @@ class AgentMemoryFailureView(BaseModel):
     signature: str
     error: str
 
+class AgentMemoryEpisodicView(BaseModel):
+    timestamp: str
+    type: str
+    description: str
+    context: Dict[str, Any] = Field(default_factory=dict)
 
 class AgentMemoryView(BaseModel):
     agent_key: str
@@ -753,6 +758,8 @@ class AgentMemoryView(BaseModel):
     avoid_signatures: List[str] = Field(default_factory=list)
     top_failure_signatures: List[str] = Field(default_factory=list)
     recent_failures: List[AgentMemoryFailureView] = Field(default_factory=list)
+    episodic_events: List[AgentMemoryEpisodicView] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
     updated_at: str
 
 

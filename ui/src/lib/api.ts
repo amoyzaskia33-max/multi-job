@@ -209,6 +209,13 @@ export interface AgentMemoryFailure {
   error: string;
 }
 
+export interface AgentMemoryEpisodic {
+  timestamp: string;
+  type: string;
+  description: string;
+  context: Record<string, unknown>;
+}
+
 export interface AgentMemorySummary {
   agent_key: string;
   total_runs: number;
@@ -220,6 +227,8 @@ export interface AgentMemorySummary {
   avoid_signatures: string[];
   top_failure_signatures: string[];
   recent_failures: AgentMemoryFailure[];
+  episodic_events?: AgentMemoryEpisodic[];
+  tags?: string[];
   updated_at: string;
 }
 

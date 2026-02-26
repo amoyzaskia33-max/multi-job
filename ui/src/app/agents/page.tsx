@@ -443,6 +443,25 @@ export default function AgentsPage() {
                 </div>
 
                 <div className="rounded-lg border border-border bg-muted/20 p-3">
+                  <p className="text-sm font-medium">Memori Episodik Jangka Panjang</p>
+                  {isLoadingMemories ? (
+                    <p className="mt-2 text-xs text-muted-foreground">Memori sedang dimuat...</p>
+                  ) : !selectedMemory?.episodic_events?.length ? (
+                    <p className="mt-2 text-xs text-muted-foreground">Belum ada memori episodik.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {selectedMemory.episodic_events.slice(0, 5).map((ev, i) => (
+                        <div key={`epi-${i}`} className="rounded-md border border-border bg-card/40 px-2 py-1.5">
+                          <p className="text-[10px] font-bold uppercase text-primary">{ev.type}</p>
+                          <p className="text-[11px] text-foreground">{ev.description}</p>
+                          <p className="text-[9px] text-muted-foreground">{formatTime(ev.timestamp)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
                   <p className="text-sm font-medium">Event Terbaru</p>
                   {selectedSummary.latestEvents.length === 0 ? (
                     <p className="mt-2 text-xs text-muted-foreground">Belum ada event terbaru.</p>
