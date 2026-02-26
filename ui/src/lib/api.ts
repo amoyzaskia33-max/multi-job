@@ -418,6 +418,11 @@ export interface TriggerFireResponse {
   source: string;
 }
 
+export interface RateLimitConfig {
+  max_runs: number;
+  window_sec: number;
+}
+
 export interface Skill {
   skill_id: string;
   name: string;
@@ -430,6 +435,9 @@ export interface Skill {
   command_allow_prefixes: string[];
   allowed_channels: string[];
   tags: string[];
+  tool_allowlist?: string[];
+  required_secrets?: string[];
+  rate_limit?: RateLimitConfig;
   allow_sensitive_commands: boolean;
   require_approval: boolean;
   created_at?: string;
@@ -447,6 +455,9 @@ export interface SkillSpecRequest {
   command_allow_prefixes?: string[];
   allowed_channels?: string[];
   tags?: string[];
+  tool_allowlist?: string[];
+  required_secrets?: string[];
+  rate_limit?: RateLimitConfig;
   allow_sensitive_commands?: boolean;
   require_approval?: boolean;
 }

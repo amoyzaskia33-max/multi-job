@@ -68,7 +68,9 @@ def _normalisasi_konkruensi() -> int:
 async def _proses_satu_job(worker_id: str, data_event: dict):
     tipe_job = data_event.get("type")
     handler = get_handler(tipe_job)
-    if not handler:
+    
+    # Let dynamic skills pass through to process_job_event for resolution
+    if not handler and not tipe_job.startswith("skill:"):
         logger.error(
             f"No handler found for job type: {tipe_job}",
             extra={"run_id": data_event.get("run_id"), "job_id": data_event.get("job_id")},
@@ -84,10 +86,14 @@ async def _proses_satu_job(worker_id: str, data_event: dict):
         )
         return
 
+    # Pass the entire registry, process_job_event will resolve 'skill:*' dynamically
+    handler_map = {tipe_job: handler} if handler else {}
+    from app.core.handlers_registry import peta_handler_job
+    
     berhasil = await process_job_event(
         data_event,
         worker_id,
-        {tipe_job: handler},
+        peta_handler_job, # Pass the full registry so resolved skills can find their base handler
         tool_registry.tools,
         logger,
         metrics_collector,

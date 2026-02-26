@@ -606,6 +606,10 @@ class ConnectorVoiceRequest(BaseModel):
     payload: Dict[str, Any] = Field(default_factory=dict)
 
 
+class RateLimitConfig(BaseModel):
+    max_runs: int = Field(default=0, ge=0)
+    window_sec: int = Field(default=60, ge=1)
+
 class SkillSpecRequest(BaseModel):
     skill_id: str = Field(min_length=1, max_length=64)
     name: str
@@ -618,6 +622,9 @@ class SkillSpecRequest(BaseModel):
     command_allow_prefixes: List[str] = Field(default_factory=list)
     allowed_channels: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
+    tool_allowlist: List[str] = Field(default_factory=list)
+    required_secrets: List[str] = Field(default_factory=list)
+    rate_limit: Optional[RateLimitConfig] = None
     allow_sensitive_commands: bool = False
     require_approval: bool = False
 

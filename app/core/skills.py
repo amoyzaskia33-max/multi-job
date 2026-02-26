@@ -50,9 +50,21 @@ def _sanitize_skill(row: Dict[str, Any]) -> Dict[str, Any]:
     sanitized["command_allow_prefixes"] = _normalize_list(row.get("command_allow_prefixes"))
     sanitized["allowed_channels"] = _normalize_list(row.get("allowed_channels"))
     sanitized["tags"] = _normalize_list(row.get("tags"))
+    sanitized["tool_allowlist"] = _normalize_list(row.get("tool_allowlist"))
+    sanitized["required_secrets"] = _normalize_list(row.get("required_secrets"))
     sanitized["require_approval"] = bool(row.get("require_approval"))
     sanitized["allow_sensitive_commands"] = bool(row.get("allow_sensitive_commands"))
     sanitized["default_inputs"] = _copy_payload(row.get("default_inputs"))
+    
+    rate_limit_raw = row.get("rate_limit")
+    if isinstance(rate_limit_raw, dict):
+        sanitized["rate_limit"] = {
+            "max_runs": int(rate_limit_raw.get("max_runs") or 0),
+            "window_sec": int(rate_limit_raw.get("window_sec") or 60)
+        }
+    else:
+        sanitized["rate_limit"] = None
+        
     return sanitized
 
 
@@ -134,6 +146,19 @@ async def upsert_skill(skill_id: str, payload: Dict[str, Any]) -> Dict[str, Any]
     allowed_channels = _normalize_list(payload.get("allowed_channels", existing.get("allowed_channels", [])))
     command_allow_prefixes = _normalize_list(payload.get("command_allow_prefixes", existing.get("command_allow_prefixes", [])))
     tags = _normalize_list(payload.get("tags", existing.get("tags", [])))
+    tool_allowlist = _normalize_list(payload.get("tool_allowlist", existing.get("tool_allowlist", [])))
+    required_secrets = _normalize_list(payload.get("required_secrets", existing.get("required_secrets", [])))
+    
+    rate_limit = existing.get("rate_limit")
+    if "rate_limit" in payload:
+        rate_limit_raw = payload.get("rate_limit")
+        if isinstance(rate_limit_raw, dict):
+            rate_limit = {
+                "max_runs": int(rate_limit_raw.get("max_runs") or 0),
+                "window_sec": int(rate_limit_raw.get("window_sec") or 60)
+            }
+        else:
+            rate_limit = None
 
     now = _now_iso()
     row = {
@@ -147,6 +172,9 @@ async def upsert_skill(skill_id: str, payload: Dict[str, Any]) -> Dict[str, Any]
         "default_inputs": default_inputs,
         "allowed_channels": allowed_channels,
         "command_allow_prefixes": command_allow_prefixes,
+        "tool_allowlist": tool_allowlist,
+        "required_secrets": required_secrets,
+        "rate_limit": rate_limit,
         "allow_sensitive_commands": bool(payload.get("allow_sensitive_commands", existing.get("allow_sensitive_commands", False))),
         "require_approval": bool(payload.get("require_approval", existing.get("require_approval", False))),
         "tags": tags,

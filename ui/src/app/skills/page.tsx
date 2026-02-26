@@ -27,6 +27,10 @@ const initialForm: SkillFormState = {
   commandPrefixes: "",
   allowedChannels: "",
   tags: "",
+  toolAllowlist: "",
+  requiredSecrets: "",
+  rateLimitMax: 0,
+  rateLimitWindow: 60,
   requireApproval: false,
   allowSensitive: false,
 };
@@ -43,6 +47,10 @@ type SkillFormState = {
   commandPrefixes: string;
   allowedChannels: string;
   tags: string;
+  toolAllowlist: string;
+  requiredSecrets: string;
+  rateLimitMax: number;
+  rateLimitWindow: number;
   requireApproval: boolean;
   allowSensitive: boolean;
 };
@@ -210,6 +218,12 @@ export default function SkillsPage() {
         command_allow_prefixes: parseListInput(formState.commandPrefixes),
         allowed_channels: parseListInput(formState.allowedChannels),
         tags: parseListInput(formState.tags),
+        tool_allowlist: parseListInput(formState.toolAllowlist),
+        required_secrets: parseListInput(formState.requiredSecrets),
+        rate_limit: {
+          max_runs: formState.rateLimitMax,
+          window_sec: formState.rateLimitWindow,
+        },
         require_approval: formState.requireApproval,
         allow_sensitive_commands: formState.allowSensitive,
       };
@@ -283,6 +297,10 @@ export default function SkillsPage() {
         commandPrefixes: joinForInput(skill.command_allow_prefixes),
         allowedChannels: joinForInput(skill.allowed_channels),
         tags: joinForInput(skill.tags),
+        toolAllowlist: joinForInput(skill.tool_allowlist || []),
+        requiredSecrets: joinForInput(skill.required_secrets || []),
+        rateLimitMax: skill.rate_limit?.max_runs || 0,
+        rateLimitWindow: skill.rate_limit?.window_sec || 60,
         requireApproval: skill.require_approval,
         allowSensitive: skill.allow_sensitive_commands,
       });
@@ -404,7 +422,7 @@ export default function SkillsPage() {
                 {formState.defaultInputs || "{}"}
               </pre>
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="skill-command-prefixes">Command prefix</Label>
                 <Input
@@ -415,6 +433,17 @@ export default function SkillsPage() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="skill-tool-allowlist">Tool Allowlist</Label>
+                <Input
+                  id="skill-tool-allowlist"
+                  value={formState.toolAllowlist}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, toolAllowlist: event.target.value }))}
+                  placeholder="http, kv, command"
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
                 <Label htmlFor="skill-channels">Kanal</Label>
                 <Input
                   id="skill-channels"
@@ -424,14 +453,47 @@ export default function SkillsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="skill-tags">Tags</Label>
+                <Label htmlFor="skill-required-secrets">Required Secrets</Label>
                 <Input
-                  id="skill-tags"
-                  value={formState.tags}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, tags: event.target.value }))}
-                  placeholder="content, automation"
+                  id="skill-required-secrets"
+                  value={formState.requiredSecrets}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, requiredSecrets: event.target.value }))}
+                  placeholder="openai, github"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="skill-tags">Tags</Label>
+              <Input
+                id="skill-tags"
+                value={formState.tags}
+                onChange={(event) => setFormState((prev) => ({ ...prev, tags: event.target.value }))}
+                placeholder="content, automation"
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 rounded-xl border border-border bg-muted/20 p-3">
+               <div>
+                  <Label htmlFor="skill-rate-max">Rate Limit (Max Runs)</Label>
+                  <Input
+                    id="skill-rate-max"
+                    type="number"
+                    min="0"
+                    value={formState.rateLimitMax}
+                    onChange={(event) => setFormState((prev) => ({ ...prev, rateLimitMax: parseInt(event.target.value) || 0 }))}
+                    placeholder="0 (unlimited)"
+                  />
+               </div>
+               <div>
+                  <Label htmlFor="skill-rate-window">Rate Limit Window (Detik)</Label>
+                  <Input
+                    id="skill-rate-window"
+                    type="number"
+                    min="1"
+                    value={formState.rateLimitWindow}
+                    onChange={(event) => setFormState((prev) => ({ ...prev, rateLimitWindow: parseInt(event.target.value) || 60 }))}
+                    placeholder="60"
+                  />
+               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex items-center justify-between rounded-xl border border-border bg-muted/40 p-3">
@@ -651,6 +713,7 @@ export default function SkillsPage() {
                       <TableHead>Job</TableHead>
                       <TableHead>Tags</TableHead>
                       <TableHead>Kanal</TableHead>
+                      <TableHead>Policies</TableHead>
                       <TableHead className="text-center">Approval</TableHead>
                       <TableHead className="text-center">Sensitive</TableHead>
                       <TableHead className="text-right">Update</TableHead>
@@ -672,8 +735,27 @@ export default function SkillsPage() {
                           <TableCell>{skill.job_type}</TableCell>
                           <TableCell>{formatList(skill.tags)}</TableCell>
                           <TableCell>{formatList(skill.allowed_channels)}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              {skill.tool_allowlist?.length ? (
+                                <span className="text-[10px] bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded w-max">
+                                  Tools: {skill.tool_allowlist.length}
+                                </span>
+                              ) : null}
+                              {skill.required_secrets?.length ? (
+                                <span className="text-[10px] bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 px-1.5 py-0.5 rounded w-max">
+                                  Secrets: {skill.required_secrets.length}
+                                </span>
+                              ) : null}
+                              {!skill.tool_allowlist?.length && !skill.required_secrets?.length ? (
+                                <span className="text-[10px] text-muted-foreground">-</span>
+                              ) : null}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-center">
-                            {skill.require_approval ? "Ya" : "Tidak"}
+                            {skill.require_approval ? (
+                              <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-800">Ya</span>
+                            ) : "Tidak"}
                           </TableCell>
                           <TableCell className="text-center">
                             {skill.allow_sensitive_commands ? "Ya" : "Tidak"}
@@ -686,7 +768,7 @@ export default function SkillsPage() {
                     })}
                     {filteredSkills.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
                           Tidak ada skill yang cocok.
                         </TableCell>
                       </TableRow>
