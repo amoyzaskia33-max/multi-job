@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. PUSAT ANTREAN & MEMORI: Redis (Wajib Ada, Sangat Ringan)
+  # 1. PUSAT ANTREAN & MEMORI: Redis
   redis:
     image: redis:7-alpine
     container_name: spio-redis
@@ -12,7 +12,7 @@ services:
     command: redis-server --appendonly yes
     restart: always
 
-  # 2. MOTHER-SHIP: API (Pusat Kendali)
+  # 2. MOTHER-SHIP: API
   api:
     build:
       context: .
@@ -21,7 +21,7 @@ services:
     ports:
       - "8000:8000"
     extra_hosts:
-      - "host.docker.internal:host-gateway" # Agar bisa akses AI di luar Docker
+      - "host.docker.internal:host-gateway"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -46,7 +46,7 @@ services:
       - api
     restart: always
 
-  # 4. UNIT BISNIS TEMPLATE (Agency)
+  # 4. UNIT BISNIS TEMPLATE
   unit-agency:
     build:
       context: .
