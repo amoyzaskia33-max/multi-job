@@ -2400,6 +2400,59 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle>Log Audit Keamanan & Kepatuhan</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Riwayat akses dan perubahan konfigurasi sistem untuk keperluan audit (Phase 5).
+          </p>
+          {sedangMemuatEventSkill ? (
+            <div className="text-sm text-muted-foreground">Lagi ambil log audit...</div>
+          ) : dataEventSkill.filter(e => e.type === "audit.action").length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground border border-dashed rounded-xl">
+              Belum ada log audit keamanan terdeteksi.
+            </div>
+          ) : (
+            <div className="overflow-auto rounded-xl border border-border">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-muted text-muted-foreground">
+                  <tr>
+                    <th className="p-2">Waktu</th>
+                    <th className="p-2">Aktor (Role)</th>
+                    <th className="p-2">Aksi</th>
+                    <th className="p-2">Status</th>
+                    <th className="p-2">Detail</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {dataEventSkill.filter(e => e.type === "audit.action").slice(0, 20).map((event) => {
+                    const d = event.data || {};
+                    return (
+                      <tr key={event.id} className="hover:bg-muted/30">
+                        <td className="p-2 whitespace-nowrap">{formatWaktuEvent(event.timestamp)}</td>
+                        <td className="p-2">
+                          <span className="font-semibold">{String(d.actor_subject || "anon")}</span>
+                          <span className="ml-1 opacity-60">({String(d.actor_role || "viewer")})</span>
+                        </td>
+                        <td className="p-2">
+                          <code className="bg-muted px-1 rounded">{String(d.method)}</code> {String(d.path)}
+                        </td>
+                        <td className={`p-2 font-bold ${d.outcome === "success" ? "text-green-600" : "text-red-600"}`}>
+                          {String(d.status_code)}
+                        </td>
+                        <td className="p-2 max-w-[200px] truncate">{String(d.detail || "-")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
