@@ -12,7 +12,8 @@ import {
   Briefcase,
   AlertCircle,
   MessageSquareQuote,
-  ArrowUpRight
+  ArrowUpRight,
+  ArrowRight
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -217,7 +218,7 @@ export default function ChairmanDashboard() {
 
           <Card className="bg-card/50 border-dashed">
             <CardContent className="p-4 text-center">
-              <p className="text-[10px] text-muted-foreground mb-3 italic">"Visi Chairman adalah perintah bagi kami."</p>
+              <p className="text-[10px] text-muted-foreground mb-3 italic">&quot;Visi Chairman adalah perintah bagi kami.&quot;</p>
               <Button variant="outline" size="sm" className="w-full text-[10px] h-8 font-bold" asChild>
                 <Link href="/automation">BUKA UNIT BARU</Link>
               </Button>
