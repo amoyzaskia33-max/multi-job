@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   Building2, 
   TrendingUp, 
@@ -13,12 +13,22 @@ import {
   AlertCircle,
   MessageSquareQuote,
   ArrowUpRight,
-  ArrowRight
+  ArrowRight,
+  Send,
+  Bot,
+  User
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getBranches, type Branch } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { 
+  getBranches, 
+  getBoardroomHistory, 
+  sendChairmanMandate, 
+  type Branch, 
+  type ChatMessage 
+} from "@/lib/api";
 
 const formatCurrency = (val: number) => {
   return new Intl.NumberFormat("id-ID", {
@@ -29,12 +39,29 @@ const formatCurrency = (val: number) => {
 };
 
 export default function ChairmanDashboard() {
+  const queryClient = useQueryClient();
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  const [mandateText, setMandateText] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: branches = [], isLoading } = useQuery({
+  const { data: branches = [], isLoading: isLoadingBranches } = useQuery({
     queryKey: ["branches"],
     queryFn: getBranches,
-    refetchInterval: 10000,
+    refetchInterval: 5000,
+  });
+
+  const { data: chatHistory = [], isLoading: isLoadingChat } = useQuery({
+    queryKey: ["boardroom-chat"],
+    queryFn: getBoardroomHistory,
+    refetchInterval: 3000,
+  });
+
+  const mandateMutation = useMutation({
+    mutationFn: sendChairmanMandate,
+    onSuccess: () => {
+      setMandateText("");
+      queryClient.invalidateQueries({ queryKey: ["boardroom-chat"] });
+    }
   });
 
   const totalRevenue = useMemo(() => 
@@ -49,22 +76,35 @@ export default function ChairmanDashboard() {
     branches.find(b => b.branch_id === activeBranchId)
   , [branches, activeBranchId]);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory]);
+
+  const handleSendMandate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mandateText.trim()) return;
+    mandateMutation.mutate(mandateText);
+  };
+
   return (
-    <div className="ux-rise-in space-y-6 max-w-6xl mx-auto">
+    <div className="ux-rise-in space-y-6 max-w-[1600px] mx-auto">
       {/* Executive Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 py-4">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 py-2 px-2">
         <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-foreground">HoldCo Cockpit</h1>
-          <p className="text-muted-foreground mt-1 text-lg">Ringkasan Eksekutif & Kendali Bisnis Anda.</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground flex items-center gap-3">
+            <Building2 className="h-10 w-10 text-primary" />
+            HoldCo Cockpit
+          </h1>
+          <p className="text-muted-foreground mt-1 text-lg">Chairman&apos;s Suite & Strategic Command.</p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-8 bg-card border border-border p-4 rounded-3xl shadow-sm">
           <div className="text-right">
-            <p className="text-xs font-bold uppercase text-muted-foreground tracking-widest">Total Revenue</p>
+            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mb-1">Portfolio Revenue</p>
             <p className="text-3xl font-black text-emerald-500">{formatCurrency(totalRevenue)}</p>
           </div>
-          <div className="w-px h-12 bg-border hidden md:block"></div>
+          <div className="w-px h-10 bg-border"></div>
           <div className="text-right">
-            <p className="text-xs font-bold uppercase text-muted-foreground tracking-widest">Global Closings</p>
+            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mb-1">Global Closings</p>
             <p className="text-3xl font-black text-primary">{totalClosings}</p>
           </div>
         </div>
@@ -72,157 +112,186 @@ export default function ChairmanDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* CEO Insights & Active Branch */}
-        <div className="lg:col-span-8 space-y-6">
-          
-          {/* CEO Briefing Box */}
-          <Card className="bg-primary/5 border-primary/20 shadow-none overflow-hidden relative">
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-              <MessageSquareQuote className="h-24 w-24" />
-            </div>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
-                <span className="text-xs font-bold uppercase tracking-wider text-primary">CEO Briefing</span>
-              </div>
-              <h2 className="text-xl font-bold mb-2">Semua unit berjalan di atas target efisiensi.</h2>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
-                Chairman, Cabang Digital Agency mencatat kenaikan leads 15% pagi ini. Saya sedang mengarahkan tim Hunter untuk fokus pada sektor UMKM kuliner di wilayah Jabodetabek. Tidak ada kendala teknis yang menghambat operasional saat ini.
-              </p>
-              <div className="mt-4 flex gap-3">
-                <Button size="sm" variant="outline" className="bg-background">Lihat Rekomendasi Lengkap</Button>
-                <Button size="sm" asChild><Link href="/prompt">Beri Mandat Baru</Link></Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {activeBranch ? (
-            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-              <div className="flex items-center justify-between border-b pb-4">
-                <div>
-                  <h2 className="text-2xl font-bold">{activeBranch.name}</h2>
-                  <p className="text-sm text-muted-foreground uppercase tracking-tighter">{activeBranch.blueprint_id.replace("bp_", "")} division</p>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
-                    <Zap className="h-3 w-3 mr-1" /> Boost Mode
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-8 px-2 text-xs">Edit Branch</Button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl border bg-card">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Leads Generated</p>
-                  <p className="text-2xl font-bold">{activeBranch.current_metrics?.leads || 0}</p>
-                </div>
-                <div className="p-4 rounded-2xl border bg-card">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Closing Rate</p>
-                  <p className="text-2xl font-bold">
-                    {activeBranch.current_metrics?.leads 
-                      ? Math.round((activeBranch.current_metrics.closings / activeBranch.current_metrics.leads) * 100) 
-                      : 0}%
-                  </p>
-                </div>
-                <div className="p-4 rounded-2xl border bg-card">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Current Revenue</p>
-                  <p className="text-2xl font-bold text-emerald-500">{formatCurrency(activeBranch.current_metrics?.revenue || 0)}</p>
-                </div>
-              </div>
-
-              {/* Progress Pipeline */}
-              <div className="p-6 rounded-2xl border bg-card/50">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Sales Pipeline</h3>
-                  <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full font-bold">On Track</span>
-                </div>
-                <div className="relative flex items-center justify-between px-4">
-                  <div className="absolute h-1 w-[80%] bg-muted left-1/2 -translate-x-1/2 top-5 -z-0"></div>
-                  <div className="z-10 flex flex-col items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white ring-4 ring-background shadow-lg"><Zap className="h-5 w-5" /></div>
-                    <p className="text-[10px] font-bold">DISCOVERY</p>
-                  </div>
-                  <div className="z-10 flex flex-col items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white ring-4 ring-background shadow-lg"><Target className="h-5 w-5" /></div>
-                    <p className="text-[10px] font-bold">LEADS</p>
-                  </div>
-                  <div className="z-10 flex flex-col items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-emerald-500 flex items-center justify-center text-white ring-4 ring-background shadow-lg"><CheckCircle2 className="h-5 w-5" /></div>
-                    <p className="text-[10px] font-bold">CLOSING</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed rounded-3xl opacity-40">
-              <Building2 className="h-12 w-12 mb-2" />
-              <p className="text-sm font-medium">Pilih unit bisnis untuk memantau performa detail.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Branch List */}
-        <div className="lg:col-span-4 space-y-4">
+        {/* Left: Business Units (Branches) */}
+        <div className="lg:col-span-3 space-y-4">
           <div className="flex items-center justify-between px-2">
             <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Unit Bisnis Aktif</h2>
-            <Link href="/automation" className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
-              EXPAND <ArrowUpRight className="h-3 w-3" />
-            </Link>
+            <Link href="/automation" className="text-[10px] font-bold text-primary hover:underline">BRANCH MANAGER</Link>
           </div>
 
-          <div className="space-y-3">
-            {isLoading ? (
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+            {isLoadingBranches ? (
               <p className="text-center py-10 text-xs text-muted-foreground">Menghubungi kantor pusat...</p>
             ) : branches.length === 0 ? (
-              <div className="text-center py-10 border rounded-2xl bg-muted/10">
+              <div className="text-center py-10 border border-dashed rounded-3xl bg-muted/10">
                 <AlertCircle className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                <p className="text-xs text-muted-foreground">Belum ada cabang yang dibuka.</p>
+                <p className="text-xs text-muted-foreground px-4">Belum ada cabang dibuka. Berikan mandat ke CEO untuk mulai.</p>
               </div>
             ) : (
               branches.map((b) => (
                 <button
                   key={b.branch_id}
                   onClick={() => setActiveBranchId(b.branch_id)}
-                  className={`w-full text-left group transition-all ${
-                    activeBranchId === b.branch_id ? "scale-[1.02]" : ""
+                  className={`w-full text-left group transition-all duration-300 ${
+                    activeBranchId === b.branch_id ? "scale-[1.03]" : ""
                   }`}
                 >
-                  <Card className={`transition-all duration-200 ${
-                    activeBranchId === b.branch_id ? "border-primary bg-primary/5 shadow-md" : "hover:border-border/80"
+                  <Card className={`transition-all duration-300 ${
+                    activeBranchId === b.branch_id ? "border-primary bg-primary/5 shadow-lg" : "hover:border-border/80 bg-card/50"
                   }`}>
                     <CardContent className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-xl ${
+                        <div className={`p-2 rounded-xl transition-colors ${
                           activeBranchId === b.branch_id ? "bg-primary text-white" : "bg-muted text-muted-foreground"
                         }`}>
                           <Briefcase className="h-4 w-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-bold">{b.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[9px] text-muted-foreground font-mono">{b.branch_id}</span>
-                            <span className="h-1 w-1 rounded-full bg-emerald-500"></span>
-                            <span className="text-[9px] text-emerald-500 font-bold">{formatCurrency(b.current_metrics?.revenue || 0)}</span>
-                          </div>
+                          <p className="text-sm font-bold truncate max-w-[120px]">{b.name}</p>
+                          <p className="text-[10px] text-emerald-500 font-bold">{formatCurrency(b.current_metrics?.revenue || 0)}</p>
                         </div>
                       </div>
-                      <ArrowRight className={`h-4 w-4 text-muted-foreground transition-transform ${
-                        activeBranchId === b.branch_id ? "translate-x-1 text-primary" : ""
-                      }`} />
+                      <div className={`h-2 w-2 rounded-full ${b.status === "active" ? "bg-emerald-500 animate-pulse" : "bg-muted"}`}></div>
                     </CardContent>
                   </Card>
                 </button>
               ))
             )}
           </div>
+        </div>
 
-          <Card className="bg-card/50 border-dashed">
-            <CardContent className="p-4 text-center">
-              <p className="text-[10px] text-muted-foreground mb-3 italic">&quot;Visi Chairman adalah perintah bagi kami.&quot;</p>
-              <Button variant="outline" size="sm" className="w-full text-[10px] h-8 font-bold" asChild>
-                <Link href="/automation">BUKA UNIT BARU</Link>
-              </Button>
+        {/* Center: Branch Details & Pipeline */}
+        <div className="lg:col-span-5 space-y-6">
+          {activeBranch ? (
+            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+              <Card className="rounded-3xl border-none shadow-sm bg-card overflow-hidden">
+                <CardHeader className="border-b bg-muted/10 flex flex-row items-center justify-between py-4">
+                  <div>
+                    <CardTitle className="text-xl font-bold">{activeBranch.name}</CardTitle>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{activeBranch.blueprint_id.replace("bp_", "")} DIVISION</p>
+                  </div>
+                  <Button variant="outline" size="sm" className="h-8 text-[10px] font-bold" asChild>
+                    <Link href={`/runs?job_id=${activeBranch.branch_id}`}>AUDIT LOGS</Link>
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center p-3 rounded-2xl bg-muted/20">
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase mb-1">Leads</p>
+                      <p className="text-xl font-black">{activeBranch.current_metrics?.leads || 0}</p>
+                    </div>
+                    <div className="text-center p-3 rounded-2xl bg-muted/20">
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase mb-1">Closing</p>
+                      <p className="text-xl font-black">{activeBranch.current_metrics?.closings || 0}</p>
+                    </div>
+                    <div className="text-center p-3 rounded-2xl bg-muted/20 border border-emerald-500/20">
+                      <p className="text-[9px] font-bold text-emerald-500 uppercase mb-1">Revenue</p>
+                      <p className="text-md font-black text-emerald-500">{formatCurrency(activeBranch.current_metrics?.revenue || 0)}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Strategic Progress</h3>
+                    <div className="relative flex items-center justify-between px-2">
+                      <div className="absolute h-0.5 w-[90%] bg-muted left-1/2 -translate-x-1/2 top-4 -z-0"></div>
+                      {[
+                        { label: "RESEARCH", icon: Zap, active: true },
+                        { label: "PROMOTION", icon: Target, active: activeBranch.current_metrics.leads > 0 },
+                        { label: "CLOSING", icon: CheckCircle2, active: activeBranch.current_metrics.closings > 0 }
+                      ].map((step, i) => (
+                        <div key={i} className="z-10 flex flex-col items-center gap-2">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-500 ${
+                            step.active ? "bg-primary text-white shadow-md scale-110" : "bg-muted text-muted-foreground"
+                          }`}>
+                            <step.icon className="h-4 w-4" />
+                          </div>
+                          <p className={`text-[8px] font-bold ${step.active ? "text-primary" : "text-muted-foreground"}`}>{step.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* CEO Direct Action */}
+              <div className="grid grid-cols-2 gap-4">
+                <Button className="rounded-2xl h-12 font-bold text-xs bg-emerald-600 hover:bg-emerald-700">
+                  <TrendingUp className="h-4 w-4 mr-2" /> BOOST PROFIT
+                </Button>
+                <Button variant="outline" className="rounded-2xl h-12 font-bold text-xs border-primary/20">
+                  <AlertCircle className="h-4 w-4 mr-2" /> RISK ANALYSIS
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="h-[400px] flex flex-col items-center justify-center border-2 border-dashed rounded-[2rem] opacity-30 bg-muted/5">
+              <Building2 className="h-16 w-16 mb-4 text-muted-foreground" />
+              <p className="text-sm font-bold tracking-tight">Select a Business Unit to inspect performance.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Right: CEO Boardroom (Chat) */}
+        <div className="lg:col-span-4 flex flex-col h-[75vh]">
+          <Card className="rounded-3xl border-none shadow-sm bg-card flex flex-col h-full overflow-hidden border border-primary/10">
+            <CardHeader className="border-b py-4 bg-primary/5">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-primary flex items-center justify-center text-white shadow-inner">
+                  <Bot className="h-6 w-6" />
+                </div>
+                <div>
+                  <CardTitle className="text-md font-bold">Executive Boardroom</CardTitle>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    CEO Online & Ready for Mandate
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-dot-pattern">
+              {chatHistory.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center px-6 opacity-40">
+                  <MessageSquareQuote className="h-12 w-12 mb-2" />
+                  <p className="text-xs">Berikan mandat pertama Anda kepada CEO untuk memulai operasional.</p>
+                </div>
+              ) : (
+                chatHistory.map((msg) => (
+                  <div key={msg.id} className={`flex ${msg.sender === "Chairman" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[85%] rounded-2xl p-3 text-xs shadow-sm ${
+                      msg.sender === "Chairman" 
+                        ? "bg-primary text-primary-foreground rounded-tr-none" 
+                        : "bg-muted text-foreground rounded-tl-none border border-border"
+                    }`}>
+                      <div className="flex items-center gap-1.5 mb-1 opacity-70">
+                        {msg.sender === "Chairman" ? <User className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
+                        <span className="font-bold text-[9px] uppercase tracking-tighter">{msg.sender}</span>
+                      </div>
+                      <p className="leading-relaxed">{msg.text}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={chatEndRef} />
             </CardContent>
+            <div className="p-4 border-t bg-muted/5">
+              <form onSubmit={handleSendMandate} className="relative">
+                <Input 
+                  placeholder="Ketik Mandat Chairman..."
+                  value={mandateText}
+                  onChange={(e) => setMandateText(e.target.value)}
+                  className="pr-12 h-12 rounded-2xl border-primary/20 focus-visible:ring-primary shadow-inner"
+                  disabled={mandateMutation.isPending}
+                />
+                <Button 
+                  type="submit" 
+                  size="sm" 
+                  className="absolute right-1.5 top-1.5 h-9 w-9 rounded-xl p-0"
+                  disabled={!mandateText.trim() || mandateMutation.isPending}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </form>
+            </div>
           </Card>
         </div>
 

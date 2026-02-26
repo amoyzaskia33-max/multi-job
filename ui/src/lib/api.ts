@@ -1232,6 +1232,30 @@ export const deployAccount = async (accountId: string, branchId: string): Promis
   }
 };
 
+export interface ChatMessage {
+  id: string;
+  sender: "Chairman" | "CEO" | string;
+  text: string;
+  timestamp: string;
+}
+
+export const getBoardroomHistory = async (): Promise<ChatMessage[]> => {
+  try {
+    return await getJson<ChatMessage[]>("/boardroom/history");
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat riwayat chat", []);
+  }
+};
+
+export const sendChairmanMandate = async (text: string): Promise<boolean> => {
+  try {
+    await send("/boardroom/chat", "POST", { text });
+    return true;
+  } catch (error) {
+    return handleApiError(error, "Gagal mengirim mandat", false);
+  }
+};
+
 export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse> => {
   return await send<PlannerExecuteResponse>("/planner/execute", "POST", payload);
 };

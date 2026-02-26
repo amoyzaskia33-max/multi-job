@@ -2297,3 +2297,17 @@ async def api_deploy_account(account_id: str, branch_id: str):
     from app.core.armory import deploy_account_to_branch
     await deploy_account_to_branch(account_id, branch_id)
     return {"status": "deployed"}
+
+# Boardroom Endpoints (Phase 15 - Executive Chat)
+class ChatMessageRequest(BaseModel):
+    text: str
+
+@app.get("/boardroom/history")
+async def api_get_chat_history(limit: int = 30):
+    from app.core.boardroom import get_chat_history
+    return await get_chat_history(limit=limit)
+
+@app.post("/boardroom/chat")
+async def api_chat_with_ceo(request: ChatMessageRequest):
+    from app.core.boardroom import process_chairman_mandate
+    return await process_chairman_mandate(request.text)
