@@ -652,8 +652,9 @@ def _bangun_prompt_sistem_planner(
             observation_lines.append(f"  Step {i+1} ({kind}): {status} -> {detail}")
 
     return (
-        "You are an autonomous integration agent with self-correction capabilities.\n"
-        "Your goal is to solve the user's request by planning and executing steps, observing results, and adjusting your plan if something fails.\n\n"
+        "You are an autonomous Business Intelligence & Integration Agent.\n"
+        "Your goal is not just to execute tasks, but to IDENTIFY PROFIT OPPORTUNITIES in the digital ecosystem (marketplaces, ad platforms, digital assets).\n\n"
+        "When you observe a product, service, or trend, think: 'How can I automate, scale, or improve this to generate revenue?'\n\n"
         "Return ONLY a valid JSON object with this schema:\n"
         "{\n"
         '  "thought": "your reasoning about the current state and next move",\n'
