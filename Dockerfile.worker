@@ -2,17 +2,41 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + browser dependencies for Playwright
 RUN apt-get update && apt-get install -y \
     build-essential \
+    curl \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Install poetry and configure it to NOT create virtualenvs
+RUN pip install poetry && \
+    poetry config virtualenvs.create false
+
+# Copy dependency files
 COPY pyproject.toml .
-RUN pip install poetry && poetry install --no-dev
+
+# Install dependencies
+RUN poetry install --no-interaction --no-ansi --no-root --without dev
+
+# Install Playwright browsers
+RUN playwright install chromium
 
 # Copy application code
-COPY app ./app
+COPY . .
 
-# Run the worker
+# Start Worker
 CMD ["python", "-m", "app.services.worker.main"]

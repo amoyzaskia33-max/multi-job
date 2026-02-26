@@ -5,14 +5,21 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Install poetry and configure it to NOT create virtualenvs
+RUN pip install poetry && \
+    poetry config virtualenvs.create false
+
+# Copy dependency files
 COPY pyproject.toml .
-RUN pip install poetry && poetry install --no-dev
+
+# Install dependencies
+RUN poetry install --no-interaction --no-ansi --no-root --without dev
 
 # Copy application code
-COPY app ./app
+COPY . .
 
-# Run the scheduler
+# Start Scheduler
 CMD ["python", "-m", "app.services.scheduler.main"]
