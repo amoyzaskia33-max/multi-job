@@ -1,0 +1,215 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # REDIS - Queue & Storage
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    container_name: spio-redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - spio-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # API Service - FastAPI
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: spio-api
+    restart: always
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
+      - SCHEDULER_MAX_DISPATCH_PER_TICK=${SCHEDULER_MAX_DISPATCH_PER_TICK:-80}
+      - SCHEDULER_PRESSURE_DEPTH_HIGH=${SCHEDULER_PRESSURE_DEPTH_HIGH:-300}
+      - SCHEDULER_PRESSURE_DEPTH_LOW=${SCHEDULER_PRESSURE_DEPTH_LOW:-180}
+      - LOCAL_AI_URL=${LOCAL_AI_URL:-http://host.docker.internal:11434/v1}
+      - PLANNER_AI_MODEL=${PLANNER_AI_MODEL:-llama3}
+      - AI_NODE_URL=${AI_NODE_URL:-}
+      - AI_NODE_SECRET=${AI_NODE_SECRET:-factory-secret-123}
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - AUTH_API_KEYS=${AUTH_API_KEYS:-admin_token:admin}
+      - AUTH_TOKEN_HEADER=${AUTH_TOKEN_HEADER:-Authorization}
+      - AUTH_TOKEN_SCHEME=${AUTH_TOKEN_SCHEME:-Bearer}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGGING=${JSON_LOGGING:-true}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - spio-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+
+  # ===========================================
+  # UI Dashboard - Next.js
+  # ===========================================
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile.ui
+    container_name: spio-dashboard
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://localhost:8000
+      - NEXT_PUBLIC_API_AUTH_HEADER=${NEXT_PUBLIC_API_AUTH_HEADER:-}
+      - NEXT_PUBLIC_API_AUTH_SCHEME=${NEXT_PUBLIC_API_AUTH_SCHEME:-}
+      - NEXT_PUBLIC_API_TOKEN=${NEXT_PUBLIC_API_TOKEN:-}
+    depends_on:
+      - api
+    networks:
+      - spio-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ===========================================
+  # Worker Service
+  # ===========================================
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: spio-worker
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - AGENT_POOL=default
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
+      - LOCAL_AI_URL=${LOCAL_AI_URL:-http://host.docker.internal:11434/v1}
+      - PLANNER_AI_MODEL=${PLANNER_AI_MODEL:-llama3}
+      - AI_NODE_URL=${AI_NODE_URL:-}
+      - AI_NODE_SECRET=${AI_NODE_SECRET:-factory-secret-123}
+      - TELEGRAM_NOTIF_TOKEN=${TELEGRAM_NOTIF_TOKEN:-}
+      - TELEGRAM_NOTIF_CHAT_ID=${TELEGRAM_NOTIF_CHAT_ID:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGGING=${JSON_LOGGING:-true}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - spio-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+
+  # ===========================================
+  # Scheduler Service
+  # ===========================================
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: spio-scheduler
+    restart: always
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - SCHEDULER_MAX_DISPATCH_PER_TICK=${SCHEDULER_MAX_DISPATCH_PER_TICK:-80}
+      - SCHEDULER_PRESSURE_DEPTH_HIGH=${SCHEDULER_PRESSURE_DEPTH_HIGH:-300}
+      - SCHEDULER_PRESSURE_DEPTH_LOW=${SCHEDULER_PRESSURE_DEPTH_LOW:-180}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGGING=${JSON_LOGGING:-true}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - spio-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ===========================================
+  # Connector Service
+  # ===========================================
+  connector:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: spio-connector
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - SERVICE_TYPE=connector
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - LOCAL_AI_URL=${LOCAL_AI_URL:-http://host.docker.internal:11434/v1}
+      - PLANNER_AI_MODEL=${PLANNER_AI_MODEL:-llama3}
+      - AI_NODE_URL=${AI_NODE_URL:-}
+      - AI_NODE_SECRET=${AI_NODE_SECRET:-factory-secret-123}
+      - TELEGRAM_NOTIF_TOKEN=${TELEGRAM_NOTIF_TOKEN:-}
+      - TELEGRAM_NOTIF_CHAT_ID=${TELEGRAM_NOTIF_CHAT_ID:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGGING=${JSON_LOGGING:-true}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - spio-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+networks:
+  spio-network:
+    driver: bridge
+
+volumes:
+  redis-data:

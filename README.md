@@ -12,6 +12,14 @@ A scalable job processing platform built with Python and Redis.
 - FAQ operasional: [docs/FAQ_OPERASIONAL.md](docs/FAQ_OPERASIONAL.md)
 - Skill registry & CLI: [docs/skill-registry.md](docs/skill-registry.md)
 
+## Deployment & Production
+
+- Panduan deployment VPS lengkap: [DEPLOYMENT_VPS.md](DEPLOYMENT_VPS.md)
+- Checklist pre-deployment: [CHECKLIST_DEPLOYMENT.md](CHECKLIST_DEPLOYMENT.md)
+- Setup script otomatis: [scripts/setup-vps.sh](scripts/setup-vps.sh)
+- Quick deploy script: [scripts/deploy.sh](scripts/deploy.sh)
+- Production docker-compose: [docker-compose.prod.yml](docker-compose.prod.yml)
+
 ## CLI Integration
 
 Poetry exposes `poetry run spio-skill` sebagai entry point supaya skill registry bisa dioperasikan dari terminal:
