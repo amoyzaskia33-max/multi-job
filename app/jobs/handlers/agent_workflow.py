@@ -1378,6 +1378,13 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                         step["branch_id"] = branch_id_ctx
                     hasil = await alat_multimedia(step, ctx)
                     iter_results.append(hasil)
+            elif kind == "revenue":
+                alat_revenue = ctx.tools.get("revenue")
+                if not alat_revenue:
+                    iter_results.append({"kind": "revenue", "success": False, "error": "revenue tool not available"})
+                else:
+                    hasil = await alat_revenue(step, ctx)
+                    iter_results.append(hasil)
             elif kind == "schedule_job":
                 target_id = str(step.get("target_job_id") or "").strip()
                 delay = int(step.get("delay_sec") or 3600)

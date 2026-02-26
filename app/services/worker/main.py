@@ -24,6 +24,7 @@ from app.core.tools.kv import KVTool
 from app.core.tools.messaging import MessagingTool
 from app.core.tools.metrics import MetricsTool
 from app.core.tools.multimedia import MultimediaTool
+from app.core.tools.revenue import RevenueTool
 
 AGENT_HEARTBEAT_TTL = 30
 
@@ -35,12 +36,13 @@ tool_registry.register_tool("files", "1.0.0", FilesTool().run)
 tool_registry.register_tool("metrics", "1.0.0", MetricsTool().run)
 tool_registry.register_tool("command", "1.0.0", CommandTool().run)
 tool_registry.register_tool("multimedia", "1.0.0", MultimediaTool().run)
+tool_registry.register_tool("revenue", "1.0.0", RevenueTool().run)
 
 # Set default policies
 policy_manager.set_allowlist("monitor.channel", ["metrics", "messaging"])
 policy_manager.set_allowlist("report.daily", ["metrics", "messaging"])
 policy_manager.set_allowlist("backup.export", ["files", "kv"])
-policy_manager.set_allowlist("agent.workflow", ["http", "kv", "messaging", "files", "metrics", "command", "multimedia"])
+policy_manager.set_allowlist("agent.workflow", ["http", "kv", "messaging", "files", "metrics", "command", "multimedia", "revenue"])
 policy_manager.set_allowlist("simulation.heavy", ["metrics"])
 
 
