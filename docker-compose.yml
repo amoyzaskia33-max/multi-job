@@ -1,79 +1,95 @@
 version: '3.8'
+
 services:
+  # 1. CORE BRAIN: Local LLM (Ollama)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: spio-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: always
+
+  # 2. PUSAT ANTREAN & MEMORI: Redis
   redis:
     image: redis:7-alpine
-    container_name: multi-job-redis
+    container_name: spio-redis
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
+    restart: always
 
+  # 3. MOTHER-SHIP: API
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
+    container_name: spio-api
     ports:
       - "8000:8000"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - LOCAL_AI_URL=http://ollama:11434/v1
+      - PLANNER_AI_MODEL=llama3
+      - ARMORY_MASTER_KEY=${ARMORY_MASTER_KEY:-spio-holding-key-123}
     depends_on:
       - redis
-    volumes:
-      - ./:/app
+      - ollama
+    restart: always
 
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on:
-      - redis
-      - api
-    volumes:
-      - ./:/app
-
-  scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile.scheduler
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on:
-      - redis
-      - api
-    volumes:
-      - ./:/app
-
+  # 4. MOTHER-SHIP: DASHBOARD UI
   ui:
     build:
       context: ./ui
       dockerfile: Dockerfile.ui
+    container_name: spio-dashboard
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_BASE=http://host.docker.internal:8000
+      - NEXT_PUBLIC_API_BASE=http://localhost:8000
     depends_on:
       - api
-    volumes:
-      - ./ui:/app
+    restart: always
 
-  ui-simple:
+  # 5. TEMPLATE UNIT BISNIS (Contoh Satu Unit Terisolasi)
+  # Copy-paste block ini untuk menambah unit bisnis baru
+  unit-agency:
     build:
-      context: ./ui-simple
-      dockerfile: Dockerfile.ui-simple
-    ports:
-      - "5174:5174"
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: spio-unit-agency
     environment:
-      - VITE_API_BASE=http://host.docker.internal:8000
+      - AGENT_POOL=agency
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - LOCAL_AI_URL=http://ollama:11434/v1
+      - AI_NODE_URL=${AI_NODE_URL}
+      - TELEGRAM_NOTIF_TOKEN=${TELEGRAM_NOTIF_TOKEN}
+      - TELEGRAM_NOTIF_CHAT_ID=${TELEGRAM_NOTIF_CHAT_ID}
     depends_on:
+      - redis
+      - ollama
       - api
-    volumes:
-      - ./ui-simple:/app
+    restart: always
+
+  # 6. SYSTEM SCHEDULER
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: spio-scheduler
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - api
+    restart: always
 
 volumes:
   redis-data:
+  ollama-data:
