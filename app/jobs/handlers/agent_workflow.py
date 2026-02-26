@@ -676,10 +676,13 @@ def _bangun_prompt_sistem_planner(
         '      {"kind":"schedule_job","target_job_id":"string","inputs":{},"delay_sec":3600}\n'
         "    create proposal step (report opportunities for approval):\n"
         '      {"kind":"create_proposal","title":"string","analysis":"string","proposed_plan":"string","impact":"string"}\n'
+        "    multimedia step (generate images/videos):\n"
+        '      {"kind":"multimedia","action":"generate_image","prompt":"string","branch_id":"string"}\n'
         "  ]\n"
         "}\n\n"
         "AUTONOMY RULES:\n"
         "1) PROACTIVITY: Use 'schedule_job' to follow up on tasks. 24/7 work is possible by chaining.\n"
+        "2) CONTENT: Use 'multimedia' step to create visual assets for social media before posting.\n"
         "2) DISCOVERY: If you find a new opportunity or profit method, use 'create_proposal' to report it. DO NOT execute risky new methods without approval.\n"
         f"1) You are at iteration {current_iteration + 1}/5. If you cannot solve it now, provide a final_message explaining why.\n"
         "2) SELF-CORRECTION: If a previous step failed, analyze why and try a DIFFERENT approach. DO NOT just repeat the same failed command.\n"
@@ -1365,6 +1368,16 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                     perintah_sensitif_disetujui,
                 )
                 iter_results.append(hasil)
+            elif kind == "multimedia":
+                alat_multimedia = ctx.tools.get("multimedia")
+                if not alat_multimedia:
+                    iter_results.append({"kind": "multimedia", "success": False, "error": "multimedia tool not available"})
+                else:
+                    # Automatically inject branch_id if not provided
+                    if "branch_id" not in step:
+                        step["branch_id"] = branch_id_ctx
+                    hasil = await alat_multimedia(step, ctx)
+                    iter_results.append(hasil)
             elif kind == "schedule_job":
                 target_id = str(step.get("target_job_id") or "").strip()
                 delay = int(step.get("delay_sec") or 3600)
