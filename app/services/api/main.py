@@ -2247,3 +2247,20 @@ async def events(
         return rows
     except RedisError:
         return _fallback_payload("/events", [])
+
+# Branch Endpoints (Phase 15 - Holding Suite)
+@app.get("/branches")
+async def api_list_branches():
+    from app.core.branches import list_branches
+    try:
+        return await list_branches()
+    except Exception:
+        return []
+
+@app.get("/branches/{branch_id}")
+async def api_get_branch(branch_id: str):
+    from app.core.branches import get_branch
+    row = await get_branch(branch_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    return row

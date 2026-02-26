@@ -1186,9 +1186,21 @@ export interface Branch {
 }
 
 export const getBranches = async (): Promise<Branch[]> => {
-  return await send<Branch[]>("/branches", "GET");
+  try {
+    return await getJson<Branch[]>("/branches");
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat unit bisnis", []);
+  }
 };
 
-export const getBranch = async (branchId: string): Promise<Branch> => {
-  return await send<Branch>(`/branches/${branchId}`, "GET");
+export const getBranch = async (branchId: string): Promise<Branch | undefined> => {
+  try {
+    return await getJson<Branch>(`/branches/${branchId}`);
+  } catch (error) {
+    return handleApiError(error, "Gagal memuat detail unit bisnis", undefined);
+  }
+};
+
+export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse> => {
+  return await send<PlannerExecuteResponse>("/planner/execute", "POST", payload);
 };

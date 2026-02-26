@@ -12,7 +12,8 @@ import {
   ArrowRight,
   ShieldCheck,
   Activity,
-  Briefcase
+  Briefcase,
+  CheckCircle2
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,7 +55,7 @@ export default function ChairmanDashboard() {
       <section className="rounded-3xl border border-border bg-gradient-to-br from-card to-muted/30 p-8 shadow-sm">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Chairman's Suite</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Chairman&apos;s Suite</h1>
             <p className="text-muted-foreground">
               Selamat datang kembali, Owner. Mengawasi {branches.length} unit bisnis digital aktif.
             </p>
