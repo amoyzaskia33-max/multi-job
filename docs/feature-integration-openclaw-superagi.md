@@ -28,3 +28,63 @@ Dokumen ini mencatat perbandingan fitur strategis yang sudah ada, fitur yang dit
 - SuperAGI multi-agent + monitoring: citeturn1search2turn1search3  
 - SuperAGI memory & prioritization: citeturn1search4turn1search5  
 - SuperAGI enterprise/open-source toolkit: citeturn1search1turn1search6
+
+## Rencana eksekusi terpadu (Phase 1-7)
+
+Target: gabungkan kekuatan OpenClaw (channel + marketplace + approvals + sandbox) dan SuperAGI (multi-agent + memory + observability) agar Multi-Job jadi platform terdepan.
+
+### Phase 1 - Unified trigger + channel gateway
+1. Standarkan model trigger di `app/core/triggers.py` dan `app/core/models.py` (channel, actor, payload, metadata, schedule).
+2. Tambah endpoint trigger di `app/services/api/main.py` (create/list/enable/disable).
+3. Connector inbound di `app/services/connector/main.py` dan `app/core/connectors/` wajib menghasilkan trigger standar.
+4. UI: halaman `ui/src/app/automation` dan `ui/src/app/connectors` untuk membuat trigger lintas channel.
+5. Test: tambah coverage di `tests/test_triggers.py` dan e2e UI workflow trigger.
+
+### Phase 2 - Skill registry v2 + sandbox + marketplace baseline
+1. Perluas spec skill di `app/core/skills.py` (permissions, channels, secrets, rate limit).
+2. Validasi dan resolusi handler di `app/core/handlers_registry.py` + `app/core/registry.py`.
+3. Policy check sebelum eksekusi di `app/core/runner.py` (allowlist/denylist, approval gate).
+4. CLI upgrade di `scripts/spio_skill.py` untuk install/verify/update skill.
+5. UI: `ui/src/app/skills` (filter, policy badge, approval required).
+6. Test: `tests/test_skills.py` dan policy di `tests/test_runner_approval.py`.
+
+### Phase 3 - Multi-agent orchestration
+1. Tambah model agent pool dan resource quota di `app/core/queue.py` dan `app/core/scheduler.py`.
+2. Worker concurrency guard di `app/services/worker/main.py` (per agent/job limits).
+3. Audit eksekusi parallel di `app/core/observability.py` (metrics per agent).
+4. UI: `ui/src/app/agents` dan `ui/src/app/office` untuk status agent + load.
+5. Test: perluas `tests/test_agent_workflow.py` dan `tests/test_queue_fallback_mode.py`.
+
+### Phase 4 - Long-term memory + knowledge layer
+1. Extend memory graph di `app/core/agent_memory.py` (episodic, summary, tags).
+2. Simpan memory link ke runs di `app/core/queue.py` + `app/core/models.py`.
+3. API memory endpoints di `app/services/api/main.py` (get/search/clear).
+4. UI: tampilkan memory di `ui/src/app/runs` dan `ui/src/app/prompt`.
+5. Test: `tests/test_agent_memory.py` dan `tests/test_planner_execute.py`.
+
+### Phase 5 - Governance + compliance
+1. RBAC ketat di `app/core/auth.py` untuk role ops/admin/viewer.
+2. Approval flow standar di `app/core/approval_queue.py` dan `app/core/audit.py`.
+3. Secrets vault di `app/core/integration_configs.py` (encryption, rotate, audit).
+4. UI: `ui/src/app/settings` untuk policy, approvals, secrets.
+5. Test: `tests/test_auth_rbac.py`, `tests/test_approval_queue.py`, `tests/test_audit_helpers.py`.
+
+### Phase 6 - Observability + analytics
+1. Metrics per skill/trigger/job di `app/core/observability.py`.
+2. Timeline event di `app/core/queue.py` dan API `app/services/api/main.py`.
+3. UI: `ui/src/app/experiments`, `ui/src/app/office`, `ui/src/app/runs`.
+4. Test: `tests/test_experiments.py` dan tambah coverage metrics.
+
+### Phase 7 - Deployment + ops polish
+1. Docker compose/ops di `docker-compose.yml` + scripts `start-local.*`.
+2. CLI admin scripts di `scripts/` (backup, upgrade, health check).
+3. Docs ops final di `docs/BUKU_PANDUAN_SISTEM.md` dan `docs/CHECKLIST_OPERASIONAL_HARIAN.md`.
+
+## Checklist parity (OpenClaw + SuperAGI)
+1. Multi-channel triggers (Telegram, webhook, email, voice) - Phase 1.
+2. Marketplace skill + sandbox policy - Phase 2.
+3. Multi-agent parallel orchestration - Phase 3.
+4. Long-term memory + knowledge - Phase 4.
+5. Governance + approval + audit + secrets vault - Phase 5.
+6. Deep observability + timeline analytics - Phase 6.
+7. Deployment tooling + ops playbook - Phase 7.
