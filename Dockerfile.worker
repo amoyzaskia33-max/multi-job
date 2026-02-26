@@ -33,7 +33,7 @@ COPY pyproject.toml .
 RUN poetry install --no-interaction --no-ansi --no-root --without dev
 
 # Install Playwright browsers
-RUN playwright install chromium
+RUN python -m playwright install chromium
 
 # Copy application code
 COPY . .
