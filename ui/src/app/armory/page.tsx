@@ -15,7 +15,9 @@ import {
   Facebook,
   Instagram,
   MessageSquare,
-  Clock
+  Clock,
+  QrCode,
+  Smartphone
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,6 +38,7 @@ export default function ArmoryPage() {
   const [password, setPassword] = useState("");
   const [proxy, setProxy] = useState("");
   const [twoFactor, setTwoFactor] = useState("");
+  const [isLinkingWA, setIsLinkingWA] = useState(false);
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ["armory-accounts"],
@@ -56,6 +59,7 @@ export default function ArmoryPage() {
     setPassword("");
     setProxy("");
     setTwoFactor("");
+    setIsLinkingWA(false);
   };
 
   return (
@@ -90,7 +94,10 @@ export default function ArmoryPage() {
                 <Label>Platform</Label>
                 <select 
                   value={platform} 
-                  onChange={(e) => setPlatform(e.target.value)}
+                  onChange={(e) => {
+                    setPlatform(e.target.value);
+                    if (e.target.value === "whatsapp") setIsLinkingWA(false);
+                  }}
                   className="w-full h-10 rounded-xl border border-input bg-background px-3 py-2 text-sm"
                 >
                   <option value="facebook">Facebook</option>
@@ -99,50 +106,79 @@ export default function ArmoryPage() {
                   <option value="whatsapp">WhatsApp</option>
                 </select>
               </div>
-              <div className="space-y-2">
-                <Label>Username / Email</Label>
-                <Input 
-                  placeholder="e.g. spio_warrior_01" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Password</Label>
-                <Input 
-                  type="password" 
-                  placeholder="••••••••" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Globe className="h-3 w-3" /> Proxy (Opsional)</Label>
-                <Input 
-                  placeholder="ip:port:user:pass" 
-                  value={proxy}
-                  onChange={(e) => setProxy(e.target.value)}
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Key className="h-3 w-3" /> 2FA Secret Key (Opsional)</Label>
-                <Input 
-                  placeholder="ABCD EFGH ..." 
-                  value={twoFactor}
-                  onChange={(e) => setTwoFactor(e.target.value)}
-                  className="rounded-xl font-mono text-xs"
-                />
-              </div>
-              <Button 
-                className="w-full rounded-xl h-11 mt-4" 
-                onClick={() => addMutation.mutate({ platform, username, password, proxy, twoFactor })}
-                disabled={!username || !password}
-              >
-                Simpan ke Gudang
-              </Button>
+
+              {platform === "whatsapp" ? (
+                <div className="space-y-4 pt-2">
+                  {!isLinkingWA ? (
+                    <div className="text-center p-6 border-2 border-dashed rounded-2xl bg-muted/20">
+                      <Smartphone className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground mb-4">Hubungkan nomor WhatsApp baru menggunakan sistem scan QR Code.</p>
+                      <Button className="w-full rounded-xl" onClick={() => setIsLinkingWA(true)}>
+                        <QrCode className="h-4 w-4 mr-2" /> Generate QR Code
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 animate-in fade-in duration-500">
+                      <div className="aspect-square bg-white rounded-2xl border flex items-center justify-center p-4 relative group">
+                        {/* Fake QR for demo */}
+                        <div className="w-full h-full bg-[url('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=SPIO_HOLDCO_LINK')] bg-cover opacity-80 group-hover:opacity-100 transition-opacity"></div>
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <span className="bg-white px-3 py-1 rounded-full text-[10px] font-bold shadow-xl">REFRESH IN 20s</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-center text-muted-foreground">Buka WA di HP Anda &gt; Perangkat Tertaut &gt; Tautkan Perangkat.</p>
+                      <Button variant="outline" className="w-full rounded-xl text-xs" onClick={() => setIsLinkingWA(false)}>Batal</Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Username / Email</Label>
+                    <Input 
+                      placeholder="e.g. spio_warrior_01" 
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Password</Label>
+                    <Input 
+                      type="password" 
+                      placeholder="••••••••" 
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2"><Globe className="h-3 w-3" /> Proxy (Opsional)</Label>
+                    <Input 
+                      placeholder="ip:port:user:pass" 
+                      value={proxy}
+                      onChange={(e) => setProxy(e.target.value)}
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2"><Key className="h-3 w-3" /> 2FA Secret Key (Opsional)</Label>
+                    <Input 
+                      placeholder="ABCD EFGH ..." 
+                      value={twoFactor}
+                      onChange={(e) => setTwoFactor(e.target.value)}
+                      className="rounded-xl font-mono text-xs"
+                    />
+                  </div>
+                  <Button 
+                    className="w-full rounded-xl h-11 mt-4" 
+                    onClick={() => addMutation.mutate({ platform, username, password, proxy, twoFactor })}
+                    disabled={!username || !password}
+                  >
+                    Simpan ke Gudang
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
