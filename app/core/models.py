@@ -55,3 +55,29 @@ class QueueEvent(BaseModel):
     scheduled_at: str  # ISO format string
     timeout_ms: Optional[int] = None
     trace_id: Optional[str] = None
+
+# Trigger models
+class Trigger(BaseModel):
+    trigger_id: str
+    name: str
+    job_id: str
+    channel: str
+    description: Optional[str] = None
+    enabled: bool = True
+    default_payload: Dict[str, Any] = Field(default_factory=dict)
+    secret: Optional[str] = None
+    requires_approval: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    last_fired_run_id: Optional[str] = None
+    last_fired_at: Optional[str] = None
+
+class TriggerPayload(BaseModel):
+    name: Optional[str] = None
+    job_id: Optional[str] = None
+    channel: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+    default_payload: Optional[Dict[str, Any]] = None
+    secret: Optional[str] = None
+    requires_approval: Optional[bool] = None

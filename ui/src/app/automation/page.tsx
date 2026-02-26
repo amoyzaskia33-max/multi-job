@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock3, PlayCircle, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Clock3, PlayCircle, ShieldAlert, Zap, Trash2, Webhook, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import {
   approveApprovalRequest,
+  deleteTrigger,
   disableJob,
   enableJob,
+  fireTriggerWebhook,
   getAgentWorkflowAutomations,
   getApprovalRequests,
+  getTriggers,
   rejectApprovalRequest,
   triggerJob,
   upsertAgentWorkflowAutomation,
+  upsertTrigger,
   type AgentWorkflowAutomationJob,
   type AgentWorkflowAutomationRequest,
   type ApprovalRequest,
+  type Trigger,
 } from "@/lib/api";
 
 type FilterApproval = "all" | "pending" | "approved" | "rejected";
@@ -327,9 +332,283 @@ const hitungRingkasanJalur = (jobs: AgentWorkflowAutomationJob[]): RingkasanJalu
     });
 };
 
+function TriggersTab() {
+  const queryClient = useQueryClient();
+  const [triggerId, setTriggerId] = useState("");
+  const [name, setName] = useState("");
+  const [jobId, setJobId] = useState("");
+  const [channel, setChannel] = useState("webhook");
+  const [description, setDescription] = useState("");
+  const [enabled, setEnabled] = useState(true);
+  const [secret, setSecret] = useState("");
+  const [requiresApproval, setRequiresApproval] = useState(false);
+
+  const { data: triggers = [], isLoading } = useQuery({
+    queryKey: ["triggers"],
+    queryFn: getTriggers,
+  });
+
+  const upsertMutation = useMutation({
+    mutationFn: (payload: any) => upsertTrigger(triggerId, payload),
+    onSuccess: () => {
+      toast.success("Trigger berhasil disimpan.");
+      queryClient.invalidateQueries({ queryKey: ["triggers"] });
+      resetForm();
+    },
+    onError: (error: any) => toast.error(`Gagal menyimpan trigger: ${error.message}`),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteTrigger,
+    onSuccess: () => {
+      toast.success("Trigger berhasil dihapus.");
+      queryClient.invalidateQueries({ queryKey: ["triggers"] });
+    },
+  });
+
+  const resetForm = () => {
+    setTriggerId("");
+    setName("");
+    setJobId("");
+    setChannel("webhook");
+    setDescription("");
+    setEnabled(true);
+    setSecret("");
+    setRequiresApproval(false);
+  };
+
+  const handleEdit = (t: Trigger) => {
+    setTriggerId(t.trigger_id);
+    setName(t.name);
+    setJobId(t.job_id);
+    setChannel(t.channel);
+    setDescription(t.description || "");
+    setEnabled(t.enabled);
+    setRequiresApproval(t.requires_approval || false);
+    // Secret is not returned from API for security
+    setSecret("");
+  };
+
+  const handleTest = async (t: Trigger) => {
+    if (t.channel !== "webhook") {
+      toast.info("Testing via UI saat ini hanya didukung untuk channel webhook.");
+      return;
+    }
+    try {
+      await fireTriggerWebhook(t.trigger_id, t.default_payload || {});
+      toast.success(`Trigger ${t.trigger_id} berhasil dipicu.`);
+    } catch (err: any) {
+      toast.error(`Gagal memicu trigger: ${err.message}`);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Kelola Trigger Lintas Kanal</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              upsertMutation.mutate({
+                name,
+                job_id: jobId,
+                channel,
+                description,
+                enabled,
+                secret: secret || undefined,
+                requires_approval: requiresApproval,
+              });
+            }}
+          >
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="trigger-id">Trigger ID (unik)</Label>
+                <Input
+                  id="trigger-id"
+                  value={triggerId}
+                  onChange={(e) => setTriggerId(e.target.value)}
+                  placeholder="e.g., github-webhook-main"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="trigger-name">Nama Trigger</Label>
+                <Input
+                  id="trigger-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., GitHub Main Branch Push"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="target-job-id">Target Job ID</Label>
+                <Input
+                  id="target-job-id"
+                  value={jobId}
+                  onChange={(e) => setJobId(e.target.value)}
+                  placeholder="e.g., daily-report"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="trigger-channel">Channel</Label>
+                <select
+                  id="trigger-channel"
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-card px-3 py-2 text-sm"
+                >
+                  <option value="webhook">Webhook</option>
+                  <option value="telegram">Telegram</option>
+                  <option value="slack">Slack</option>
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                  <option value="voice">Voice</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="trigger-secret">Secret / Token (opsional)</Label>
+                <Input
+                  id="trigger-secret"
+                  type="password"
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder="Kosongkan jika tidak berubah"
+                />
+              </div>
+              <div className="flex items-center space-x-4 pt-8">
+                <div className="flex items-center space-x-2">
+                  <Switch id="trigger-enabled" checked={enabled} onCheckedChange={setEnabled} />
+                  <Label htmlFor="trigger-enabled">Aktif</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="trigger-approval"
+                    checked={requiresApproval}
+                    onCheckedChange={setRequiresApproval}
+                  />
+                  <Label htmlFor="trigger-approval">Butuh Approval</Label>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="trigger-desc">Deskripsi</Label>
+              <Textarea
+                id="trigger-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Jelaskan kegunaan trigger ini..."
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={upsertMutation.isPending}>
+                <Zap className="mr-2 h-4 w-4" />
+                Simpan Trigger
+              </Button>
+              <Button type="button" variant="outline" onClick={resetForm}>
+                Reset Form
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Daftar Trigger Terdaftar</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="py-8 text-center text-muted-foreground">Memuat trigger...</div>
+          ) : triggers.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">Belum ada trigger terdaftar.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama & ID</TableHead>
+                  <TableHead>Channel</TableHead>
+                  <TableHead>Target Job</TableHead>
+                  <TableHead>Approval</TableHead>
+                  <TableHead>Terakhir Dipicu</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {triggers.map((t) => (
+                  <TableRow key={t.trigger_id}>
+                    <TableCell>
+                      <div className="font-medium text-foreground">{t.name}</div>
+                      <div className="text-xs text-muted-foreground">{t.trigger_id}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2 uppercase">
+                        {t.channel === "webhook" && <Webhook className="h-3 w-3" />}
+                        {t.channel === "telegram" && <MessageSquare className="h-3 w-3" />}
+                        {t.channel}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{t.job_id}</TableCell>
+                    <TableCell>
+                      {t.requires_approval ? (
+                        <span className="rounded bg-yellow-100 px-2 py-0.5 text-[10px] font-bold text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
+                          REQUIRED
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Auto</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {t.last_fired_at ? formatWaktu(t.last_fired_at) : "Belum pernah"}
+                    </TableCell>
+                    <TableCell>
+                      <span className={t.enabled ? "status-baik" : "status-buruk"}>
+                        {t.enabled ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleTest(t)}>
+                          Test
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleEdit(t)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => {
+                            if (confirm(`Hapus trigger ${t.trigger_id}?`)) {
+                              deleteMutation.mutate(t.trigger_id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function AutomationPage() {
   const klienQuery = useQueryClient();
 
+  const [activeTab, setActiveTab] = useState<"automation" | "triggers">("automation");
   const [idJob, setIdJob] = useState("workflow_trend_harian");
   const [isiPrompt, setIsiPrompt] = useState(
     "Cari tren TikTok niche otomotif, rangkum wawasan, lalu siapkan rekomendasi konten.",
@@ -734,7 +1013,24 @@ export default function AutomationPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Buat tugas berulang untuk agen, lalu putuskan persetujuan puzzle/skill baru langsung dari satu layar.
         </p>
+        <div className="mt-5 flex gap-2">
+          <Button
+            variant={activeTab === "automation" ? "default" : "outline"}
+            onClick={() => setActiveTab("automation")}
+          >
+            Otomasi Workflow
+          </Button>
+          <Button
+            variant={activeTab === "triggers" ? "default" : "outline"}
+            onClick={() => setActiveTab("triggers")}
+          >
+            Trigger Lintas Kanal
+          </Button>
+        </div>
       </section>
+
+      {activeTab === "automation" ? (
+        <>
 
       <Card className="bg-card">
         <CardHeader>
@@ -1278,6 +1574,10 @@ export default function AutomationPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      ) : (
+        <TriggersTab />
+      )}
     </div>
   );
 }

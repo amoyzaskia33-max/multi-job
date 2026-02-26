@@ -64,7 +64,16 @@ from app.core.experiments import (
     set_experiment_enabled,
     upsert_experiment,
 )
-from app.core.models import JobSpec, QueueEvent, RetryPolicy, Run, RunStatus, Schedule
+from app.core.models import (
+    JobSpec,
+    QueueEvent,
+    RetryPolicy,
+    Run,
+    RunStatus,
+    Schedule,
+    Trigger,
+    TriggerPayload,
+)
 from app.core.skills import (
     delete_skill as hapus_skill,
     get_skill,
@@ -537,23 +546,12 @@ class ExperimentEnabledRequest(BaseModel):
     enabled: bool
 
 
-class TriggerUpsertRequest(BaseModel):
+class TriggerUpsertRequest(TriggerPayload):
     name: str = Field(min_length=1, max_length=120)
     job_id: str
     channel: str
-    description: str = ""
-    enabled: bool = True
-    default_payload: Dict[str, Any] = Field(default_factory=dict)
-    secret: Optional[str] = None
-    requires_approval: bool = False
 
-
-class TriggerView(TriggerUpsertRequest):
-    trigger_id: str
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    last_fired_run_id: Optional[str] = None
-    last_fired_at: Optional[str] = None
+class TriggerView(Trigger):
     secret_present: bool = False
 
 

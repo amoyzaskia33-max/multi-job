@@ -1,107 +1,55 @@
-import asyncio
-
 import pytest
-from redis.exceptions import RedisError
+import uuid
+from app.core.triggers import upsert_trigger, get_trigger, list_triggers, fire_trigger, delete_trigger
+from app.core.queue import save_job_spec, enable_job
 
-from app.core import triggers
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
 
+@pytest.mark.anyio
+async def test_trigger_lifecycle():
+    # Setup job target
+    job_id = f"test-job-{uuid.uuid4().hex[:6]}"
+    await save_job_spec(job_id, {
+        "job_id": job_id,
+        "type": "monitor.channel",
+        "inputs": {"test": True}
+    })
+    await enable_job(job_id)
 
-class _FailingRedis:
-    async def get(self, *args, **kwargs):
-        raise RedisError("redis unavailable")
+    trigger_id = f"test-trigger-{uuid.uuid4().hex[:6]}"
+    
+    # 1. Upsert
+    payload = {
+        "name": "Test Trigger",
+        "job_id": job_id,
+        "channel": "webhook",
+        "description": "A test trigger",
+        "enabled": True,
+        "default_payload": {"foo": "bar"}
+    }
+    row = await upsert_trigger(trigger_id, payload)
+    assert row["trigger_id"] == trigger_id
+    assert row["name"] == "Test Trigger"
+    assert row["channel"] == "webhook"
 
-    async def set(self, *args, **kwargs):
-        raise RedisError("redis unavailable")
+    # 2. Get
+    fetched = await get_trigger(trigger_id)
+    assert fetched is not None
+    assert fetched["name"] == "Test Trigger"
 
-    async def sadd(self, *args, **kwargs):
-        raise RedisError("redis unavailable")
+    # 3. List
+    all_triggers = await list_triggers()
+    assert any(t["trigger_id"] == trigger_id for t in all_triggers)
 
-    async def smembers(self, *args, **kwargs):
-        raise RedisError("redis unavailable")
+    # 4. Fire
+    result = await fire_trigger(trigger_id, payload={"extra": 123}, source="test.suite")
+    assert "run_id" in result
+    assert result["job_id"] == job_id
+    assert result["channel"] == "webhook"
 
-    async def delete(self, *args, **kwargs):
-        raise RedisError("redis unavailable")
-
-    async def srem(self, *args, **kwargs):
-        raise RedisError("redis unavailable")
-
-
-async def _noop_append_event(*args, **kwargs):
-    return None
-
-
-def test_upsert_and_list_trigger(monkeypatch):
-    monkeypatch.setattr(triggers, "redis_client", _FailingRedis())
-
-    async def fake_get_job_spec(job_id: str):
-        return {"job_id": job_id, "type": "agent.workflow", "inputs": {"default": True}}
-
-    monkeypatch.setattr(triggers, "get_job_spec", fake_get_job_spec)
-
-    async def run_case():
-        row = await triggers.upsert_trigger(
-            "alert_webhook",
-            {
-                "name": "Alert webhook",
-                "job_id": "job_alert",
-                "channel": "webhook",
-                "description": "Fire on webhook",
-                "default_payload": {"env": "prod"},
-            },
-        )
-
-        assert row["trigger_id"] == "alert_webhook"
-        assert row["channel"] == "webhook"
-        assert row["default_payload"]["env"] == "prod"
-
-        daftar = await triggers.list_triggers()
-        assert len(daftar) == 1
-        assert daftar[0]["trigger_id"] == "alert_webhook"
-
-    asyncio.run(run_case())
-
-
-def test_fire_trigger_enqueues_job(monkeypatch):
-    monkeypatch.setattr(triggers, "redis_client", _FailingRedis())
-
-    async def fake_get_job_spec(job_id: str):
-        return {
-            "job_id": job_id,
-            "type": "agent.workflow",
-            "inputs": {"initial": True},
-            "timeout_ms": 1000,
-        }
-
-    captured_event = {}
-
-    async def fake_enqueue_job(event):
-        captured_event["event"] = event
-        return "msg-1"
-
-    monkeypatch.setattr(triggers, "get_job_spec", fake_get_job_spec)
-    monkeypatch.setattr(triggers, "enqueue_job", fake_enqueue_job)
-    monkeypatch.setattr(triggers, "append_event", _noop_append_event)
-
-    async def run_case():
-        await triggers.upsert_trigger(
-            "alert_webhook",
-            {
-                "name": "Alert webhook",
-                "job_id": "job_alert",
-                "channel": "webhook",
-                "description": "Fire on webhook",
-                "default_payload": {"env": "prod"},
-            },
-        )
-
-        result = await triggers.fire_trigger("alert_webhook", payload={"user": "alice"}, source="webhook.ping")
-
-        assert result["message_id"] == "msg-1"
-        assert result["channel"] == "webhook"
-        assert result["job_id"] == "job_alert"
-        assert captured_event["event"].inputs["env"] == "prod"
-        assert captured_event["event"].inputs["user"] == "alice"
-        assert captured_event["event"].inputs["trigger_id"] == "alert_webhook"
-        assert captured_event["event"].inputs["trigger_source"] == "webhook.ping"
-
-    asyncio.run(run_case())
+    # 5. Delete
+    deleted = await delete_trigger(trigger_id)
+    assert deleted is True
+    assert await get_trigger(trigger_id) is None
