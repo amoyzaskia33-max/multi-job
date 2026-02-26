@@ -112,3 +112,28 @@ class BranchBlueprint(BaseModel):
     description: str
     base_strategy: str
     default_jobs: List[Dict[str, Any]] = Field(default_factory=list) # Specs for Hunter, Marketer, Closer
+
+# Armory Models (Phase 18)
+class AccountStatus(str, Enum):
+    PENDING = "pending"
+    VERIFYING = "verifying"
+    READY = "ready"
+    COOLDOWN = "cooldown"
+    ACTION_REQUIRED = "action_required"
+    BANNED = "banned"
+
+class Account(BaseModel):
+    account_id: str
+    platform: str # facebook, instagram, tiktok, whatsapp
+    username: str
+    password_encrypted: Optional[str] = None
+    proxy: Optional[str] = None # ip:port:user:pass
+    two_factor_key: Optional[str] = None
+    status: AccountStatus = AccountStatus.PENDING
+    branch_id: Optional[str] = None # Deployed to which branch
+    cookies_json: Optional[str] = None # Encrypted session data
+    fingerprint_data: Dict[str, Any] = Field(default_factory=dict)
+    last_active: Optional[str] = None
+    created_at: str
+    updated_at: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)

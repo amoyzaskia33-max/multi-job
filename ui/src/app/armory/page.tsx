@@ -27,9 +27,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-// Mock API calls for Armory (will be connected to backend later)
-const getAccounts = async () => []; 
-const addAccount = async (data: any) => data;
+import { 
+  getArmoryAccounts,
+  addArmoryAccount,
+  type Account
+} from "@/lib/api";
 
 export default function ArmoryPage() {
   const queryClient = useQueryClient();
@@ -42,11 +44,12 @@ export default function ArmoryPage() {
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ["armory-accounts"],
-    queryFn: getAccounts,
+    queryFn: () => getArmoryAccounts(),
+    refetchInterval: 5000,
   });
 
   const addMutation = useMutation({
-    mutationFn: addAccount,
+    mutationFn: addArmoryAccount,
     onSuccess: () => {
       toast.success("Pasukan baru telah bergabung di gudang amunisi.");
       queryClient.invalidateQueries({ queryKey: ["armory-accounts"] });
@@ -234,18 +237,28 @@ export default function ArmoryPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  accounts.map((acc: any, i: number) => (
-                    <TableRow key={i} className="hover:bg-muted/30">
+                  accounts.map((acc: Account) => (
+                    <TableRow key={acc.account_id} className="hover:bg-muted/30">
                       <TableCell>
-                        {acc.platform === "facebook" && <Facebook className="h-4 w-4 text-blue-600" />}
-                        {acc.platform === "instagram" && <Instagram className="h-4 w-4 text-pink-600" />}
-                        {acc.platform === "tiktok" && <MessageSquare className="h-4 w-4 text-black" />}
+                        <div className="flex items-center gap-2">
+                          {acc.platform === "facebook" && <Facebook className="h-4 w-4 text-blue-600" />}
+                          {acc.platform === "instagram" && <Instagram className="h-4 w-4 text-pink-600" />}
+                          {acc.platform === "tiktok" && <MessageSquare className="h-4 w-4 text-black" />}
+                          {acc.platform === "whatsapp" && <MessageSquare className="h-4 w-4 text-emerald-600" />}
+                          <span className="capitalize text-xs font-medium">{acc.platform}</span>
+                        </div>
                       </TableCell>
                       <TableCell className="font-bold text-xs">{acc.username}</TableCell>
                       <TableCell className="font-mono text-[10px] text-muted-foreground">{acc.proxy || "None"}</TableCell>
                       <TableCell>
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="h-3 w-3" /> READY
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          acc.status === "ready" ? "text-emerald-500 bg-emerald-500/10" :
+                          acc.status === "verifying" ? "text-amber-500 bg-amber-500/10" :
+                          "text-muted-foreground bg-muted"
+                        }`}>
+                          {acc.status === "ready" && <CheckCircle2 className="h-3 w-3" />}
+                          {acc.status === "verifying" && <Clock className="h-3 w-3 animate-spin" />}
+                          {acc.status.toUpperCase()}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">

@@ -75,7 +75,19 @@ def _get_agent_pool() -> str:
     return str(os.getenv("AGENT_POOL", "default")).strip().lower()
 
 async def _proses_satu_job(worker_id: str, data_event: dict):
-    tipe_job = data_event.get("type")
+    tipe_event = data_event.get("type")
+    
+    # Handle Armory Events (Internal System Tasks)
+    if tipe_event == "armory.account_added":
+        from app.core.armory import verify_account_stealth
+        account_id = data_event.get("data", {}).get("account_id")
+        if account_id:
+            logger.info(f"Starting stealth onboarding for account: {account_id}")
+            await verify_account_stealth(account_id)
+        return
+
+    # Handle standard job processing...
+    tipe_job = tipe_event
     
     # Check pool assignment
     job_pool = str(data_event.get("agent_pool") or "default").strip().lower()

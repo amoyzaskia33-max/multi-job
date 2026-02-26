@@ -1193,11 +1193,42 @@ export const getBranches = async (): Promise<Branch[]> => {
   }
 };
 
-export const getBranch = async (branchId: string): Promise<Branch | undefined> => {
+export interface Account {
+  account_id: string;
+  platform: string;
+  username: string;
+  proxy?: string;
+  two_factor_key?: string;
+  status: "pending" | "verifying" | "ready" | "cooldown" | "action_required" | "banned";
+  branch_id?: string;
+  created_at: string;
+  updated_at: string;
+  metadata: Record<string, any>;
+}
+
+export const getArmoryAccounts = async (platform?: string): Promise<Account[]> => {
   try {
-    return await getJson<Branch>(`/branches/${branchId}`);
+    const query = platform ? `?platform=${platform}` : "";
+    return await getJson<Account[]>(`/armory/accounts${query}`);
   } catch (error) {
-    return handleApiError(error, "Gagal memuat detail unit bisnis", undefined);
+    return handleApiError(error, "Gagal memuat daftar akun", []);
+  }
+};
+
+export const addArmoryAccount = async (payload: any): Promise<Account | undefined> => {
+  try {
+    return await send<Account>("/armory/accounts", "POST", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menambahkan akun", undefined);
+  }
+};
+
+export const deployAccount = async (accountId: string, branchId: string): Promise<boolean> => {
+  try {
+    await send(`/armory/accounts/${accountId}/deploy?branch_id=${branchId}`, "POST");
+    return true;
+  } catch (error) {
+    return handleApiError(error, "Gagal menugaskan akun", false);
   }
 };
 

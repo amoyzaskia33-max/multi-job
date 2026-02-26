@@ -2264,3 +2264,36 @@ async def api_get_branch(branch_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Branch not found")
     return row
+
+# Armory Endpoints (Phase 18)
+class AccountAddRequest(BaseModel):
+    platform: str
+    username: str
+    password: str
+    proxy: Optional[str] = None
+    two_factor: Optional[str] = None
+
+@app.get("/armory/accounts")
+async def api_list_accounts(platform: Optional[str] = None):
+    from app.core.armory import list_all_accounts
+    return await list_all_accounts(platform=platform)
+
+@app.post("/armory/accounts")
+async def api_add_account(request: AccountAddRequest):
+    from app.core.armory import add_account
+    try:
+        return await add_account(
+            platform=request.platform,
+            username=request.username,
+            password=request.password,
+            proxy=request.proxy,
+            two_factor=request.two_factor
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/armory/accounts/{account_id}/deploy")
+async def api_deploy_account(account_id: str, branch_id: str):
+    from app.core.armory import deploy_account_to_branch
+    await deploy_account_to_branch(account_id, branch_id)
+    return {"status": "deployed"}
