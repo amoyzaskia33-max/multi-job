@@ -75,3 +75,30 @@ Rollback jika:
 - Handbook utama: `docs/BUKU_PANDUAN_SISTEM.md`
 - Checklist harian: `docs/CHECKLIST_OPERASIONAL_HARIAN.md`
 - Template insiden: `docs/TEMPLATE_INSIDEN_POSTMORTEM.md`
+
+## 11) Playwright `spawn EPERM` di Windows, apa solusinya?
+
+Gunakan helper UI E2E yang memakai Chrome sistem:
+
+- CMD: `e2e-local.cmd`
+- PowerShell: `.\e2e-local.ps1`
+
+Helper akan mengaktifkan `E2E_USE_SYSTEM_CHROME=1` supaya Playwright tidak perlu
+download browser dan menghindari error izin spawn.
+
+## 12) `npm audit` gagal karena registry/cache, apa yang harus dilakukan?
+
+Jalankan ulang dengan cache lokal:
+
+```bash
+cmd /c "set npm_config_cache=%cd%\.npm-cache&& npm audit --audit-level=high"
+```
+
+PowerShell:
+```powershell
+$env:npm_config_cache = "$pwd\.npm-cache"
+npm audit --audit-level=high
+```
+
+Jika akses registry diblokir, jalankan audit dari jaringan yang bisa akses registry
+atau andalkan audit CI.

@@ -134,6 +134,21 @@ Logs are stored in:
 .\runtime-logs
 ```
 
+## UI E2E (Playwright)
+
+From the UI directory, run:
+```bash
+e2e-local.cmd
+```
+
+Or via PowerShell:
+```powershell
+.\e2e-local.ps1
+```
+
+Both scripts set `E2E_USE_SYSTEM_CHROME=1` so Playwright uses the system Chrome,
+which helps avoid `spawn EPERM` errors in restricted Windows environments.
+
 ## API Endpoints
 
 - `GET /healthz` - Health check

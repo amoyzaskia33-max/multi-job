@@ -11,6 +11,9 @@ __pycache__/
 .venv/
 venv/
 
+# Poetry
+poetry.lock
+
 # Node / Next.js
 node_modules/
 ui/node_modules/
@@ -21,6 +24,10 @@ ui-simple/.next/
 ui/test-results/
 ui/playwright-report/
 ui/blob-report/
+ui/.playwright/
+ui/.npm-cache/
+ui/e2e-local.cmd
+ui/e2e-local.ps1
 dist/
 build/
 
@@ -28,6 +35,7 @@ build/
 *.log
 *.err.log
 runtime-logs/
+.tmp_backend_logs.zip
 
 # OS/editor
 .DS_Store

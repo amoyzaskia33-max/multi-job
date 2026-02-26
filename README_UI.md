@@ -50,6 +50,21 @@ npm run serve
 ```
 Then open [http://127.0.0.1:3000](http://127.0.0.1:3000)
 
+### Running UI E2E (Playwright)
+
+1. From the UI directory, run the helper script:
+```bash
+e2e-local.cmd
+```
+
+If you prefer PowerShell:
+```powershell
+.\e2e-local.ps1
+```
+
+Both scripts set `E2E_USE_SYSTEM_CHROME=1` so Playwright uses the system Chrome,
+which avoids `spawn EPERM` errors in restricted Windows environments.
+
 ## Environment Variables
 
 The UI uses the following environment variables:
@@ -73,6 +88,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 ```
+
+### npm audit Error (Registry / Cache)
+If `npm audit --audit-level=high` fails due to registry errors or cache write issues, retry with a
+local cache path:
+
+```bash
+cmd /c "set npm_config_cache=%cd%\.npm-cache&& npm audit --audit-level=high"
+```
+
+PowerShell:
+```powershell
+$env:npm_config_cache = "$pwd\.npm-cache"
+npm audit --audit-level=high
+```
+
+If registry access is blocked, run the audit from a network with registry access or rely on CI.
 
 ### Port Conflicts
 - UI runs on port 3000

@@ -9,6 +9,10 @@ const apiCommand = `${pythonExecutable} -m uvicorn app.services.api.main:app --h
 const uiCommand = isWindows
   ? "cmd /c npm run build && npx next start -H 127.0.0.1 -p 5174"
   : "npm run build && npx next start -H 127.0.0.1 -p 5174";
+const useSystemChrome = process.env.E2E_USE_SYSTEM_CHROME === "1";
+const chromiumProjectUse = useSystemChrome
+  ? { ...devices["Desktop Chrome"], channel: "chrome" }
+  : { ...devices["Desktop Chrome"] };
 
 export default defineConfig({
   testDir: "./e2e",
@@ -31,7 +35,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: chromiumProjectUse,
     },
   ],
   webServer: [

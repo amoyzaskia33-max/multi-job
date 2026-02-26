@@ -222,6 +222,21 @@ cd ui
 npm run e2e
 ```
 
+Jika Playwright gagal dengan `spawn EPERM` di Windows, gunakan helper:
+
+```powershell
+.\e2e-local.ps1
+```
+
+Atau via CMD:
+
+```bash
+e2e-local.cmd
+```
+
+Helper di atas akan mengaktifkan `E2E_USE_SYSTEM_CHROME=1` agar Playwright memakai
+Chrome sistem (menghindari download browser dan error izin).
+
 ### 8.2 Security audit UI
 
 ```bash
