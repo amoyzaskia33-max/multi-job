@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. PUSAT ANTREAN & MEMORI: Redis
+  # 1. PUSAT ANTREAN & MEMORI: Redis (Wajib Ada, Sangat Ringan)
   redis:
     image: redis:7-alpine
     container_name: spio-redis
@@ -12,7 +12,7 @@ services:
     command: redis-server --appendonly yes
     restart: always
 
-  # 2. MOTHER-SHIP: API
+  # 2. MOTHER-SHIP: API (Pusat Kendali)
   api:
     build:
       context: .
@@ -21,11 +21,11 @@ services:
     ports:
       - "8000:8000"
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway" # Agar bisa akses AI di luar Docker
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - LOCAL_AI_URL=${LOCAL_AI_URL:-http://host.docker.internal:8080/v1}
+      - LOCAL_AI_URL=${LOCAL_AI_URL}
       - PLANNER_AI_MODEL=${PLANNER_AI_MODEL}
       - ARMORY_MASTER_KEY=${ARMORY_MASTER_KEY}
     depends_on:
@@ -46,7 +46,7 @@ services:
       - api
     restart: always
 
-  # 4. TEMPLATE UNIT BISNIS
+  # 4. UNIT BISNIS TEMPLATE (Agency)
   unit-agency:
     build:
       context: .
@@ -58,7 +58,7 @@ services:
       - AGENT_POOL=agency
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - LOCAL_AI_URL=${LOCAL_AI_URL:-http://host.docker.internal:8080/v1}
+      - LOCAL_AI_URL=${LOCAL_AI_URL}
       - AI_NODE_URL=${AI_NODE_URL}
       - TELEGRAM_NOTIF_TOKEN=${TELEGRAM_NOTIF_TOKEN}
       - TELEGRAM_NOTIF_CHAT_ID=${TELEGRAM_NOTIF_CHAT_ID}
