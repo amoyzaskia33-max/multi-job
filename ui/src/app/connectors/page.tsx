@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
   approveApprovalRequest,
+  deleteTrigger,
   fireTriggerEmail,
   fireTriggerSlack,
   fireTriggerSms,
@@ -23,8 +25,9 @@ import {
   getConnectors,
   getTriggers,
   rejectApprovalRequest,
+  upsertTrigger,
 } from "@/lib/api";
-import type { ApprovalRequest } from "@/lib/api";
+import type { ApprovalRequest, Trigger } from "@/lib/api";
 
 const ambilLabelStatusKoneksi = (status: string) => {
   if (status === "online") return "Aktif";
@@ -95,6 +98,15 @@ export default function ConnectorsPage() {
   const [slackResponseUrl, setSlackResponseUrl] = useState("");
   const [smsPhoneNumber, setSmsPhoneNumber] = useState("");
   const [smsMessage, setSmsMessage] = useState("");
+  const [formTriggerId, setFormTriggerId] = useState("");
+  const [formTriggerName, setFormTriggerName] = useState("");
+  const [formJobId, setFormJobId] = useState("");
+  const [formChannel, setFormChannel] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formEnabled, setFormEnabled] = useState(true);
+  const [formRequiresApproval, setFormRequiresApproval] = useState(false);
+  const [formDefaultPayloadText, setFormDefaultPayloadText] = useState("{}");
+  const [formSecret, setFormSecret] = useState("");
   const [triggerApprovalFilter, setTriggerApprovalFilter] = useState<TriggerApprovalFilter>("pending");
   const [approverName, setApproverName] = useState("ops");
   const [busyApprovalId, setBusyApprovalId] = useState<string | null>(null);
@@ -122,6 +134,38 @@ export default function ConnectorsPage() {
   });
 
   const selectedTrigger = triggers.find((trigger) => trigger.trigger_id === selectedTriggerId);
+  const resetTriggerForm = () => {
+    setFormTriggerId("");
+    setFormTriggerName("");
+    setFormJobId("");
+    setFormChannel("");
+    setFormDescription("");
+    setFormEnabled(true);
+    setFormRequiresApproval(false);
+    setFormDefaultPayloadText("{}");
+    setFormSecret("");
+  };
+
+  const applyTriggerToForm = (trigger: Trigger) => {
+    setFormTriggerId(trigger.trigger_id);
+    setFormTriggerName(trigger.name || "");
+    setFormJobId(trigger.job_id || "");
+    setFormChannel(trigger.channel || "");
+    setFormDescription(trigger.description || "");
+    setFormEnabled(Boolean(trigger.enabled));
+    setFormRequiresApproval(Boolean(trigger.requires_approval));
+    try {
+      setFormDefaultPayloadText(JSON.stringify(trigger.default_payload || {}, null, 2));
+    } catch {
+      setFormDefaultPayloadText("{}");
+    }
+    setFormSecret("");
+  };
+
+  useEffect(() => {
+    if (!selectedTrigger) return;
+    applyTriggerToForm(selectedTrigger);
+  }, [selectedTriggerId, selectedTrigger]);
   const triggerApprovalRows = useMemo(() => {
     return daftarTriggerApproval
       .map((approval) => ({
@@ -271,6 +315,83 @@ export default function ConnectorsPage() {
     },
   });
 
+  const upsertTriggerMutation = useMutation({
+    mutationFn: async () => {
+      const triggerId = formTriggerId.trim();
+      if (!triggerId) {
+        throw new Error("Trigger ID wajib diisi.");
+      }
+      const name = formTriggerName.trim();
+      if (!name) {
+        throw new Error("Nama trigger wajib diisi.");
+      }
+      const jobId = formJobId.trim();
+      if (!jobId) {
+        throw new Error("Job ID wajib diisi.");
+      }
+      const channel = formChannel.trim().toLowerCase();
+      if (!channel) {
+        throw new Error("Channel trigger wajib diisi.");
+      }
+
+      let defaultPayload: Record<string, unknown> = {};
+      if (formDefaultPayloadText.trim()) {
+        try {
+          const parsed = JSON.parse(formDefaultPayloadText);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            throw new Error("invalid");
+          }
+          defaultPayload = parsed as Record<string, unknown>;
+        } catch {
+          throw new Error("Default payload harus berupa JSON objek.");
+        }
+      }
+
+      const payload = {
+        name,
+        job_id: jobId,
+        channel,
+        description: formDescription.trim(),
+        enabled: formEnabled,
+        default_payload: defaultPayload,
+        requires_approval: formRequiresApproval,
+      } as const;
+
+      const secret = formSecret.trim();
+      const withSecret = secret ? { ...payload, secret } : payload;
+      return await upsertTrigger(triggerId, withSecret);
+    },
+    onSuccess: (row) => {
+      if (!row) return;
+      toast.success(`Trigger '${row.trigger_id}' tersimpan.`);
+      queryClient.invalidateQueries({ queryKey: ["triggers"] });
+      setSelectedTriggerId(row.trigger_id);
+      setFormSecret("");
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Gagal menyimpan trigger.";
+      toast.error(message);
+    },
+  });
+
+  const deleteTriggerMutation = useMutation({
+    mutationFn: async (triggerId: string) => {
+      return await deleteTrigger(triggerId);
+    },
+    onSuccess: (_, triggerId) => {
+      toast.success(`Trigger '${triggerId}' dihapus.`);
+      queryClient.invalidateQueries({ queryKey: ["triggers"] });
+      if (selectedTriggerId === triggerId) {
+        setSelectedTriggerId("");
+        resetTriggerForm();
+      }
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Gagal menghapus trigger.";
+      toast.error(message);
+    },
+  });
+
   const koneksiTersaring = useMemo(() => {
     return daftarKoneksi.filter((koneksi) => {
       const kunci = `${koneksi.channel} ${koneksi.account_id} ${koneksi.status}`.toLowerCase();
@@ -368,7 +489,18 @@ export default function ConnectorsPage() {
                 id="trigger-select"
                 className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 value={selectedTriggerId}
-                onChange={(event) => setSelectedTriggerId(event.target.value)}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  setSelectedTriggerId(nextId);
+                  if (!nextId) {
+                    resetTriggerForm();
+                    return;
+                  }
+                  const found = triggers.find((trigger) => trigger.trigger_id === nextId);
+                  if (found) {
+                    applyTriggerToForm(found);
+                  }
+                }}
               >
                 <option value="">— tidak dipilih —</option>
                 {triggerTersaring.map((trigger) => (
@@ -379,9 +511,135 @@ export default function ConnectorsPage() {
               </select>
             </div>
           </div>
+          <div className="space-y-4 rounded-xl border border-border/80 bg-muted/10 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Editor Trigger</p>
+                <p className="text-xs text-muted-foreground">
+                  Buat atau perbarui trigger lintas channel dari sini.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={resetTriggerForm}>
+                Trigger Baru
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="space-y-2">
+                <Label htmlFor="form-trigger-id">Trigger ID</Label>
+                <Input
+                  id="form-trigger-id"
+                  placeholder="alert_webhook"
+                  value={formTriggerId}
+                  onChange={(event) => setFormTriggerId(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="form-trigger-name">Nama</Label>
+                <Input
+                  id="form-trigger-name"
+                  placeholder="Alert webhook"
+                  value={formTriggerName}
+                  onChange={(event) => setFormTriggerName(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="form-trigger-job">Job ID</Label>
+                <Input
+                  id="form-trigger-job"
+                  placeholder="job_alert"
+                  value={formJobId}
+                  onChange={(event) => setFormJobId(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="form-trigger-channel">Channel</Label>
+                <Input
+                  id="form-trigger-channel"
+                  placeholder="webhook / telegram / email / slack / sms / voice"
+                  value={formChannel}
+                  onChange={(event) => setFormChannel(event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="form-trigger-desc">Deskripsi</Label>
+                <Input
+                  id="form-trigger-desc"
+                  placeholder="Penjelasan singkat trigger"
+                  value={formDescription}
+                  onChange={(event) => setFormDescription(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="form-trigger-secret">Secret (opsional)</Label>
+                <Input
+                  id="form-trigger-secret"
+                  placeholder="Kosongkan untuk tetap memakai secret lama"
+                  value={formSecret}
+                  onChange={(event) => setFormSecret(event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="form-trigger-payload">Default Payload (JSON)</Label>
+                <Textarea
+                  id="form-trigger-payload"
+                  value={formDefaultPayloadText}
+                  onChange={(event) => setFormDefaultPayloadText(event.target.value)}
+                  className="font-mono text-xs"
+                  rows={3}
+                />
+              </div>
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between rounded-lg border border-border/80 bg-card/60 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">Trigger aktif</p>
+                    <p className="text-xs text-muted-foreground">Menentukan apakah trigger bisa dijalankan.</p>
+                  </div>
+                  <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-border/80 bg-card/60 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">Butuh approval</p>
+                    <p className="text-xs text-muted-foreground">Trigger dari connector butuh persetujuan.</p>
+                  </div>
+                  <Switch checked={formRequiresApproval} onCheckedChange={setFormRequiresApproval} />
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => upsertTriggerMutation.mutate()}
+                disabled={upsertTriggerMutation.isPending}
+              >
+                {upsertTriggerMutation.isPending ? "Menyimpan..." : "Simpan Trigger"}
+              </Button>
+              <Button variant="outline" onClick={resetTriggerForm}>
+                Reset
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const targetId = selectedTriggerId.trim();
+                  if (!targetId) {
+                    toast.error("Pilih trigger yang ingin dihapus.");
+                    return;
+                  }
+                  const confirmed = window.confirm(`Hapus trigger '${targetId}'?`);
+                  if (!confirmed) return;
+                  deleteTriggerMutation.mutate(targetId);
+                }}
+                disabled={deleteTriggerMutation.isPending}
+              >
+                {deleteTriggerMutation.isPending ? "Menghapus..." : "Hapus Trigger"}
+              </Button>
+            </div>
+          </div>
           {selectedTrigger ? (
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-4">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase">Job</p>
                   <p className="text-sm font-medium">{selectedTrigger.job_id}</p>
@@ -394,6 +652,12 @@ export default function ConnectorsPage() {
                   <p className="text-xs text-muted-foreground uppercase">Secret</p>
                   <p className="text-sm font-medium">
                     {selectedTrigger.secret_present ? "Disimpan" : "Tidak ada"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase">Approval</p>
+                  <p className="text-sm font-medium">
+                    {selectedTrigger.requires_approval ? "Wajib" : "Tidak"}
                   </p>
                 </div>
               </div>
@@ -607,7 +871,14 @@ export default function ConnectorsPage() {
             </TableHeader>
             <TableBody>
             {triggerTersaring.map((trigger) => (
-              <TableRow key={trigger.trigger_id}>
+              <TableRow
+                key={trigger.trigger_id}
+                className="cursor-pointer"
+                onClick={() => {
+                  setSelectedTriggerId(trigger.trigger_id);
+                  applyTriggerToForm(trigger);
+                }}
+              >
                 <TableCell className="font-medium">{trigger.trigger_id}</TableCell>
                 <TableCell>
                   <div className="text-sm font-medium">{trigger.name}</div>

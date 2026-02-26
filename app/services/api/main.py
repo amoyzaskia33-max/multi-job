@@ -544,7 +544,8 @@ class TriggerUpsertRequest(BaseModel):
     description: str = ""
     enabled: bool = True
     default_payload: Dict[str, Any] = Field(default_factory=dict)
-    secret: str = ""
+    secret: Optional[str] = None
+    requires_approval: bool = False
 
 
 class TriggerView(TriggerUpsertRequest):
@@ -1635,7 +1636,7 @@ async def get_trigger_endpoint(trigger_id: str):
 @app.put("/triggers/{trigger_id}", response_model=TriggerView)
 async def upsert_trigger_endpoint(trigger_id: str, request: TriggerUpsertRequest):
     try:
-        row = await upsert_trigger(trigger_id, request.model_dump(mode="json"))
+        row = await upsert_trigger(trigger_id, request.model_dump(mode="json", exclude_none=True))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return row

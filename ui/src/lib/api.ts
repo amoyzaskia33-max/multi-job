@@ -391,10 +391,22 @@ export interface Trigger {
   enabled: boolean;
   default_payload: Record<string, unknown>;
   secret_present: boolean;
+  requires_approval?: boolean;
   created_at?: string;
   updated_at?: string;
   last_fired_run_id?: string;
   last_fired_at?: string;
+}
+
+export interface TriggerUpsertRequest {
+  name: string;
+  job_id: string;
+  channel: string;
+  description?: string;
+  enabled?: boolean;
+  default_payload?: Record<string, unknown>;
+  secret?: string;
+  requires_approval?: boolean;
 }
 
 export interface TriggerFireResponse {
@@ -722,6 +734,26 @@ export const getTriggers = async (): Promise<Trigger[]> => {
     return await getJson<Trigger[]>("/triggers");
   } catch (error) {
     return handleApiError(error, "Gagal memuat trigger", []);
+  }
+};
+
+export const upsertTrigger = async (
+  triggerId: string,
+  payload: TriggerUpsertRequest,
+): Promise<Trigger | undefined> => {
+  try {
+    return await send<Trigger>(`/triggers/${encodeURIComponent(triggerId)}`, "PUT", payload);
+  } catch (error) {
+    return handleApiError(error, "Gagal menyimpan trigger", undefined);
+  }
+};
+
+export const deleteTrigger = async (triggerId: string): Promise<boolean> => {
+  try {
+    await send(`/triggers/${encodeURIComponent(triggerId)}`, "DELETE");
+    return true;
+  } catch (error) {
+    return handleApiError(error, "Gagal menghapus trigger", false);
   }
 };
 
