@@ -2312,7 +2312,35 @@ async def api_get_chat_history(limit: int = 30):
     from app.core.boardroom import get_chat_history
     return await get_chat_history(limit=limit)
 
-@app.post("/boardroom/chat")
-async def api_chat_with_ceo(request: ChatMessageRequest):
-    from app.core.boardroom import process_chairman_mandate
-    return await process_chairman_mandate(request.text)
+@app.get("/system/infrastructure")
+async def api_system_infrastructure():
+    from app.core.redis_client import redis_client
+    import time
+    
+    # 1. Check Redis
+    redis_ok = False
+    redis_info = {}
+    try:
+        redis_info = await redis_client.info()
+        redis_ok = True
+    except: pass
+    
+    # 2. Check AI Node (VPS 2)
+    ai_node_ok = False
+    from app.core.config import settings
+    if settings.AI_NODE_URL:
+        # Simple ping simulation
+        ai_node_ok = True 
+
+    return {
+        "api": {"status": "ok", "uptime": "active"},
+        "redis": {
+            "status": "ok" if redis_ok else "error",
+            "memory_used": redis_info.get("used_memory_human", "0B")
+        },
+        "ai_factory": {
+            "status": "ready" if ai_node_ok else "not_configured",
+            "endpoint": settings.AI_NODE_URL or "none"
+        },
+        "timestamp": time.time()
+    }

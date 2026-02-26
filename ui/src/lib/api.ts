@@ -1257,6 +1257,14 @@ export const sendChairmanMandate = async (text: string): Promise<boolean> => {
   }
 };
 
+export const getSystemInfrastructure = async (): Promise<any> => {
+  try {
+    return await getJson("/system/infrastructure");
+  } catch (error) {
+    return { api: { status: "error" }, redis: { status: "error" }, ai_factory: { status: "error" } };
+  }
+};
+
 export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse> => {
   return await send<PlannerExecuteResponse>("/planner/execute", "POST", payload);
 };
