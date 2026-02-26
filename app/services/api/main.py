@@ -1248,6 +1248,44 @@ async def approve_approval(approval_id: str, request: ApprovalDecisionRequest):
             "decision_by": row.get("decision_by"),
         },
     )
+
+    # Auto-provisioning logic for Discovery Proposals (Phase 11)
+    approval_requests = row.get("approval_requests", [])
+    if any(req.get("kind") == "discovery_approval" for req in approval_requests):
+        details = row.get("details", {})
+        title = details.get("title", "New Opportunity")
+        proposed_plan = details.get("proposed_plan", "")
+        agent_key = details.get("agent_key", "agent:proactive")
+        
+        # Create a new Job Spec automatically based on the proposal
+        import uuid
+        from app.core.queue import save_job_spec, enable_job
+        
+        new_job_id = f"auto_{uuid.uuid4().hex[:8]}"
+        new_spec = {
+            "job_id": new_job_id,
+            "type": "agent.workflow",
+            "schedule": {
+                "interval_sec": 86400  # Default to daily, agent can change this later
+            },
+            "inputs": {
+                "prompt": f"Execute the following profit-making plan: {proposed_plan}. Goal: {title}",
+                "agent_key": f"biz:{new_job_id}",
+                "flow_group": "profit_discovery",
+                "allow_sensitive_commands": False
+            }
+        }
+        try:
+            await save_job_spec(new_job_id, new_spec)
+            await enable_job(new_job_id)
+            await append_event(
+                "system.job_autoprovisioned",
+                {"job_id": new_job_id, "source_approval_id": approval_id, "title": title}
+            )
+        except Exception:
+            # If auto-provisioning fails, don't block the approval itself
+            pass
+
     return row
 
 
