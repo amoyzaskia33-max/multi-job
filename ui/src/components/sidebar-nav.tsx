@@ -25,16 +25,10 @@ type SidebarNavProps = {
 };
 
 const navItems = [
-  { href: "/", label: "Holding Overview", icon: Gauge },
-  { href: "/prompt", label: "Chairman Mandate", icon: Sparkles },
-  { href: "/automation", label: "Branch Manager", icon: ShieldCheck },
+  { href: "/", label: "Holding Suite", icon: Gauge },
   { href: "/armory", label: "The Armory", icon: Sword },
-  { href: "/agents", label: "Executive Team", icon: Bot },
-  { href: "/runs", label: "Audit & Performance", icon: History },
-  { href: "/jobs", label: "Strategic Units", icon: Workflow },
-  { href: "/skills", label: "Asset Skills", icon: Layers },
-  { href: "/connectors", label: "Infrastructure", icon: Cable },
-  { href: "/settings", label: "HoldCo Settings", icon: Settings2 },
+  { href: "/automation", label: "Branch Manager", icon: ShieldCheck },
+  { href: "/settings", label: "HoldCo Control", icon: Settings2 },
 ];
 
 export default function SidebarNav({ compact = false }: SidebarNavProps) {
