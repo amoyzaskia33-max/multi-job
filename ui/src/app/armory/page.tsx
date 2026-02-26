@@ -254,11 +254,12 @@ export default function ArmoryPage() {
                         <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           acc.status === "ready" ? "text-emerald-500 bg-emerald-500/10" :
                           acc.status === "verifying" ? "text-amber-500 bg-amber-500/10" :
+                          acc.status === "pending" ? "text-blue-500 bg-blue-500/10" :
                           "text-muted-foreground bg-muted"
                         }`}>
                           {acc.status === "ready" && <CheckCircle2 className="h-3 w-3" />}
                           {acc.status === "verifying" && <Clock className="h-3 w-3 animate-spin" />}
-                          {acc.status.toUpperCase()}
+                          {acc.status === "verifying" ? "BUSY" : acc.status.toUpperCase()}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">

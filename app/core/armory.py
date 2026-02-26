@@ -104,6 +104,25 @@ async def deploy_account_to_branch(account_id: str, branch_id: str):
     acc["updated_at"] = _now_iso()
     await redis_client.set(f"{ACCOUNTS_PREFIX}{account_id}", json.dumps(acc))
 
+async def lock_account(account_id: str, lock_duration: int = 300) -> bool:
+    """
+    Lock an account for a specific duration (in seconds) to prevent other workers from using it.
+    Returns True if successfully locked.
+    """
+    lock_key = f"armory:lock:{account_id}"
+    # Use Redis SETNX for atomic locking
+    is_locked = await redis_client.set(lock_key, "locked", ex=lock_duration, nx=True)
+    if is_locked:
+        await update_account_status(account_id, AccountStatus.VERIFYING, "Account is currently in use by a worker.")
+        return True
+    return False
+
+async def unlock_account(account_id: str):
+    """ Release the account lock and set status back to READY. """
+    lock_key = f"armory:lock:{account_id}"
+    await redis_client.delete(lock_key)
+    await update_account_status(account_id, AccountStatus.READY, "Account is free and ready for next task.")
+
 async def verify_account_stealth(account_id: str):
     """
     The core of Stealth Onboarding.
