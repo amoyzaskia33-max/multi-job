@@ -12,10 +12,11 @@ from app.core.agent_memory import (
     get_agent_memory,
     record_agent_workflow_outcome,
 )
-from app.core.approval_queue import list_approval_requests
+from app.core.approval_queue import list_approval_requests, create_approval_request
 from app.core.experiments import record_experiment_variant_run, resolve_experiment_prompt_for_job
 from app.core.integration_configs import list_integration_accounts, list_mcp_servers
 from app.core.queue import append_event
+from app.core.scheduler import schedule_delayed_job
 from app.core.tools.command import (
     PREFIX_PERINTAH_BAWAAN,
     normalisasi_daftar_prefix_perintah,
@@ -599,6 +600,8 @@ def _bangun_prompt_sistem_planner(
     command_allow_prefixes: List[str],
     allow_sensitive_commands: bool,
     agent_memory_context: Optional[Dict[str, Any]] = None,
+    current_iteration: int = 0,
+    previous_results: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     provider_lines: List[str] = []
     for provider, rows in sorted(provider_catalog.items()):
@@ -625,52 +628,71 @@ def _bangun_prompt_sistem_planner(
         memory_lines.append(f"- success_rate: {float(memory_ctx.get('success_rate') or 0.0)}%")
         avoid_rows = memory_ctx.get("avoid_signatures", [])
         if isinstance(avoid_rows, list) and avoid_rows:
-            memory_lines.append("- avoid_signatures:")
-            for row in avoid_rows[:8]:
+            memory_lines.append("- CRITICAL: DO NOT repeat these failed patterns (avoid_signatures):")
+            for row in avoid_rows[:10]:
                 memory_lines.append(f"  - {str(row)}")
+        
         recent_failures = memory_ctx.get("recent_failures", [])
         if isinstance(recent_failures, list) and recent_failures:
-            memory_lines.append("- recent_failures:")
+            memory_lines.append("- Lessons learned from recent failures:")
             for row in recent_failures[:5]:
                 if not isinstance(row, dict):
                     continue
                 signature = str(row.get("signature") or "-")
-                error = _ringkas_teks(row.get("error"), 120)
-                memory_lines.append(f"  - {signature} -> {error}")
-    if not memory_lines:
-        memory_lines = ["- (none)"]
+                error = _ringkas_teks(row.get("error"), 150)
+                memory_lines.append(f"  - Pattern '{signature}' failed with: {error}")
+
+    observation_lines: List[str] = []
+    if previous_results:
+        observation_lines.append("- Current Progress & Observations:")
+        for i, res in enumerate(previous_results):
+            status = "SUCCESS" if res.get("success") else "FAILED"
+            kind = res.get("kind", "unknown")
+            detail = _ringkas_teks(res.get("response_preview") or res.get("stdout_preview") or res.get("error") or "no detail", 200)
+            observation_lines.append(f"  Step {i+1} ({kind}): {status} -> {detail}")
 
     return (
-        "You are an integration workflow planner.\n"
-        "Return ONLY valid JSON object with this schema:\n"
+        "You are an autonomous integration agent with self-correction capabilities.\n"
+        "Your goal is to solve the user's request by planning and executing steps, observing results, and adjusting your plan if something fails.\n\n"
+        "Return ONLY a valid JSON object with this schema:\n"
         "{\n"
-        '  "summary": "string",\n'
-        '  "final_message": "string",\n'
+        '  "thought": "your reasoning about the current state and next move",\n'
+        '  "summary": "short summary of the planned actions",\n'
+        '  "final_message": "fill this ONLY if you have completed the task or cannot proceed further",\n'
         '  "steps": [\n'
-        "    note step:\n"
+        "    note step (for observations/internal notes):\n"
         '      {"kind":"note","text":"string"}\n'
-        "    provider HTTP step:\n"
+        "    provider HTTP step (external APIs):\n"
         '      {"kind":"provider_http","provider":"github","account_id":"default","method":"GET","path":"/user","headers":{},"body":null}\n'
-        "    mcp HTTP step:\n"
+        "    mcp HTTP step (model context protocol tools):\n"
         '      {"kind":"mcp_http","server_id":"mcp_main","method":"GET","path":"/health","headers":{},"body":null}\n'
-        "    local command step:\n"
-        '      {"kind":"local_command","command":"pytest -q","workdir":"./","timeout_sec":300}\n'
+        "    local command step (terminal execution):\n"
+        '      {"kind":"local_command","command":"ls -la","workdir":"./","timeout_sec":300}\n'
+        "    schedule job step (proactive self-scheduling):\n"
+        '      {"kind":"schedule_job","target_job_id":"string","inputs":{},"delay_sec":3600}\n'
+        "    create proposal step (report opportunities for approval):\n"
+        '      {"kind":"create_proposal","title":"string","analysis":"string","proposed_plan":"string","impact":"string"}\n'
         "  ]\n"
-        "}\n"
-        "Rules:\n"
-        "1) Maximum 5 steps.\n"
-        "2) Use only providers and MCP servers from catalog below.\n"
-        "3) Prefer provider_http/mcp_http/local_command when actionable.\n"
-        "4) Never generate destructive commands (rm -rf, del /f, format, git reset --hard).\n"
-        "5) If action is unclear, provide a single note step.\n\n"
+        "}\n\n"
+        "AUTONOMY RULES:\n"
+        "1) PROACTIVITY: Use 'schedule_job' to follow up on tasks. 24/7 work is possible by chaining.\n"
+        "2) DISCOVERY: If you find a new opportunity or profit method, use 'create_proposal' to report it. DO NOT execute risky new methods without approval.\n"
+        f"1) You are at iteration {current_iteration + 1}/5. If you cannot solve it now, provide a final_message explaining why.\n"
+        "2) SELF-CORRECTION: If a previous step failed, analyze why and try a DIFFERENT approach. DO NOT just repeat the same failed command.\n"
+        "3) MEMORY: Respect 'avoid_signatures'. They are patterns that consistently fail in this environment.\n"
+        "4) SAFETY: Never generate destructive commands (rm -rf, format, etc.).\n"
+        "5) Plan up to 3 steps at a time. If task is done, set steps to [] and fill final_message.\n\n"
+        "AVAILABLE TOOLS:\n"
         "Providers:\n"
         + "\n".join(provider_lines)
         + "\n\nMCP servers:\n"
         + "\n".join(mcp_lines)
         + "\n\nAllowed local command prefixes:\n"
         + "\n".join(command_lines)
-        + "\n\nAgent memory context (avoid repeating failed patterns):\n"
+        + "\n\nMEMORY & CONTEXT:\n"
         + "\n".join(memory_lines)
+        + "\n\n"
+        + "\n".join(observation_lines)
         + f"\n\nallow_sensitive_commands={str(bool(allow_sensitive_commands)).lower()}"
     )
 
@@ -684,6 +706,8 @@ async def _rencanakan_aksi_dengan_openai(
     command_allow_prefixes: List[str],
     allow_sensitive_commands: bool,
     agent_memory_context: Optional[Dict[str, Any]] = None,
+    current_iteration: int = 0,
+    previous_results: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     payload = {
         "model": model_id,
@@ -698,6 +722,8 @@ async def _rencanakan_aksi_dengan_openai(
                     command_allow_prefixes,
                     allow_sensitive_commands,
                     agent_memory_context,
+                    current_iteration=current_iteration,
+                    previous_results=previous_results,
                 ),
             },
             {"role": "user", "content": prompt},
@@ -749,6 +775,8 @@ async def _panggil_planner_openai(
     command_allow_prefixes: List[str],
     allow_sensitive_commands: bool,
     agent_memory_context: Dict[str, Any],
+    current_iteration: int = 0,
+    previous_results: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     kwargs = {
         "prompt": prompt,
@@ -758,6 +786,8 @@ async def _panggil_planner_openai(
         "mcp_catalog": mcp_catalog,
         "command_allow_prefixes": command_allow_prefixes,
         "allow_sensitive_commands": allow_sensitive_commands,
+        "current_iteration": current_iteration,
+        "previous_results": previous_results,
     }
 
     try:
@@ -1179,110 +1209,217 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
         id_model_openai or str(os.getenv("PLANNER_AI_MODEL") or DEFAULT_OPENAI_MODEL)
     )
 
-    try:
-        rencana_raw = await _panggil_planner_openai(
-            prompt=prompt_pengguna,
-            model_id=model_id,
-            api_key=kunci_api_openai,
+    hasil_langkah_akumulasi: List[Dict[str, Any]] = []
+    rencana_terakhir: Dict[str, Any] = {}
+    iterasi_maks = 5
+    iterasi_sekarang = 0
+    final_message_ditemukan = ""
+    summary_akumulasi = []
+
+    while iterasi_sekarang < iterasi_maks:
+        iterasi_sekarang += 1
+        
+        try:
+            rencana_raw = await _panggil_planner_openai(
+                prompt=prompt_pengguna,
+                model_id=model_id,
+                api_key=kunci_api_openai,
+                provider_catalog=katalog_provider,
+                mcp_catalog=katalog_mcp,
+                command_allow_prefixes=daftar_prefix_perintah,
+                allow_sensitive_commands=izinkan_perintah_sensitif,
+                agent_memory_context=konteks_memori,
+                current_iteration=iterasi_sekarang - 1,
+                previous_results=hasil_langkah_akumulasi,
+            )
+            rencana_terakhir = _sanitasi_rencana(rencana_raw)
+            rencana_terakhir = _terapkan_guardrail_memori(rencana_terakhir, konteks_memori)
+            
+            if rencana_terakhir.get("summary"):
+                summary_akumulasi.append(f"It{iterasi_sekarang}: {rencana_terakhir['summary']}")
+            
+            if rencana_terakhir.get("final_message"):
+                final_message_ditemukan = rencana_terakhir["final_message"]
+                break
+                
+            if not rencana_terakhir.get("steps"):
+                break
+                
+        except Exception as exc:
+            if not hasil_langkah_akumulasi:
+                konteks_memori_terbaru = await _catat_memori(
+                    success=False,
+                    summary="Agent planner gagal menyusun langkah.",
+                    final_message="",
+                    step_results=[],
+                    error=str(exc),
+                )
+                return {
+                    "success": False,
+                    "agent_key": agent_key,
+                    "memory_context": konteks_memori_terbaru,
+                    "experiment": experiment_payload,
+                    "error": f"Agent planner gagal: {exc}",
+                }
+            final_message_ditemukan = f"Planner error pada iterasi {iterasi_sekarang}: {exc}"
+            break
+
+        request_izin = _kumpulkan_request_izin_dari_rencana(
+            rencana_terakhir["steps"],
             provider_catalog=katalog_provider,
             mcp_catalog=katalog_mcp,
             command_allow_prefixes=daftar_prefix_perintah,
             allow_sensitive_commands=izinkan_perintah_sensitif,
-            agent_memory_context=konteks_memori,
+            approved_sensitive_commands=perintah_sensitif_disetujui,
         )
-        rencana = _sanitasi_rencana(rencana_raw)
-        rencana = _terapkan_guardrail_memori(rencana, konteks_memori)
-    except Exception as exc:
-        konteks_memori_terbaru = await _catat_memori(
-            success=False,
-            summary="Agent planner gagal menyusun langkah.",
-            final_message="",
-            step_results=[],
-            error=str(exc),
-        )
-        return {
-            "success": False,
-            "agent_key": agent_key,
-            "memory_context": konteks_memori_terbaru,
-            "experiment": experiment_payload,
-            "error": f"Agent planner gagal: {exc}",
-        }
-
-    request_izin = _kumpulkan_request_izin_dari_rencana(
-        rencana["steps"],
-        provider_catalog=katalog_provider,
-        mcp_catalog=katalog_mcp,
-        command_allow_prefixes=daftar_prefix_perintah,
-        allow_sensitive_commands=izinkan_perintah_sensitif,
-        approved_sensitive_commands=perintah_sensitif_disetujui,
-    )
-    if request_izin and perlu_izin_saat_kurang:
-        with suppress(Exception):
-            await append_event(
-                "agent.approval_requested",
-                {
-                    "prompt": prompt_pengguna[:200],
-                    "reason": "missing_resources_for_plan",
-                    "request_count": len(request_izin),
-                    "requests": request_izin,
-                },
+        if request_izin and perlu_izin_saat_kurang:
+            with suppress(Exception):
+                await append_event(
+                    "agent.approval_requested",
+                    {
+                        "prompt": prompt_pengguna[:200],
+                        "reason": "missing_resources_for_plan",
+                        "request_count": len(request_izin),
+                        "requests": request_izin,
+                    },
+                )
+            konteks_memori_terbaru = await _catat_memori(
+                success=False,
+                summary="Rencana butuh approval untuk resource/puzzle baru.",
+                final_message="",
+                step_results=hasil_langkah_akumulasi,
+                error="requires_approval_for_missing_resources",
             )
-        konteks_memori_terbaru = await _catat_memori(
-            success=False,
-            summary="Rencana ada, tapi perlu approval untuk resource/puzzle baru.",
-            final_message="",
-            step_results=[],
-            error="requires_approval_for_missing_resources",
-        )
-        response_izin = _buat_respons_butuh_izin(
-            prompt=prompt_pengguna,
-            summary="Rencana ada, tapi perlu izin untuk menambah puzzle/skill.",
-            model_id=model_id,
-            approval_requests=request_izin,
-            provider_catalog=katalog_provider,
-            mcp_catalog=katalog_mcp,
-            command_allow_prefixes=daftar_prefix_perintah,
-            allow_sensitive_commands=izinkan_perintah_sensitif,
-        )
-        response_izin["agent_key"] = agent_key
-        response_izin["memory_context"] = konteks_memori_terbaru
-        response_izin["memory_guardrail"] = rencana.get("memory_guardrail", [])
-        response_izin["command_allow_prefixes_requested"] = prefix_perintah_diminta
-        response_izin["command_allow_prefixes_rejected"] = prefix_perintah_ditolak
-        response_izin["experiment"] = experiment_payload
-        return response_izin
-
-    hasil_langkah: List[Dict[str, Any]] = []
-    for step in rencana["steps"]:
-        kind = step.get("kind")
-        if kind == "note":
-            hasil_langkah.append({"kind": "note", "success": True, "text": str(step.get("text") or "")})
-            continue
-
-        if kind == "provider_http":
-            hasil = await _eksekusi_langkah_provider_http(ctx, step, katalog_provider, alat_http)
-            hasil_langkah.append(hasil)
-            continue
-
-        if kind == "mcp_http":
-            hasil = await _eksekusi_langkah_mcp_http(ctx, step, katalog_mcp, alat_http)
-            hasil_langkah.append(hasil)
-            continue
-
-        if kind == "local_command":
-            hasil = await _eksekusi_langkah_perintah_lokal(
-                ctx,
-                step,
-                alat_command,
-                daftar_prefix_perintah,
-                izinkan_perintah_sensitif,
-                perintah_sensitif_disetujui,
+            response_izin = _buat_respons_butuh_izin(
+                prompt=prompt_pengguna,
+                summary="Rencana butuh izin untuk menambah puzzle/skill.",
+                model_id=model_id,
+                approval_requests=request_izin,
+                provider_catalog=katalog_provider,
+                mcp_catalog=katalog_mcp,
+                command_allow_prefixes=daftar_prefix_perintah,
+                allow_sensitive_commands=izinkan_perintah_sensitif,
             )
-            hasil_langkah.append(hasil)
-            continue
+            response_izin["agent_key"] = agent_key
+            response_izin["memory_context"] = konteks_memori_terbaru
+            response_izin["memory_guardrail"] = rencana_terakhir.get("memory_guardrail", [])
+            response_izin["step_results"] = hasil_langkah_akumulasi
+            response_izin["experiment"] = experiment_payload
+            return response_izin
 
-    langkah_aksi = [row for row in hasil_langkah if row.get("kind") in {"provider_http", "mcp_http", "local_command"}]
+        # Execute steps for this iteration
+        iter_results = []
+        for step in rencana_terakhir["steps"]:
+            kind = step.get("kind")
+            if kind == "note":
+                iter_results.append({"kind": "note", "success": True, "text": str(step.get("text") or "")})
+                continue
+
+            if kind == "provider_http":
+                hasil = await _eksekusi_langkah_provider_http(ctx, step, katalog_provider, alat_http)
+                iter_results.append(hasil)
+            elif kind == "mcp_http":
+                hasil = await _eksekusi_langkah_mcp_http(ctx, step, katalog_mcp, alat_http)
+                iter_results.append(hasil)
+            elif kind == "local_command":
+                hasil = await _eksekusi_langkah_perintah_lokal(
+                    ctx,
+                    step,
+                    alat_command,
+                    daftar_prefix_perintah,
+                    izinkan_perintah_sensitif,
+                    perintah_sensitif_disetujui,
+                )
+                iter_results.append(hasil)
+            elif kind == "schedule_job":
+                target_id = str(step.get("target_job_id") or "").strip()
+                delay = int(step.get("delay_sec") or 3600)
+                sub_inputs = step.get("inputs", {})
+                
+                if not target_id:
+                    iter_results.append({"kind": "schedule_job", "success": False, "error": "target_job_id is required"})
+                else:
+                    try:
+                        from app.core.models import QueueEvent
+                        import uuid
+                        from datetime import datetime, timezone, timedelta
+                        
+                        # In a real scenario, we would fetch the JobSpec first. 
+                        # For this proactive loop, we assume the agent knows the job_id or schedules its own.
+                        run_id = f"proactive_{uuid.uuid4().hex[:8]}"
+                        event = QueueEvent(
+                            run_id=run_id,
+                            job_id=target_id,
+                            type="agent.workflow", # Default to workflow for proactivity
+                            inputs=sub_inputs,
+                            attempt=0,
+                            scheduled_at=(datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat(),
+                        )
+                        await schedule_delayed_job(event, delay)
+                        iter_results.append({
+                            "kind": "schedule_job", 
+                            "success": True, 
+                            "target_job_id": target_id, 
+                            "run_id": run_id, 
+                            "delay_sec": delay
+                        })
+                    except Exception as e:
+                        iter_results.append({"kind": "schedule_job", "success": False, "error": str(e)})
+            elif kind == "create_proposal":
+                title = str(step.get("title") or "New Opportunity Found").strip()
+                analysis = str(step.get("analysis") or "").strip()
+                proposed_plan = str(step.get("proposed_plan") or "").strip()
+                impact = str(step.get("impact") or "Unknown").strip()
+                
+                try:
+                    # Formulate internal approval request
+                    approval_id = f"prop_{uuid.uuid4().hex[:8]}"
+                    req_payload = {
+                        "approval_id": approval_id,
+                        "job_id": job_id_ctx,
+                        "run_id": run_id_ctx,
+                        "status": "pending",
+                        "summary": f"Opportunity Discovery: {title}",
+                        "details": {
+                            "title": title,
+                            "analysis": analysis,
+                            "proposed_plan": proposed_plan,
+                            "impact": impact,
+                            "agent_key": agent_key
+                        },
+                        "approval_requests": [
+                            {
+                                "kind": "discovery_approval",
+                                "reason": f"New profit method/opportunity identified: {title}",
+                                "action_hint": "Review the analysis and click OKE to allow the agent to proceed with this method."
+                            }
+                        ]
+                    }
+                    await create_approval_request(req_payload)
+                    iter_results.append({
+                        "kind": "create_proposal", 
+                        "success": True, 
+                        "approval_id": approval_id, 
+                        "message": "Proposal submitted for human review."
+                    })
+                except Exception as e:
+                    iter_results.append({"kind": "create_proposal", "success": False, "error": str(e)})
+            
+            # Record each step to global results
+            hasil_langkah_akumulasi.append(iter_results[-1])
+            
+            # If a critical step fails, we might want to let the agent re-plan immediately
+            if not iter_results[-1].get("success") and kind != "note":
+                break
+
+        # Refresh memory context for next iteration
+        await _muat_konteks_memori_terbaru()
+
+    langkah_aksi = [row for row in hasil_langkah_akumulasi if row.get("kind") in {"provider_http", "mcp_http", "local_command"}]
     sukses_total = all(bool(row.get("success")) for row in langkah_aksi) if langkah_aksi else True
+    
+    if not final_message_ditemukan and iterasi_sekarang >= iterasi_maks:
+        final_message_ditemukan = f"Mencapai batas iterasi maksimum ({iterasi_maks})."
 
     provider_tersedia = {
         provider: sorted({str(row.get("account_id") or "default") for row in rows})
@@ -1293,42 +1430,39 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
     hasil = {
         "success": sukses_total,
         "agent_key": agent_key,
-        "summary": rencana["summary"],
-        "final_message": rencana.get("final_message") or "",
+        "summary": " | ".join(summary_akumulasi),
+        "final_message": final_message_ditemukan,
         "model_id": model_id,
         "prompt_original": prompt_awal,
         "prompt": prompt_pengguna,
-        "steps_planned": len(rencana["steps"]),
-        "steps_executed": len(hasil_langkah),
-        "step_results": hasil_langkah,
+        "iterations": iterasi_sekarang,
+        "steps_planned": len(rencana_terakhir.get("steps", [])),
+        "steps_executed": len(hasil_langkah_akumulasi),
+        "step_results": hasil_langkah_akumulasi,
         "experiment": experiment_payload,
         "memory_context": konteks_memori,
-        "memory_guardrail": rencana.get("memory_guardrail", []),
+        "memory_guardrail": rencana_terakhir.get("memory_guardrail", []),
         "available_providers": provider_tersedia,
         "available_mcp_servers": server_mcp_tersedia,
         "command_allow_prefixes": daftar_prefix_perintah,
         "allow_sensitive_commands": izinkan_perintah_sensitif,
-        "command_allow_prefixes_requested": prefix_perintah_diminta,
-        "command_allow_prefixes_rejected": prefix_perintah_ditolak,
     }
     with suppress(Exception):
         await append_event(
             "agent.workflow_executed",
             {
                 "success": sukses_total,
-                "steps_planned": len(rencana["steps"]),
-                "steps_executed": len(hasil_langkah),
+                "iterations": iterasi_sekarang,
+                "steps_executed": len(hasil_langkah_akumulasi),
                 "experiment_applied": experiment_payload["applied"],
-                "experiment_id": experiment_payload["experiment_id"],
-                "experiment_variant": experiment_payload["variant"],
             },
         )
     konteks_memori_terbaru = await _catat_memori(
         success=sukses_total,
-        summary=str(rencana.get("summary") or ""),
-        final_message=str(rencana.get("final_message") or ""),
-        step_results=hasil_langkah,
-        error=None if sukses_total else "workflow_steps_failed",
+        summary=hasil["summary"],
+        final_message=final_message_ditemukan,
+        step_results=hasil_langkah_akumulasi,
+        error=None if sukses_total else "workflow_autonomous_loop_failed",
     )
     hasil["memory_context"] = konteks_memori_terbaru
     return hasil
