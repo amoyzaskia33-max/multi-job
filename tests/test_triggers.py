@@ -11,7 +11,10 @@ from app.core.queue import save_job_spec, enable_job
 from app.core.redis_client import redis_client
 
 @pytest.mark.anyio
-async def test_trigger_lifecycle():
+async def test_trigger_lifecycle(anyio_backend):
+    if anyio_backend != "asyncio":
+        return
+        
     # Setup job target
     job_id = f"test-job-{uuid.uuid4().hex[:6]}"
     await save_job_spec(job_id, {

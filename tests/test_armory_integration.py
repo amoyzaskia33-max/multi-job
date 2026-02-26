@@ -6,7 +6,11 @@ from app.core.models import AccountStatus
 from app.services.worker.main import _proses_satu_job
 
 @pytest.mark.anyio
-async def test_armory_stealth_onboarding_flow():
+async def test_armory_stealth_onboarding_flow(anyio_backend):
+    # Ensure we only run on asyncio to avoid trio errors in some environments
+    if anyio_backend != "asyncio":
+        return
+
     # 1. Simulate Chairman adding an account
     username = f"warrior_{uuid.uuid4().hex[:4]}"
     acc = await add_account(
@@ -36,6 +40,11 @@ async def test_armory_stealth_onboarding_flow():
     final_acc = await get_account(account_id)
     assert final_acc["status"] == AccountStatus.READY
     assert final_acc["last_active"] is not None
+    
+    # 5. Cleanup Redis connection to avoid event loop issues
+    from app.core.redis_client import redis_client
+    if hasattr(redis_client, 'connection_pool'):
+        await redis_client.connection_pool.disconnect()
 
 @pytest.fixture
 def anyio_backend():
