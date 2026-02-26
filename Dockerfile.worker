@@ -29,11 +29,11 @@ RUN pip install poetry && \
 # Copy dependency files
 COPY pyproject.toml .
 
-# Install dependencies
+# Install dependencies (including playwright python package)
 RUN poetry install --no-interaction --no-ansi --no-root --without dev
 
-# Install Playwright browsers
-RUN python -m playwright install chromium
+# Install Playwright browsers (now using pip install to ensure binary is in path)
+RUN pip install playwright && playwright install chromium
 
 # Copy application code
 COPY . .
