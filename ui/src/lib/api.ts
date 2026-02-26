@@ -199,6 +199,7 @@ export interface Agent {
   status: "online" | "offline";
   last_heartbeat: string;
   active_sessions?: number;
+  pool?: string;
   version?: string;
 }
 

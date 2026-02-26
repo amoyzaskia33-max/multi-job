@@ -19,6 +19,9 @@ class JobSpec(BaseModel):
     timeout_ms: int = 30000  # 30 seconds default
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     inputs: Dict[str, Any] = Field(default_factory=dict)
+    agent_pool: Optional[str] = None
+    priority: int = Field(default=0)
+    concurrency_key: Optional[str] = None
 
 # Run status model
 class RunStatus(str, Enum):
@@ -44,6 +47,7 @@ class Run(BaseModel):
     finished_at: Optional[datetime] = None
     result: Optional[RunResult] = None
     trace_id: Optional[str] = None
+    agent_pool: Optional[str] = None
 
 # Queue event model (for Redis Streams)
 class QueueEvent(BaseModel):
@@ -55,6 +59,8 @@ class QueueEvent(BaseModel):
     scheduled_at: str  # ISO format string
     timeout_ms: Optional[int] = None
     trace_id: Optional[str] = None
+    agent_pool: Optional[str] = None
+    priority: int = 0
 
 # Trigger models
 class Trigger(BaseModel):

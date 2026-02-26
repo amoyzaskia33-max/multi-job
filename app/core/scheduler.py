@@ -454,6 +454,8 @@ class Scheduler:
                 scheduled_at=sekarang.isoformat(),
                 timeout_ms=spesifikasi.timeout_ms,
                 trace_id=f"trace_{uuid.uuid4().hex}",
+                agent_pool=spesifikasi.agent_pool,
+                priority=spesifikasi.priority,
             )
 
             await self._simpan_run_queued(event_antrean)
@@ -495,6 +497,8 @@ class Scheduler:
                 scheduled_at=sekarang.isoformat(),
                 timeout_ms=spesifikasi.timeout_ms,
                 trace_id=f"trace_{uuid.uuid4().hex}",
+                agent_pool=spesifikasi.agent_pool,
+                priority=spesifikasi.priority,
             )
 
             await self._simpan_run_queued(event_antrean)

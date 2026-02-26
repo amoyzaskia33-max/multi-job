@@ -359,6 +359,8 @@ async def handle_retry(job_id: str, run_id: str, attempt: int, retry_policy: dic
         attempt=attempt + 1,
         scheduled_at=scheduled_at.isoformat(),
         timeout_ms=int(spesifikasi.get("timeout_ms", 30000)),
+        agent_pool=spesifikasi.get("agent_pool"),
+        priority=spesifikasi.get("priority", 0),
     )
 
     await schedule_delayed_job(event_retry, jeda_detik)

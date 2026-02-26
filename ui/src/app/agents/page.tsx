@@ -516,6 +516,7 @@ export default function AgentsPage() {
                   <TableHead>ID</TableHead>
                   <TableHead>Jenis</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Pool / Concurrency</TableHead>
                   <TableHead>Heartbeat</TableHead>
                 </TableRow>
               </TableHeader>
@@ -528,6 +529,14 @@ export default function AgentsPage() {
                       <span className={agent.status === "online" ? "status-baik" : "status-buruk"}>
                         {agent.status === "online" ? "Aktif" : "Nonaktif"}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{agent.pool || "default"}</span>
+                        {agent.type === "worker" && agent.status === "online" && (
+                           <span className="text-[10px] text-muted-foreground">Concurrency: {agent.active_sessions || 1}</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{formatTime(agent.last_heartbeat)}</TableCell>
                   </TableRow>

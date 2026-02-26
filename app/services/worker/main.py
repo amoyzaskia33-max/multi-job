@@ -47,10 +47,16 @@ async def update_heartbeat(worker_id: str):
         return
 
     try:
+        import json
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "pool": _get_agent_pool(),
+            "concurrency": _normalisasi_konkruensi()
+        }
         await redis_client.setex(
             f"hb:agent:worker:{worker_id}",
             AGENT_HEARTBEAT_TTL,
-            datetime.now(timezone.utc).isoformat(),
+            json.dumps(payload),
         )
     except Exception:
         # In local fallback mode Redis may be unavailable; keep worker running.
@@ -64,9 +70,27 @@ def _normalisasi_konkruensi() -> int:
         value = 1
     return max(1, min(value, 64))
 
+def _get_agent_pool() -> str:
+    import os
+    return str(os.getenv("AGENT_POOL", "default")).strip().lower()
 
 async def _proses_satu_job(worker_id: str, data_event: dict):
     tipe_job = data_event.get("type")
+    
+    # Check pool assignment
+    job_pool = str(data_event.get("agent_pool") or "default").strip().lower()
+    worker_pool = _get_agent_pool()
+    
+    # Skip if job is meant for another pool (basic routing simulation for phase 3)
+    # For a real implementation, jobs for different pools should go to different Redis Streams.
+    if job_pool != worker_pool and worker_pool != "global":
+        logger.debug(f"Skipping job meant for pool '{job_pool}', worker is on '{worker_pool}'")
+        # In a fully-fledged Phase 3, we would re-enqueue or use multiple streams.
+        # For now, we simulate processing or just mark it skipped (if it was dequeued).
+        return
+
+    metrics_collector.increment("worker_job_dequeued", tags={"pool": worker_pool, "type": tipe_job})
+    
     handler = get_handler(tipe_job)
     
     # Let dynamic skills pass through to process_job_event for resolution

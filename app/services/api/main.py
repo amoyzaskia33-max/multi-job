@@ -1970,18 +1970,33 @@ async def agents():
                 continue
 
             agent_type, agent_id = parts[2], parts[3]
-            heartbeat = await redis_client.get(key)
+            heartbeat_raw = await redis_client.get(key)
             ttl = await redis_client.ttl(key)
             status = "online" if ttl > 0 else "offline"
+
+            timestamp = _sekarang_iso()
+            pool = "default"
+            concurrency = 1
+            if heartbeat_raw:
+                try:
+                    import json
+                    data = json.loads(heartbeat_raw)
+                    if isinstance(data, dict):
+                        timestamp = data.get("timestamp", timestamp)
+                        pool = data.get("pool", pool)
+                        concurrency = data.get("concurrency", concurrency)
+                except Exception:
+                    timestamp = heartbeat_raw
 
             rows.append(
                 {
                     "id": agent_id,
                     "type": agent_type,
                     "status": status,
-                    "last_heartbeat": heartbeat or _sekarang_iso(),
-                    "last_heartbeat_at": heartbeat or _sekarang_iso(),
-                    "active_sessions": 1 if status == "online" else 0,
+                    "last_heartbeat": timestamp,
+                    "last_heartbeat_at": timestamp,
+                    "active_sessions": concurrency if status == "online" else 0,
+                    "pool": pool,
                     "version": "0.1.0",
                 }
             )
