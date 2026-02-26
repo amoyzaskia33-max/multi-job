@@ -990,6 +990,35 @@ async def _eksekusi_langkah_perintah_lokal(
     }
 
 
+async def _kirim_notifikasi_eksternal(title: str, impact: str, approval_id: str):
+    token = os.getenv("TELEGRAM_NOTIF_TOKEN")
+    chat_id = os.getenv("TELEGRAM_NOTIF_CHAT_ID")
+    
+    if not token or not chat_id:
+        return
+
+    text = (
+        f"ðŸš€ *Peluang Baru Ditemukan!*\n\n"
+        f"*Judul:* {title}\n"
+        f"*Dampak:* {impact}\n"
+        f"*ID Persetujuan:* `{approval_id}`\n\n"
+        f"Silakan cek dashboard untuk analisa lengkap dan berikan persetujuan (OKE)."
+    )
+    
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as resp:
+                await resp.text()
+    except Exception:
+        pass
+
 async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
     prompt_awal = str(inputs.get("prompt") or "").strip()
     job_id_ctx = str(getattr(ctx, "job_id", "") or "").strip()
@@ -1396,6 +1425,10 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                         ]
                     }
                     await create_approval_request(req_payload)
+                    
+                    # Send external notification
+                    await _kirim_notifikasi_eksternal(title, impact, approval_id)
+                    
                     iter_results.append({
                         "kind": "create_proposal", 
                         "success": True, 
