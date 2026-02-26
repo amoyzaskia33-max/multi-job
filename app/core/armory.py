@@ -104,6 +104,22 @@ async def deploy_account_to_branch(account_id: str, branch_id: str):
     acc["updated_at"] = _now_iso()
     await redis_client.set(f"{ACCOUNTS_PREFIX}{account_id}", json.dumps(acc))
 
+async def count_ready_accounts_for_branch(branch_id: str) -> Dict[str, int]:
+    """
+    Returns a count of READY accounts per platform for a specific branch.
+    Useful for alerting Chairman when a branch is out of ammunition.
+    """
+    ids = await redis_client.smembers(ACCOUNT_LIST)
+    counts = {}
+    for aid in ids:
+        data = await redis_client.get(f"{ACCOUNTS_PREFIX}{aid}")
+        if not data: continue
+        acc = json.loads(data)
+        if acc.get("branch_id") == branch_id and acc.get("status") == AccountStatus.READY:
+            platform = acc["platform"]
+            counts[platform] = counts.get(platform, 0) + 1
+    return counts
+
 async def lock_account(account_id: str, lock_duration: int = 300) -> bool:
     """
     Lock an account for a specific duration (in seconds) to prevent other workers from using it.

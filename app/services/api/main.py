@@ -2252,8 +2252,13 @@ async def events(
 @app.get("/branches")
 async def api_list_branches():
     from app.core.branches import list_branches
+    from app.core.armory import count_ready_accounts_for_branch
     try:
-        return await list_branches()
+        branches = await list_branches()
+        # Enrich with operational readiness data
+        for b in branches:
+            b["operational_ready"] = await count_ready_accounts_for_branch(b["branch_id"])
+        return branches
     except Exception:
         return []
 

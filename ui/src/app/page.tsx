@@ -151,7 +151,12 @@ export default function ChairmanDashboard() {
                           <p className="text-[10px] text-emerald-500 font-bold">{formatCurrency(b.current_metrics?.revenue || 0)}</p>
                         </div>
                       </div>
-                      <div className={`h-2 w-2 rounded-full ${b.status === "active" ? "bg-emerald-500 animate-pulse" : "bg-muted"}`}></div>
+                      <div className="flex flex-col items-end gap-1">
+                        <div className={`h-2 w-2 rounded-full ${b.status === "active" ? "bg-emerald-500 animate-pulse" : "bg-muted"}`}></div>
+                        {(!b.operational_ready || Object.keys(b.operational_ready).length === 0) && (
+                          <span className="text-[8px] font-bold text-rose-500 animate-bounce">NO AMMO</span>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 </button>
@@ -187,6 +192,19 @@ export default function ChairmanDashboard() {
                     <div className="text-center p-3 rounded-2xl bg-muted/20 border border-emerald-500/20">
                       <p className="text-[9px] font-bold text-emerald-500 uppercase mb-1">Revenue</p>
                       <p className="text-md font-black text-emerald-500">{formatCurrency(activeBranch.current_metrics?.revenue || 0)}</p>
+                    </div>
+                  </div>
+
+                  {/* Account Readiness Status */}
+                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-3">Ammunition Status (Ready Accounts)</p>
+                    <div className="flex gap-4">
+                      {["facebook", "instagram", "tiktok", "whatsapp"].map(plat => (
+                        <div key={plat} className="flex items-center gap-2">
+                          <div className={`h-1.5 w-1.5 rounded-full ${activeBranch.operational_ready?.[plat] ? "bg-emerald-500" : "bg-rose-500"}`}></div>
+                          <span className="text-[10px] font-medium capitalize">{plat}: {activeBranch.operational_ready?.[plat] || 0}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
 

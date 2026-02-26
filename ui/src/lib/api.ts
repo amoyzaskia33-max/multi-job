@@ -1179,6 +1179,7 @@ export interface Branch {
     leads: number;
     closings: number;
   };
+  operational_ready?: Record<string, number>;
   squad: Squad;
   created_at: string;
   updated_at: string;
