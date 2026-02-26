@@ -26,5 +26,9 @@ class Settings:
     AI_NODE_URL: str = os.getenv("AI_NODE_URL", "") # IP VPS 2
     AI_NODE_SECRET: str = os.getenv("AI_NODE_SECRET", "factory-secret-123")
 
+    # Local AI Brain (Phase 27)
+    LOCAL_AI_URL: str = os.getenv("LOCAL_AI_URL", "http://localhost:11434/v1")
+    PLANNER_AI_MODEL: str = os.getenv("PLANNER_AI_MODEL", "llama3")
+
 
 settings = Settings()

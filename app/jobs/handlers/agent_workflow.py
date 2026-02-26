@@ -23,8 +23,9 @@ from app.core.tools.command import (
     perintah_termasuk_sensitif,
 )
 
-OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
-DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+from app.core.config import settings
+OPENAI_CHAT_COMPLETIONS_URL = f"{settings.LOCAL_AI_URL.rstrip('/')}/chat/completions"
+DEFAULT_OPENAI_MODEL = settings.PLANNER_AI_MODEL
 MAX_STEPS = 5
 PREVIEW_LIMIT = 500
 
