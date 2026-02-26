@@ -2,7 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Building2, Cable, FlaskConical, Gauge, History, Layers, Sparkles, Settings2, ShieldCheck, Users2, Workflow } from "lucide-react";
+import { 
+  Bot, 
+  Building2, 
+  Cable, 
+  FlaskConical, 
+  Gauge, 
+  History, 
+  Layers, 
+  Sparkles, 
+  Settings2, 
+  ShieldCheck, 
+  Users2, 
+  Workflow,
+  Sword
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -11,18 +25,16 @@ type SidebarNavProps = {
 };
 
 const navItems = [
-  { href: "/", label: "Dasbor", icon: Gauge },
-  { href: "/prompt", label: "Perintah", icon: Sparkles },
-  { href: "/jobs", label: "Tugas", icon: Workflow },
-  { href: "/automation", label: "Otomasi", icon: ShieldCheck },
-  { href: "/experiments", label: "Eksperimen", icon: FlaskConical },
-  { href: "/runs", label: "Riwayat", icon: History },
-  { href: "/agents", label: "Agen", icon: Bot },
-  { href: "/team", label: "Tim", icon: Users2 },
-  { href: "/office", label: "Kantor", icon: Building2 },
-  { href: "/connectors", label: "Koneksi", icon: Cable },
-  { href: "/skills", label: "Skill", icon: Layers },
-  { href: "/settings", label: "Setelan", icon: Settings2 },
+  { href: "/", label: "Holding Overview", icon: Gauge },
+  { href: "/prompt", label: "Chairman Mandate", icon: Sparkles },
+  { href: "/automation", label: "Branch Manager", icon: ShieldCheck },
+  { href: "/armory", label: "The Armory", icon: Sword },
+  { href: "/agents", label: "Executive Team", icon: Bot },
+  { href: "/runs", label: "Audit & Performance", icon: History },
+  { href: "/jobs", label: "Strategic Units", icon: Workflow },
+  { href: "/skills", label: "Asset Skills", icon: Layers },
+  { href: "/connectors", label: "Infrastructure", icon: Cable },
+  { href: "/settings", label: "HoldCo Settings", icon: Settings2 },
 ];
 
 export default function SidebarNav({ compact = false }: SidebarNavProps) {
