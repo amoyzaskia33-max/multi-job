@@ -15,8 +15,7 @@ from app.core.agent_memory import (
 from app.core.approval_queue import list_approval_requests, create_approval_request
 from app.core.experiments import record_experiment_variant_run, resolve_experiment_prompt_for_job
 from app.core.integration_configs import list_integration_accounts, list_mcp_servers
-from app.core.queue import append_event
-from app.core.scheduler import schedule_delayed_job
+from app.core.queue import append_event, schedule_delayed_job
 from app.core.tools.command import (
     PREFIX_PERINTAH_BAWAAN,
     normalisasi_daftar_prefix_perintah,
@@ -1429,6 +1428,7 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                                 "action_hint": "Review the analysis and click OKE to allow the agent to proceed with this method."
                             }
                         ]
+                    }
                     await create_approval_request(req_payload)
                     
                     # Determine role for notification

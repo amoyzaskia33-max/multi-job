@@ -1162,6 +1162,33 @@ export const rejectApprovalRequest = async (
   }
 };
 
-export const executePlannerPrompt = async (payload: PlannerExecuteRequest): Promise<PlannerExecuteResponse> => {
-  return await send<PlannerExecuteResponse>("/planner/execute", "POST", payload);
+export interface Squad {
+  hunter_job_id?: string;
+  marketer_job_id?: string;
+  closer_job_id?: string;
+}
+
+export interface Branch {
+  branch_id: string;
+  name: string;
+  status: "active" | "paused" | "closed";
+  blueprint_id: string;
+  target_kpi: Record<string, any>;
+  current_metrics: {
+    revenue: number;
+    leads: number;
+    closings: number;
+  };
+  squad: Squad;
+  created_at: string;
+  updated_at: string;
+  metadata: Record<string, any>;
+}
+
+export const getBranches = async (): Promise<Branch[]> => {
+  return await send<Branch[]>("/branches", "GET");
+};
+
+export const getBranch = async (branchId: string): Promise<Branch> => {
+  return await send<Branch>(`/branches/${branchId}`, "GET");
 };
