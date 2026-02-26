@@ -1249,42 +1249,59 @@ async def approve_approval(approval_id: str, request: ApprovalDecisionRequest):
         },
     )
 
-    # Auto-provisioning logic for Discovery Proposals (Phase 11)
+    # Auto-provisioning logic for Discovery Proposals (Phase 14 - Holding Structure)
     approval_requests = row.get("approval_requests", [])
     if any(req.get("kind") == "discovery_approval" for req in approval_requests):
         details = row.get("details", {})
-        title = details.get("title", "New Opportunity")
-        proposed_plan = details.get("proposed_plan", "")
-        agent_key = details.get("agent_key", "agent:proactive")
+        title = details.get("title", "New Unit")
+        # Extract blueprint_id from details, default to agency if not specified
+        blueprint_id = details.get("blueprint_id", "bp_agency_digital")
         
-        # Create a new Job Spec automatically based on the proposal
-        import uuid
+        from app.core.branches import create_branch, get_blueprint
         from app.core.queue import save_job_spec, enable_job
+        import uuid
         
-        new_job_id = f"auto_{uuid.uuid4().hex[:8]}"
-        new_spec = {
-            "job_id": new_job_id,
-            "type": "agent.workflow",
-            "schedule": {
-                "interval_sec": 86400  # Default to daily, agent can change this later
-            },
-            "inputs": {
-                "prompt": f"Execute the following profit-making plan: {proposed_plan}. Goal: {title}",
-                "agent_key": f"biz:{new_job_id}",
-                "flow_group": "profit_discovery",
-                "allow_sensitive_commands": False
-            }
-        }
         try:
-            await save_job_spec(new_job_id, new_spec)
-            await enable_job(new_job_id)
+            # 1. Create the Branch
+            branch = await create_branch(name=title, blueprint_id=blueprint_id)
+            branch_id = branch["branch_id"]
+            blueprint = await get_blueprint(blueprint_id)
+            
+            squad_ids = {}
+            
+            # 2. Deploy the Squad (Hunter, Marketer, Closer)
+            for job_config in blueprint.get("default_jobs", []):
+                role = job_config["role"]
+                new_job_id = f"job_{role}_{uuid.uuid4().hex[:6]}"
+                
+                new_spec = {
+                    "job_id": new_job_id,
+                    "type": "agent.workflow",
+                    "schedule": {"interval_sec": 86400},
+                    "inputs": {
+                        "prompt": f"Unit: {title} | Role: {role.upper()}. Goal: {job_config['prompt']}",
+                        "agent_key": f"{role}:{branch_id}",
+                        "flow_group": branch_id, # Isolation by branch_id
+                        "branch_id": branch_id,
+                        "allow_sensitive_commands": False
+                    }
+                }
+                await save_job_spec(new_job_id, new_spec)
+                await enable_job(new_job_id)
+                squad_ids[f"{role}_job_id"] = new_job_id
+            
+            # 3. Update Branch with Squad info
+            from app.core.redis_client import redis_client
+            branch["squad"] = squad_ids
+            await redis_client.set(f"branch:item:{branch_id}", json.dumps(branch))
+            
             await append_event(
-                "system.job_autoprovisioned",
-                {"job_id": new_job_id, "source_approval_id": approval_id, "title": title}
+                "system.branch_opened",
+                {"branch_id": branch_id, "name": title, "blueprint": blueprint_id}
             )
-        except Exception:
-            # If auto-provisioning fails, don't block the approval itself
-            pass
+        except Exception as e:
+            # Log error but don't block
+            await append_event("system.error", {"message": f"Auto-provisioning failed: {str(e)}"})
 
     return row
 

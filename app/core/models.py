@@ -87,3 +87,28 @@ class TriggerPayload(BaseModel):
     default_payload: Optional[Dict[str, Any]] = None
     secret: Optional[str] = None
     requires_approval: Optional[bool] = None
+
+# Holding Company Models (Phase 14)
+class Squad(BaseModel):
+    hunter_job_id: Optional[str] = None
+    marketer_job_id: Optional[str] = None
+    closer_job_id: Optional[str] = None
+
+class Branch(BaseModel):
+    branch_id: str
+    name: str
+    status: str = "active" # active, paused, closed
+    blueprint_id: str
+    target_kpi: Dict[str, Any] = Field(default_factory=dict)
+    current_metrics: Dict[str, Any] = Field(default_factory=dict)
+    squad: Squad = Field(default_factory=Squad)
+    created_at: str
+    updated_at: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+class BranchBlueprint(BaseModel):
+    blueprint_id: str
+    name: str
+    description: str
+    base_strategy: str
+    default_jobs: List[Dict[str, Any]] = Field(default_factory=list) # Specs for Hunter, Marketer, Closer
