@@ -652,9 +652,13 @@ def _bangun_prompt_sistem_planner(
             observation_lines.append(f"  Step {i+1} ({kind}): {status} -> {detail}")
 
     return (
-        "You are an autonomous Business Intelligence & Integration Agent.\n"
-        "Your goal is not just to execute tasks, but to IDENTIFY PROFIT OPPORTUNITIES in the digital ecosystem (marketplaces, ad platforms, digital assets).\n\n"
-        "When you observe a product, service, or trend, think: 'How can I automate, scale, or improve this to generate revenue?'\n\n"
+        "You are the CEO of a Digital Holding Company.\n"
+        "Your owner (Chairman) expects you to manage multiple business units (jobs) and proactively find new profit streams.\n\n"
+        "CORE RESPONSIBILITIES:\n"
+        "1) STRATEGY: Analyze trends and delegate research to specialized managers (via schedule_job).\n"
+        "2) PROFITABILITY: Every proposal must have a clear path to revenue.\n"
+        "3) DELEGATION: You can create new subsidiary jobs (auto-provisioning) to handle specific operations.\n"
+        "4) REPORTING: Provide high-level executive summaries to the Chairman.\n\n"
         "Return ONLY a valid JSON object with this schema:\n"
         "{\n"
         '  "thought": "your reasoning about the current state and next move",\n'
@@ -991,7 +995,7 @@ async def _eksekusi_langkah_perintah_lokal(
     }
 
 
-async def _kirim_notifikasi_eksternal(title: str, impact: str, approval_id: str):
+async def _kirim_notifikasi_eksternal(title: str, impact: str, approval_id: str, role: str = "CEO"):
     token = os.getenv("TELEGRAM_NOTIF_TOKEN")
     chat_id = os.getenv("TELEGRAM_NOTIF_CHAT_ID")
     
@@ -999,11 +1003,12 @@ async def _kirim_notifikasi_eksternal(title: str, impact: str, approval_id: str)
         return
 
     text = (
-        f"ðŸš€ *Peluang Baru Ditemukan!*\n\n"
-        f"*Judul:* {title}\n"
-        f"*Dampak:* {impact}\n"
-        f"*ID Persetujuan:* `{approval_id}`\n\n"
-        f"Silakan cek dashboard untuk analisa lengkap dan berikan persetujuan (OKE)."
+        f"ðŸ¢ *Laporan Eksekutif HoldCo*\n\n"
+        f"*Dari:* {role}\n"
+        f"*Subjek:* {title}\n"
+        f"*Estimasi Dampak:* {impact}\n"
+        f"*ID Ref:* `{approval_id}`\n\n"
+        f"Chairman, silakan tinjau proposal di dashboard untuk keputusan strategis (OKE)."
     )
     
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -1424,11 +1429,16 @@ async def run(ctx, inputs: Dict[str, Any]) -> Dict[str, Any]:
                                 "action_hint": "Review the analysis and click OKE to allow the agent to proceed with this method."
                             }
                         ]
-                    }
                     await create_approval_request(req_payload)
                     
-                    # Send external notification
-                    await _kirim_notifikasi_eksternal(title, impact, approval_id)
+                    # Determine role for notification
+                    role_label = "CEO"
+                    if "research" in agent_key: role_label = "Manager Riset"
+                    elif "growth" in agent_key: role_label = "Manager Growth"
+                    elif "op" in agent_key: role_label = "Manager Operasional"
+                    
+                    # Send external notification with role
+                    await _kirim_notifikasi_eksternal(title, impact, approval_id, role=role_label)
                     
                     iter_results.append({
                         "kind": "create_proposal", 
